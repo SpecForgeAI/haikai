@@ -2883,7 +2883,7 @@ discoveryRouter.post(
     // synthesise a default here -- AMS will leave the existing snapshot
     // value untouched, and the discovery-service orchestrator has its
     // own defensive default at the matcher-read site.
-    let runtimeEvidenceConfig: { maxLogPathPrefixSegments?: number } | undefined;
+    let runtimeEvidenceConfig: { maxLogPathPrefixSegments?: number; logPatternHint?: string } | undefined;
     const rawRuntimeEvidenceConfig = (req.body as Record<string, unknown> | undefined)?.[
       'runtimeEvidenceConfig'
     ];
@@ -2891,7 +2891,7 @@ discoveryRouter.post(
       try {
         const parsed = JSON.parse(rawRuntimeEvidenceConfig);
         if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-          runtimeEvidenceConfig = parsed as { maxLogPathPrefixSegments?: number };
+          runtimeEvidenceConfig = parsed as { maxLogPathPrefixSegments?: number; logPatternHint?: string };
         } else {
           logger.warn('Ignoring non-object runtimeEvidenceConfig field on log-files upload', {
             requestId,

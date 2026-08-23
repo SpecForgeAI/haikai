@@ -1081,6 +1081,20 @@ public class DiscoveryRunService {
                 request.runtimeEvidenceConfig().maxLogPathPrefixSegments());
             configSnapshot.put("runtimeEvidenceConfig", mergedRuntimeEvidenceConfig);
         }
+        if (request.runtimeEvidenceConfig() != null
+                && request.runtimeEvidenceConfig().logPatternHint() != null
+                && !request.runtimeEvidenceConfig().logPatternHint().isBlank()) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> existingRuntimeEvidenceConfig =
+                (Map<String, Object>) configSnapshot.get("runtimeEvidenceConfig");
+            Map<String, Object> mergedRuntimeEvidenceConfig = (existingRuntimeEvidenceConfig == null)
+                ? new LinkedHashMap<>()
+                : new LinkedHashMap<>(existingRuntimeEvidenceConfig);
+            mergedRuntimeEvidenceConfig.put(
+                "logPatternHint",
+                request.runtimeEvidenceConfig().logPatternHint().trim());
+            configSnapshot.put("runtimeEvidenceConfig", mergedRuntimeEvidenceConfig);
+        }
         entity.setConfigSnapshot(configSnapshot);
 
         DiscoveryRunEntity saved = runRepository.save(entity);

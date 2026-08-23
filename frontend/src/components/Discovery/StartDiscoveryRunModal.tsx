@@ -221,6 +221,10 @@ export function StartDiscoveryRunModal({
   // Operator-uploaded API contract files (WADL/WSDL/XSD) — an authoritative
   // Interface/Endpoint source (2026-08-02).
   const [selectedContractFiles, setSelectedContractFiles] = useState<File[]>([]);
+  // Oracle Nine item 9: optional log4j/logback ConversionPattern for the
+  // uploaded app logs -- translated deterministically to an extraction
+  // recipe before any LLM induction. Empty string = omitted.
+  const [logPatternHint, setLogPatternHint] = useState<string>('');
   const [maxLogPathPrefixSegments, setMaxLogPathPrefixSegments] = useState<number>(
     DEFAULT_MAX_LOG_PATH_PREFIX_SEGMENTS
   );
@@ -491,7 +495,8 @@ export function StartDiscoveryRunModal({
           architectureId,
           runId,
           selectedFiles,
-          maxLogPathPrefixSegments
+          maxLogPathPrefixSegments,
+          logPatternHint
         );
       }
       // Operator-uploaded API contracts (2026-08-02): inlined onto the run's
@@ -532,6 +537,7 @@ export function StartDiscoveryRunModal({
     selectedFiles,
     selectedContractFiles,
     maxLogPathPrefixSegments,
+    logPatternHint,
     onRunStarted,
     onRunStartError,
     onClose,
@@ -652,6 +658,37 @@ export function StartDiscoveryRunModal({
                     data-testid="start-discovery-run-modal-max-segments-hint"
                   >
                     Tolerate up to N proxy prefix segments when matching log paths to endpoints (0-5, default 1)
+                  </span>
+                </div>
+              )}
+
+              {showMaxSegmentsControl && (
+                <div
+                  className={styles.fieldGroup}
+                  data-testid="start-discovery-run-modal-log-pattern-field"
+                >
+                  <label
+                    className={styles.label}
+                    htmlFor="start-discovery-run-modal-log-pattern-input"
+                  >
+                    Log line pattern (optional)
+                  </label>
+                  <input
+                    id="start-discovery-run-modal-log-pattern-input"
+                    type="text"
+                    maxLength={500}
+                    placeholder="%d{dd,HH:mm:ss,SSS} %p [%t] [%c{1}] - %m%n"
+                    className={styles.input}
+                    value={logPatternHint}
+                    onChange={(e) => setLogPatternHint(e.target.value)}
+                    disabled={isSubmitting}
+                    data-testid="start-discovery-run-modal-log-pattern-input"
+                  />
+                  <span
+                    className={styles.hint}
+                    data-testid="start-discovery-run-modal-log-pattern-hint"
+                  >
+                    The app&apos;s log4j/logback ConversionPattern. When set, log lines are decoded deterministically from it (no LLM guessing); leave blank to auto-detect.
                   </span>
                 </div>
               )}

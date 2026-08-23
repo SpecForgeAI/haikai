@@ -241,6 +241,40 @@ describe('Spec 2026-05-11 Section 1 -- per-run M control + multipart rider', () 
   });
 
   // -------------------------------------------------------------------------
+  // 3b. Oracle Nine item 9: a 6th-arg ConversionPattern rides the SAME rider
+  //     field, trimmed, beside M.
+  // -------------------------------------------------------------------------
+  it('uploadDiscoveryRunLogFiles: logPatternHint rides the rider field trimmed, beside M', async () => {
+    const actual: any = await vi.importActual('../../api/discoveryApi');
+    const realUpload = actual.uploadDiscoveryRunLogFiles as typeof uploadDiscoveryRunLogFiles;
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ logFiles: [], attemptedCount: 1, successfulCount: 1 }),
+      text: async () => '',
+    });
+    const originalFetch = globalThis.fetch;
+    (globalThis as any).fetch = fetchMock;
+
+    try {
+      const f1 = makeFile('a.log', 100);
+      await realUpload('proj-1', 'arch-1', 'run-xyz', [f1], 2, '  %d{dd,HH:mm:ss,SSS} %p [%t] - %m%n ');
+
+      const [, init] = fetchMock.mock.calls[0];
+      const fd = init.body as FormData;
+      const riderEntries = Array.from(fd.getAll('runtimeEvidenceConfig'));
+      expect(riderEntries).toHaveLength(1);
+      expect(JSON.parse(riderEntries[0] as string)).toEqual({
+        maxLogPathPrefixSegments: 2,
+        logPatternHint: '%d{dd,HH:mm:ss,SSS} %p [%t] - %m%n',
+      });
+    } finally {
+      (globalThis as any).fetch = originalFetch;
+    }
+  });
+
+  // -------------------------------------------------------------------------
   // 4. uploadDiscoveryRunLogFiles WITHOUT the 5th arg does NOT append the
   //    rider field (backwards-compat).
   // -------------------------------------------------------------------------

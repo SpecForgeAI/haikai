@@ -69,7 +69,7 @@ export interface WriteLogFilesArgs {
    * `config_snapshot.runtimeEvidenceConfig` atomically with the
    * `inputArtifacts.logFiles[]` merge.
    */
-  runtimeEvidenceConfig?: { maxLogPathPrefixSegments?: number };
+  runtimeEvidenceConfig?: { maxLogPathPrefixSegments?: number; logPatternHint?: string };
 }
 
 export interface WriteLogFilesResult {

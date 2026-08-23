@@ -72,6 +72,7 @@ import {
 import { gatewayClient as defaultGatewayClient } from '../gatewayClient';
 import { tryKnownFormatFastPathContent, type RichObservation } from './knownFormatFastPath';
 import { preScanAndSampleContent } from './logPreScanSampler';
+import { recipeFromConversionPattern } from './logPatternTranslation';
 import {
   induceAndValidateRecipe,
   fingerprintFromBlocks,
@@ -353,6 +354,27 @@ function readMaxLogPathPrefixSegments(
 }
 
 /**
+ * Read the optional app-log ConversionPattern hint (Oracle Nine item 9)
+ * from `config_snapshot.runtimeEvidenceConfig.logPatternHint`. Same
+ * defensive posture as the M knob: missing / wrong-type / blank -> null
+ * (feature entirely inert). Length-capped so a pasted log FILE cannot
+ * masquerade as a pattern.
+ */
+function readLogPatternHint(
+  configSnapshot: Record<string, unknown> | null | undefined,
+): string | null {
+  if (!configSnapshot || typeof configSnapshot !== 'object') return null;
+  const runtimeEvidenceConfig = (configSnapshot as Record<string, unknown>)
+    .runtimeEvidenceConfig;
+  if (!runtimeEvidenceConfig || typeof runtimeEvidenceConfig !== 'object') return null;
+  const raw = (runtimeEvidenceConfig as Record<string, unknown>).logPatternHint;
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0 || trimmed.length > 500) return null;
+  return trimmed;
+}
+
+/**
  * Sample the first non-empty lines of a file (for format detection).
  *
  * Reads UP TO `maxLines` lines via `readline`, then returns. Used only
@@ -604,6 +626,8 @@ async function selectAndExtractRichObservations(sel: {
   runId: string;
   relay: LogRecipeRelay;
   existingRecipes: RecipeStore;
+  /** Optional configured ConversionPattern (item 9) tried BEFORE reuse/LLM. */
+  logPatternHint?: string | null;
 }): Promise<{
   richObservations: RichObservation[];
   preScanHits: number;
@@ -625,6 +649,32 @@ async function selectAndExtractRichObservations(sel: {
 
     // (b) Pre-scan + sample. Reuse a persisted recipe by fingerprint first.
     const sample = preScanAndSampleContent(sel.fileContent);
+
+    // (a2) Configured-pattern deterministic translation (Oracle Nine item 9):
+    // when the run declares the app's log4j/logback ConversionPattern, build
+    // the recipe MECHANICALLY and use it when it (i) matches this file's
+    // sampled lines and (ii) actually extracts something. Zero LLM calls.
+    // A non-matching or non-extracting pattern falls through honestly.
+    if (sel.logPatternHint) {
+      const translated = recipeFromConversionPattern({
+        pattern: sel.logPatternHint,
+        blocks: sample.blocks,
+        sourceFilePath: sel.sourceFilePath,
+      });
+      if (translated.status === 'accepted') {
+        const rich = extractWithRecipeFromContent(translated.recipe, sel.fileContent, meta);
+        if (rich.length > 0) {
+          return {
+            richObservations: rich,
+            preScanHits: sample.hitCount,
+            sampledBlocks: sample.blocks.length,
+            acceptedRecipe: translated.recipe,
+            reason: `recipe_translated:${rich.length}`,
+          };
+        }
+      }
+    }
+
     const fingerprint = fingerprintFromBlocks(sample.blocks);
     const sourceFileKey = `file:${sel.sourceFilePath}`;
     const reusable = lookupReusableRecipe(sel.existingRecipes, fingerprint, sourceFileKey);
@@ -716,6 +766,7 @@ export async function runDiscoveryRuntimeEvidence(
   // Read the per-run M (max leading proxy-prefix segments) knob. Done
   // up-front so the matcher call site is a pure pass-through.
   const maxLogPathPrefixSegments = readMaxLogPathPrefixSegments(configSnapshot);
+  const logPatternHint = readLogPatternHint(configSnapshot);
 
   try {
     const warnings: string[] = [];
@@ -821,6 +872,7 @@ export async function runDiscoveryRuntimeEvidence(
             runId,
             relay: logRecipeRelay,
             existingRecipes: recipeStore,
+            logPatternHint,
           });
           preScanHitsTotal += selection.preScanHits;
           sampledBlocksTotal += selection.sampledBlocks;
