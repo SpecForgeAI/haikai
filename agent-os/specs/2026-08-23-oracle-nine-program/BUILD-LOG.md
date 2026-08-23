@@ -61,13 +61,18 @@ charset config, sequence rows, uniqueness probes).
    shell → Java main resolved by scanning the named script); schedule/box/
    conditions attached to internal endpoint candidates; loud finding for
    jobs resolving to no known main; silent no-op when no jil files.
-   STATUS: pending.
+   STATUS: MERGED.
 9. **Log pointing + deterministic pattern translation** — code-scan config
    accepts app-log path + pattern; log4j/logback ConversionPattern
    translated mechanically to the recorder recipe; LLM induction demoted to
    fallback. STATUS: pending.
 
 ## Per-item as-built notes
+
+### Item 8 (as-built)
+- New schedulerAdapters/autosysJil.ts: parseJilText/parseJilFiles (insert_job blocks; job_type/command/box_name/condition/start_times/days_of_week/watch_file); resolveJobsToMains (direct `java FQN` in command, else script-basename lookup in-repo + FQN/unique-simple-name scan of the script; boxes/file-watchers never resolve).
+- runManager (code scan, after structural): resolves against corpus internal-root classes, appends data.schedules entries (job/box/times/days/condition/source) to matching internal endpoint candidates, steps_payload.scheduler {jilJobCount, commandJobsResolved, candidatesEnriched, unresolvedCommandJobs (capped 20, LOUD)}; parse failures non-fatal loud.
+- Tests: parse pin (fields+blocks), resolve pin (script resolution, honest nulls). Discovery 16 suites/154.
 
 ### Item 7 (as-built)
 - javaProjectIndex.beanPropertyHints: `<bean class=X>` blocks joined to project classes; `<property name value/>` pairs unioned across bean instances, sorted.

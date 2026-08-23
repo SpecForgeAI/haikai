@@ -2143,6 +2143,13 @@ async function startServiceScopedRun(
     let structuralScan:
       | import('../scl/structuralScanStep').StructuralScanStepOutcome
       | null = null;
+    // Item 8 (2026-08-23): Autosys jil scheduler linkage summary.
+    let schedulerSummary: {
+      jilJobCount: number;
+      commandJobsResolved: number;
+      candidatesEnriched: number;
+      unresolvedCommandJobs: string[];
+    } | null = null;
     // SCL 2026-08-20: effect-candidate emission summary (one scan, one
     // review, one save) — counts + honest unproposed tail on the payload.
     let effectCandidates: Record<string, unknown> | null = null;
@@ -2692,6 +2699,73 @@ async function startServiceScopedRun(
         sourceDir: rootScanDir,
         liveProcSources,
       });
+      // Item 8 (2026-08-23): Autosys .jil scheduler linkage — job -> shell
+      // -> Java main resolved against the corpus's internal roots; schedule
+      // metadata (box, times, days, conditions) rides the matching internal
+      // endpoint candidates so the quiet-window rule and the batch
+      // book-of-work know WHEN the batch plane runs. Silent no-op without
+      // .jil files; unresolved jobs stay LOUD in the run payload.
+      if (structural.corpus) {
+        try {
+          const jilJobs = parseJilFiles(rootScanDir);
+          if (jilJobs.length > 0) {
+            const mains = (structural.corpus.roots ?? [])
+              .filter((r) => r.kind === 'internal')
+              .map((r) => {
+                const symbol = String(r.symbol ?? '');
+                const hash = symbol.indexOf('#');
+                return hash > 0 ? symbol.slice(0, hash) : symbol;
+              })
+              .filter((fqn) => fqn.length > 0);
+            const resolved = resolveJobsToMains(jilJobs, rootScanDir, [...new Set(mains)]);
+            let enriched = 0;
+            for (const job of resolved) {
+              if (!job.resolvedMainFqn) continue;
+              const target = allCandidates.find(
+                (c) =>
+                  c.candidateType === 'endpoints' &&
+                  String(
+                    (c.data as { className?: string } | undefined)?.className ?? '',
+                  ) === job.resolvedMainFqn,
+              );
+              if (!target) continue;
+              const schedules =
+                ((target.data as Record<string, unknown>).schedules as unknown[]) ?? [];
+              schedules.push({
+                job_name: job.jobName,
+                box_name: job.boxName,
+                start_times: job.startTimes,
+                days_of_week: job.daysOfWeek,
+                condition: job.condition,
+                source: job.sourcePath,
+              });
+              (target.data as Record<string, unknown>).schedules = schedules;
+              enriched++;
+            }
+            const unresolvedCommands = resolved
+              .filter((j) => (j.jobType === null || j.jobType === 'c') && !j.resolvedMainFqn)
+              .map((j) => j.jobName)
+              .slice(0, 20);
+            schedulerSummary = {
+              jilJobCount: jilJobs.length,
+              commandJobsResolved: resolved.filter((j) => j.resolvedMainFqn).length,
+              candidatesEnriched: enriched,
+              unresolvedCommandJobs: unresolvedCommands,
+            };
+            console.log(
+              `[RunManager:service-scoped] Scheduler linkage: ${jilJobs.length} jil job(s), ` +
+                `${schedulerSummary.commandJobsResolved} resolved to mains, ` +
+                `${unresolvedCommands.length} unresolved command job(s)`,
+            );
+          }
+        } catch (jilErr) {
+          console.warn(
+            `[RunManager:service-scoped] jil parse failed (non-fatal): ${
+              jilErr instanceof Error ? jilErr.message : String(jilErr)
+            }`,
+          );
+        }
+      }
       // Item 6 (2026-08-23): web.xml-mapped handlers become REAL endpoint
       // candidates under an OPERATIONAL_HTTP interface — inventoried and
       // capturable DELIBERATELY (AMS auto-classifies the interface type out
@@ -2852,6 +2926,7 @@ async function startServiceScopedRun(
       // SCL 2026-08-19: structural-model scan outcome (completed|failed|skipped
       // + scan id / contract count / reason) — minted by THIS run.
       structuralScan,
+      scheduler: schedulerSummary,
       // SCL 2026-08-20: corpus/LLM effect-candidate emission summary.
       effectCandidates,
       stepStartedAt: new Date(stepStartTime).toISOString(),
@@ -3048,6 +3123,7 @@ import { takeS0AutoSnapshot } from './databasePacks/s0AutoSnapshot';
 // SCL 2026-08-19: the CODE scan produces the structural model in the same
 // pass (same clone, same root) — never a separate trigger or second scan.
 import { runStructuralScanStep } from '../scl/structuralScanStep';
+import { parseJilFiles, resolveJobsToMains } from './schedulerAdapters/autosysJil';
 // SCL 2026-08-20: the scan also emits endpoint_data_effects candidates from
 // its own corpus (deterministic + vocabulary-guarded LLM) — one scan, one
 // review, one save.
