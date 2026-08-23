@@ -101,7 +101,10 @@ async function main(): Promise<number> {
     tracer.warn(`data migration: empty load plan (${plan.issues.join('; ') || 'no tables'})`, corr);
   }
 
-  const source = new SybaseAdapter(sourceConfig());
+  const bulkCharset =
+    ((bulkManifest as { source_charset?: { charset?: string | null } } | null)?.source_charset
+      ?.charset ?? null) || process.env.SOURCE_DB_CHARSET || null;
+  const source = new SybaseAdapter({ ...sourceConfig(), charset: bulkCharset });
   const target = new PostgresAdapter(targetConfig());
   const targetLoader = new PostgresTargetLoader(targetConfig(), {
     batchRows: intEnv('DATA_MIGRATION_BATCH_ROWS', 500),

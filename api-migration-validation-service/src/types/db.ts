@@ -21,6 +21,10 @@ export interface DbConnectionConfig {
    * resolves it at adapter construction time via the secretsStore.
    */
   password: string;
+  /** DETECTED source-server charset (e.g. iso_1) — declared on sidecar
+   *  connections so extraction decodes single-byte data correctly
+   *  (2026-08-23; carried from the DB scan / pack manifest). */
+  charset?: string | null;
 }
 
 export interface DbAllowlist {

@@ -269,3 +269,29 @@ describe('SybaseAdapter (sidecar-backed)', () => {
     ).rejects.toThrow(/unparseable count/);
   });
 });
+
+describe('charset threading (Oracle Nine item 3)', () => {
+  it('a configured charset rides every sidecar creds body', async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const fetchMock = jest.fn(async (_url: string, init?: { body?: string }) => {
+      calls.push(JSON.parse(String(init?.body ?? '{}')));
+      return {
+        ok: true,
+        json: async () => ({ ok: true, serverVersion: 'ASE' }),
+      } as never;
+    });
+    (global as { fetch?: unknown }).fetch = fetchMock as never;
+    const { SybaseAdapter } = await import('../services/db/SybaseAdapter');
+    const adapter = new SybaseAdapter({
+      dbType: 'sybase',
+      host: 'h',
+      port: 5000,
+      database: 'd',
+      username: 'u',
+      password: 'p',
+      charset: 'iso_1',
+    } as never);
+    await adapter.testConnection();
+    expect(calls[0].charset).toBe('iso_1');
+  });
+});

@@ -43,3 +43,43 @@ describe('harvestLiveProcSources', () => {
     await expect(harvestLiveProcSources(CREDS, 60)).resolves.toEqual([]);
   });
 });
+
+describe('detectServerCharset (Oracle Nine item 3)', () => {
+  it('detects charset + sortorder and declares the charset on later creds', async () => {
+    (callSidecarQuery as jest.Mock).mockResolvedValue({
+      rows: [{ charset_name: 'iso_1', sortorder_name: 'bin_iso_1' }],
+    });
+    const { SybaseDiscoveryPack } = await import('../SybaseDiscoveryPack');
+    const pack = new SybaseDiscoveryPack();
+    await pack.connect({
+      config: { host: 'h', port: 5000, databaseName: 'd', queryTimeoutSeconds: 30 },
+      credentials: { username: 'u', password: 'p' },
+    } as never);
+    const facts = await pack.detectServerCharset({
+      config: { queryTimeoutSeconds: 30 },
+    } as never);
+    expect(facts).toEqual({
+      charset: 'iso_1',
+      sortorderName: 'bin_iso_1',
+      caseSensitive: true,
+    });
+    // Subsequent sidecar calls carry the declared charset.
+    await pack.harvestProcSources({ config: { queryTimeoutSeconds: 30 } } as never);
+    const lastCreds = (callSidecarQuery as jest.Mock).mock.calls.at(-1)![0];
+    expect(lastCreds.charset).toBe('iso_1');
+  });
+
+  it('a nocase sortorder reads as case-INsensitive', async () => {
+    (callSidecarQuery as jest.Mock).mockResolvedValue({
+      rows: [{ charset_name: 'cp850', sortorder_name: 'nocase_cp850' }],
+    });
+    const { SybaseDiscoveryPack } = await import('../SybaseDiscoveryPack');
+    const pack = new SybaseDiscoveryPack();
+    await pack.connect({
+      config: { host: 'h', port: 5000, databaseName: 'd' },
+      credentials: { username: 'u', password: 'p' },
+    } as never);
+    const facts = await pack.detectServerCharset({ config: {} } as never);
+    expect(facts?.caseSensitive).toBe(false);
+  });
+});

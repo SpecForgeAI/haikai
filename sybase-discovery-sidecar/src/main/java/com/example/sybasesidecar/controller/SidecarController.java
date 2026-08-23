@@ -105,7 +105,8 @@ public class SidecarController {
                 req.getPassword(),
                 req.getIncludeSchemas(),
                 req.getIncludeTables(),
-                timeoutSec
+                timeoutSec,
+                req.getCharset()
         );
         // Counts only, never names.
         LOG.info("[diag-sidecar] op=introspect status=200 result={} elapsed_ms={} "
@@ -167,7 +168,8 @@ public class SidecarController {
                 req.getPassword(),
                 req.getSql(),
                 timeoutSec,
-                maxRows
+                maxRows,
+                req.getCharset()
         );
         LOG.info("[diag-sidecar] op=query status=200 result={} rows={} truncated={} elapsed_ms={}",
                 body.ok() ? "ok" : "fail",
@@ -226,7 +228,8 @@ public class SidecarController {
                 req.getStatements(),
                 req.getTransactional() == null || req.getTransactional(),
                 timeoutSec,
-                req.isRestoreMode()
+                req.isRestoreMode(),
+                req.getCharset()
         );
         LOG.info("[diag-sidecar] op=mutate status=200 result={} statements={} elapsed_ms={}",
                 body.ok() ? "ok" : "fail",

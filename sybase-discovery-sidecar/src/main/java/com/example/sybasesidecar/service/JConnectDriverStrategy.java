@@ -86,6 +86,18 @@ public final class JConnectDriverStrategy implements DriverStrategy {
             final String username,
             final String password
     ) throws SQLException {
+        return this.openConnection(host, port, database, username, password, null);
+    }
+
+    @Override
+    public Connection openConnection(
+            final String host,
+            final int port,
+            final String database,
+            final String username,
+            final String password,
+            final String charset
+    ) throws SQLException {
         if (!this.available || this.driverInstance == null) {
             throw new SQLException("jConnect driver not available on classpath");
         }
@@ -93,6 +105,12 @@ public final class JConnectDriverStrategy implements DriverStrategy {
         final Properties props = new Properties();
         props.setProperty("user", username);
         props.setProperty("password", password);
+        if (charset != null && !charset.isEmpty()) {
+            // jConnect: CHARSET names the server charset the client asks the
+            // server to converse in; declaring the DETECTED one guarantees
+            // byte-correct decoding of single-byte data.
+            props.setProperty("CHARSET", charset);
+        }
         final Connection conn = this.driverInstance.connect(url, props);
         if (conn == null) {
             // Driver.connect returns null when acceptsURL() rejects -- treat

@@ -61,4 +61,22 @@ public interface DriverStrategy {
             String username,
             String password
     ) throws SQLException;
+
+    /**
+     * Charset-aware overload (2026-08-23): declares the DETECTED server
+     * charset on the connection so single-byte data (e.g. Latin-1) decodes
+     * correctly into Java strings — the one choke point for every consumer
+     * (introspection, queries, S0 dumps, data migration). Default ignores
+     * the charset for back-compat.
+     */
+    default Connection openConnection(
+            final String host,
+            final int port,
+            final String database,
+            final String username,
+            final String password,
+            final String charset
+    ) throws SQLException {
+        return this.openConnection(host, port, database, username, password);
+    }
 }

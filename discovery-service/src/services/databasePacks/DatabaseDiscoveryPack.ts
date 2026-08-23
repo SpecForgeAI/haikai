@@ -226,6 +226,19 @@ export interface DatabaseDiscoveryPack {
    * OPTIONAL capability (2026-08-23, Oracle Nine item 2): read the rows of a
    * detected sequence-generator table (name + current value). Read-only.
    */
+  /**
+   * OPTIONAL capability (2026-08-23, item 3): detect the server's default
+   * charset + sortorder from the engine catalog. Implementations SHOULD
+   * also declare the detected charset on all subsequent connections.
+   */
+  detectServerCharset?(
+    ctx: DatabaseDiscoveryPackContext,
+  ): Promise<{
+    charset: string | null;
+    sortorderName: string | null;
+    caseSensitive: boolean | null;
+  } | null>;
+
   probeSequenceRows?(
     ctx: DatabaseDiscoveryPackContext,
     idiom: import('../../scl/sqlProcHarvester').SequenceGeneratorIdiom,

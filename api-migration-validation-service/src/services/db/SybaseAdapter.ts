@@ -57,6 +57,7 @@ export class SybaseAdapter implements DbAdapter {
   private readonly database: string;
   private readonly username: string;
   private readonly password: string;
+  private readonly charset: string | null;
   private readonly sidecarBaseUrl: string;
 
   constructor(config: DbConnectionConfig, opts?: { sidecarBaseUrl?: string }) {
@@ -65,6 +66,7 @@ export class SybaseAdapter implements DbAdapter {
     this.database = config.database;
     this.username = config.username;
     this.password = config.password;
+    this.charset = config.charset ?? null;
     this.sidecarBaseUrl = (opts?.sidecarBaseUrl ?? SYBASE_SIDECAR_URL).replace(/\/+$/, '');
   }
 
@@ -344,6 +346,7 @@ export class SybaseAdapter implements DbAdapter {
       database: this.database,
       username: this.username,
       password: this.password,
+      charset: this.charset,
       // No `driver` field -- defaults to 'auto' on the sidecar (jTDS first,
       // jConnect fallback).
     };

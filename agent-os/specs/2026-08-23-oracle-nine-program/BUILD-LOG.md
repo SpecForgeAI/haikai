@@ -34,7 +34,7 @@ charset config, sequence rows, uniqueness probes).
 3. **Charset detection + transcode** — sidecar reads charset/sortorder
    config tables; declared on the extraction CONNECTION (jConnect CHARSET)
    so strings decode correctly at source; case-sensitivity → target
-   collation decision card. STATUS: pending.
+   collation decision card. STATUS: MERGED.
 4. **Parity keys** — DB scan runs read-only uniqueness probes
    (`count(*)` vs `count(distinct …)`) over candidate tuples (unique-index
    cols ± temporal `valid_from`/`valid_to`-style pair ± composites);
@@ -68,6 +68,14 @@ charset config, sequence rows, uniqueness probes).
    fallback. STATUS: pending.
 
 ## Per-item as-built notes
+
+### Item 3 (as-built)
+- Sidecar (Java, REBUILD REQUIRED on pickup): optional `charset` threaded request-models -> controller -> query/mutation services -> DriverStrategy 6-arg overload (jConnect props CHARSET; jTDS `;charset=` URL param, identifier-validated); old signatures preserved (default null); 93 Java tests green.
+- Discovery: SidecarCredentials.charset (all 3 request bodies); pack capability detectServerCharset (ASE sysconfigures 131/123 join syscharsets; caseSensitive = sortorder name lacks nocase/noaccent/insensitive) — on success DECLARES charset on the pack creds so introspection/profiling/harvest/probes all decode byte-correctly; orchestrator Phase 1b (before harvest); steps_payload.database.server_charset.
+- Gateway pack: IR.sourceCharset + manifest.source_charset + bulk-load manifest source_charset (emitBulkLoadManifest arg); fetchServerCharsetFacts (AMS runs list, fail-soft) wired into generation; CASE-SENSITIVE sortorder raises PackDecision `target_collation--database` (preserve_case_sensitive rec / case_insensitive) unless resolved.
+- AMVS: DbConnectionConfig.charset -> SybaseAdapter commonCredsBody (every sidecar call: metadata, S0 dump reads, data migration, compensation); data-migration CLI threads bulk-manifest source_charset (env SOURCE_DB_CHARSET fallback).
+- Tests: detect+declare pin (creds carry charset on later calls; nocase=insensitive), AMVS creds-body pin; suites: sidecar 93, discovery 146+4, gateway pack 32+, AMVS 15/36.
+- PICKUP: sidecar `mvn package` + restart sidecar, discovery-service, gateway, AMVS.
 
 ### Item 2 (as-built)
 - Detector detectSequenceGeneratorIdioms (sqlProcHarvester, pure regex incl. backreference: update T set C=C+1 [where N=@p] + select gate). Orchestrator Phase 4c detects over live sources + optional pack capability probeSequenceRows (Sybase: guarded-identifier SELECT of name/value rows via /query, maxRows 200); envelope sequenceIdioms; runManager DB side enriches the sequence TABLE candidate: data.sequence_generator_idiom {procName, columns, rows, proposedMappings} — proposals from introspection columns (exact match then >=4-char suffix, cap 3, self-table excluded); steps_payload sequenceIdiomCount.

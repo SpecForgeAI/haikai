@@ -175,13 +175,26 @@ public class SybaseQueryService {
             final String username,
             final String password
     ) throws SQLException {
+        return this.openConnection(choice, host, port, database, username, password, null);
+    }
+
+    private OpenConnectionResult openConnection(
+            final SybaseDriverChoice choice,
+            final String host,
+            final int port,
+            final String database,
+            final String username,
+            final String password,
+            final String charset
+    ) throws SQLException {
         if (choice == SybaseDriverChoice.AUTO) {
-            return this.openConnectionAuto(host, port, database, username, password);
+            return this.openConnectionAuto(host, port, database, username, password, charset);
         }
         final DriverStrategy strat = this.strategyFor(choice);
-        final Connection conn = strat.openConnection(host, port, database, username, password);
+        final Connection conn = strat.openConnection(host, port, database, username, password, charset);
         this.applyReadOnly(conn);
-        LOG.info("[diag-sidecar] driver_attempt driver={} result=ok forced=true", strat.name());
+        LOG.info("[diag-sidecar] driver_attempt driver={} result=ok forced=true charset_set={}",
+                strat.name(), charset != null && !charset.isEmpty());
         return new OpenConnectionResult(conn, strat.name());
     }
 
@@ -190,13 +203,15 @@ public class SybaseQueryService {
             final int port,
             final String database,
             final String username,
-            final String password
+            final String password,
+            final String charset
     ) throws SQLException {
         SQLException jtdsErr = null;
         try {
-            final Connection conn = this.jtds.openConnection(host, port, database, username, password);
+            final Connection conn = this.jtds.openConnection(host, port, database, username, password, charset);
             this.applyReadOnly(conn);
-            LOG.info("[diag-sidecar] driver_attempt driver=jtds result=ok auto=true");
+            LOG.info("[diag-sidecar] driver_attempt driver=jtds result=ok auto=true charset_set={}",
+                    charset != null && !charset.isEmpty());
             return new OpenConnectionResult(conn, this.jtds.name());
         } catch (final SQLException e) {
             jtdsErr = e;
@@ -208,9 +223,10 @@ public class SybaseQueryService {
             throw jtdsErr;
         }
         try {
-            final Connection conn = this.jconnect.openConnection(host, port, database, username, password);
+            final Connection conn = this.jconnect.openConnection(host, port, database, username, password, charset);
             this.applyReadOnly(conn);
-            LOG.info("[diag-sidecar] driver_attempt driver=jconnect result=ok auto=true");
+            LOG.info("[diag-sidecar] driver_attempt driver=jconnect result=ok auto=true charset_set={}",
+                    charset != null && !charset.isEmpty());
             return new OpenConnectionResult(conn, this.jconnect.name());
         } catch (final SQLException e) {
             LOG.info("[diag-sidecar] driver_attempt driver=jconnect result=fail auto=true sqlstate={}",
@@ -305,11 +321,29 @@ public class SybaseQueryService {
             final List<String> includeTables,
             final int queryTimeoutSeconds
     ) {
+        return this.introspect(choice, host, port, database, username, password,
+                includeSchemas, includeTables, queryTimeoutSeconds, null);
+    }
+
+    /** Charset-aware variant (2026-08-23): declares the detected server
+     *  charset on the connection so string data decodes byte-correctly. */
+    public IntrospectionResponse introspect(
+            final SybaseDriverChoice choice,
+            final String host,
+            final int port,
+            final String database,
+            final String username,
+            final String password,
+            final List<String> includeSchemas,
+            final List<String> includeTables,
+            final int queryTimeoutSeconds,
+            final String charset
+    ) {
         LOG.info("Sidecar query category=introspect host={} db={} driver_choice={}",
                 host, database, choice);
         Connection conn = null;
         try {
-            conn = this.openConnection(choice, host, port, database, username, password).connection();
+            conn = this.openConnection(choice, host, port, database, username, password, charset).connection();
 
             // The engine version is read first so the version-branched reads
             // (e.g. the ASE16 native SEQUENCE catalog) can consult it.
@@ -406,6 +440,23 @@ public class SybaseQueryService {
             final int queryTimeoutSeconds,
             final int maxRows
     ) {
+        return this.query(choice, host, port, database, username, password, sql,
+                queryTimeoutSeconds, maxRows, null);
+    }
+
+    /** Charset-aware variant (2026-08-23). */
+    public QueryResponse query(
+            final SybaseDriverChoice choice,
+            final String host,
+            final int port,
+            final String database,
+            final String username,
+            final String password,
+            final String sql,
+            final int queryTimeoutSeconds,
+            final int maxRows,
+            final String charset
+    ) {
         // Re-enforce the SELECT-only contract at the JVM layer.
         SidecarSqlGuard.assertReadonlySelect(sql);
         LOG.info("Sidecar query category=query_select host={} db={} timeoutSec={} maxRows={} driver_choice={}",
@@ -413,7 +464,7 @@ public class SybaseQueryService {
 
         Connection conn = null;
         try {
-            conn = this.openConnection(choice, host, port, database, username, password).connection();
+            conn = this.openConnection(choice, host, port, database, username, password, charset).connection();
             try (Statement st = conn.createStatement()) {
                 if (queryTimeoutSeconds > 0) {
                     st.setQueryTimeout(queryTimeoutSeconds);
