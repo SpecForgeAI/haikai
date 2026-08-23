@@ -95,6 +95,11 @@ export interface JavaClassInfo {
   annotations: string[];
   fields: JavaFieldInfo[];
   methods: JavaMethodInfo[];
+  /** Constructor bodies (2026-08-23, cache-bridge): legacy estates build
+   *  their Guava caches — and the anonymous CacheLoader that links them to
+   *  the DB loader — in constructors, which method extraction never saw.
+   *  Same shape as methods (name = class simple name, returnType ''). */
+  constructors?: JavaMethodInfo[];
   imports: string[];
   /** 1-based declaration line (extension; handy for cites). */
   startLine: number;
@@ -401,6 +406,35 @@ function methodsOf(
   return methods;
 }
 
+/** Constructor bodies as method-shaped records (cache-bridge, 2026-08-23). */
+function constructorsOf(
+  classNode: SyntaxNode,
+  classFqn: string,
+  filePath: string,
+  sourceText: string
+): JavaMethodInfo[] {
+  const out: JavaMethodInfo[] = [];
+  const body = classNode.childForFieldName('body');
+  if (!body) return out;
+  for (const ctorNode of collectNodesOfType(body, 'constructor_declaration')) {
+    if (isInsideNestedBody(ctorNode, body)) continue;
+    const nameNode = ctorNode.childForFieldName('name');
+    out.push({
+      name: nameNode ? nameNode.text : '<init>',
+      paramTypes: [],
+      paramNames: [],
+      returnType: '',
+      annotations: verbatimAnnotations(ctorNode),
+      bodyNode: ctorNode.childForFieldName('body') || null,
+      startLine: ctorNode.startPosition.row + 1,
+      classFqn,
+      filePath,
+      sourceText,
+    });
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -539,6 +573,7 @@ export async function indexJavaProject(rootDir: string): Promise<JavaProjectInde
               annotations: verbatimAnnotations(declNode),
               fields: fieldsOf(declNode),
               methods: methodsOf(declNode, fqn, filePath, sourceText),
+              constructors: constructorsOf(declNode, fqn, filePath, sourceText),
               imports,
               startLine: declNode.startPosition.row + 1,
               isProjectType: true,
