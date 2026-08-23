@@ -53,6 +53,10 @@ export interface CompensationMetadataIndex {
    *  the S0 fingerprint tolerance list. Absent/empty when the index was
    *  built from scan-supplied specs (auto-S0 path). */
   volatileTables?: Set<string>;
+  /** Tables the foundations write-only card acknowledged as AUDIT SINKS
+   *  (item 5): S0-tolerated, never compensated, excluded from strict
+   *  parity — append-only operational residue, not business state. */
+  auditSinkTables?: Set<string>;
 }
 
 /** Test seam: build the index from an already-fetched raw model object. */
@@ -113,7 +117,15 @@ export function buildCompensationMetadataIndex(model: unknown): CompensationMeta
   for (const [lower, meta] of byTable) {
     if (meta.scope === 'volatile') volatileTables.add(lower);
   }
-  return { byTable, volatileTables };
+  const auditSinkTables = new Set<string>();
+  for (const entity of entities) {
+    const table = String(entity?.name ?? '');
+    if (!table) continue;
+    if ((entity.constraints_metadata as { audit_sink?: unknown } | undefined)?.audit_sink) {
+      auditSinkTables.add(table.toLowerCase());
+    }
+  }
+  return { byTable, volatileTables, auditSinkTables };
 }
 
 /**

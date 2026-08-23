@@ -204,3 +204,66 @@ describe('keyless_multiset detect-only bracket (Spec 3)', () => {
     expect(run.outcome.kind).toBe('refused');
   });
 });
+
+describe('quiet-window guardrail + audit sink (Oracle Nine item 5)', () => {
+  it('drift on an unclassified table refuses; volatile/audit-sink/keyless drift is tolerated', async () => {
+    const { runQuietWindowCheck } = await import('../services/captureCompensation');
+    const metadata = buildCompensationMetadataIndex({
+      metaModel: {
+        entities: {
+          physical_data_entities: [
+            { id: 'e1', name: 'orders' },
+            { id: 'e2', name: 'work_queue', migration_scope: 'volatile' },
+            {
+              id: 'e3',
+              name: 'audit_trail_info',
+              constraints_metadata: { audit_sink: true },
+            },
+          ],
+          physical_data_attributes: [],
+        },
+      },
+    });
+    let call = 0;
+    const counts: Record<string, number[]> = {
+      orders: [10, 12],
+      work_queue: [5, 9],
+      audit_trail_info: [100, 140],
+    };
+    const adapter = {
+      countRows: async ({ table }: { table: string }) => counts[table][call > 2 ? 1 : ((call++, call > 3 ? 1 : 0))],
+    } as never;
+    // simpler deterministic adapter: first sweep returns index 0, second index 1
+    let sweep = 0;
+    const adapter2 = {
+      countRows: async ({ table }: { table: string }) => counts[table][sweep],
+    } as never;
+    const result = await runQuietWindowCheck({
+      adapter: adapter2,
+      metadata,
+      schema: null,
+      gapSeconds: 1,
+      sleep: async () => {
+        sweep = 1;
+      },
+    });
+    void adapter;
+    expect(result.quiet).toBe(false);
+    expect(result.drifted).toEqual([{ table: 'orders', before: 10, after: 12 }]);
+    expect(result.toleratedDrift.sort()).toEqual(['audit_trail_info', 'work_queue']);
+  });
+
+  it('audit-sink tables join the end-of-job tolerated set', () => {
+    const metadata = buildCompensationMetadataIndex({
+      metaModel: {
+        entities: {
+          physical_data_entities: [
+            { id: 'e1', name: 'audit_trail_info', constraints_metadata: { audit_sink: true } },
+          ],
+          physical_data_attributes: [],
+        },
+      },
+    });
+    expect([...(metadata.auditSinkTables ?? [])]).toEqual(['audit_trail_info']);
+  });
+});

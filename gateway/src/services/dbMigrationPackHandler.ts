@@ -1025,6 +1025,9 @@ export function buildDbMigrationPackArtifacts(
 
   const manifest: PackManifest = {
     manifest_version: 1,
+    audit_sink_tables: ir.tables
+      .filter((tbl) => tbl.auditSink === true)
+      .map((tbl) => `${tbl.schemaName ?? ''}.${tbl.tableName}`),
     parity_keys: ir.tables
       .filter((tbl) => tbl.parityKey && tbl.parityKey.columns.length > 0)
       .map((tbl) => ({

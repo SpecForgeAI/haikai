@@ -48,6 +48,7 @@ import type { JudgeFn } from './postmanDeltaStage2';
 // mutating captures, the aggregate no-effect-map warning, and the end-of-job
 // S0 fingerprint. The bracket engine itself is Spec 1's module.
 import {
+  runQuietWindowCheck,
   buildCaptureCompensationContext,
   computeScopeConflictEndpoints,
   computeWriteEndpointsWithoutEffectMap,
@@ -200,6 +201,10 @@ export interface OrchestratorDeps {
    */
   compensationSeams?: {
     metadataFetcher?: typeof fetchCompensationMetadataIndex;
+    /** Item 5: quiet-window guardrail seams — gap override + skip (tests). */
+    quietCheckGapSeconds?: number;
+    quietCheckSleep?: (ms: number) => Promise<void>;
+    skipQuietCheck?: boolean;
     effectScopeFetcher?: typeof fetchEffectScopeIndex;
     writeAdapterFactory?: typeof createCompensationWriteAdapter;
   };
@@ -1689,6 +1694,61 @@ export async function orchestrateCaptureSession(
       console.warn(`orchestrator: failed to write ${diagnosticType} diagnostic`, diagErr);
     }
   };
+
+  // ---- Quiet-window guardrail (Oracle Nine item 5): with compensation
+  // ACTIVE (metadata + adapter in hand), fingerprint row counts twice and
+  // REFUSE to start when any unclassified table drifts — a concurrent
+  // writer guarantees the end-of-job S0 fingerprint fails; refusing in two
+  // minutes beats failing after an hour. Volatile / audit-sink / keyless /
+  // excluded drift is tolerated by policy.
+  if (
+    compensation !== null &&
+    dbAdapter &&
+    deps.compensationSeams?.skipQuietCheck !== true
+  ) {
+    try {
+      const quiet = await runQuietWindowCheck({
+        adapter: dbAdapter,
+        metadata: compensation.metadata,
+        schema: compensation.schema ?? null,
+        gapSeconds: deps.compensationSeams?.quietCheckGapSeconds,
+        sleep: deps.compensationSeams?.quietCheckSleep,
+      });
+      if (!quiet.quiet) {
+        const drifters = quiet.drifted
+          .map((d) => `${d.table} (${d.before} -> ${d.after})`)
+          .join(', ');
+        const message =
+          `QUIET-WINDOW CHECK FAILED: ${quiet.drifted.length} table(s) changed during a ` +
+          `${quiet.gapSeconds}s pre-capture window with no volatile/audit-sink/keyless ` +
+          `policy covering them: ${drifters}. The database is NOT quiet — a concurrent ` +
+          `writer guarantees S0 fingerprint failure. Remedy: capture inside a quiet ` +
+          `window, or record the drifting tables as volatile/audit-sink on the ` +
+          `foundations review.`;
+        trace.fail(`capture REFUSED — ${message}`, corr);
+        trace.stageEnd('CAP', corr);
+        return {
+          sessionId: session.id,
+          scenariosAttempted: 0,
+          scenariosCompleted: 0,
+          scenariosErrored: 0,
+          finalStatus: 'failed',
+          errorMessage: message,
+        };
+      }
+      if (quiet.toleratedDrift.length > 0) {
+        trace.step(
+          `quiet-window check passed — tolerated drift on ${quiet.toleratedDrift.length} ` +
+            `policy-covered table(s): ${quiet.toleratedDrift.join(', ')}`,
+          corr,
+        );
+      }
+    } catch (quietErr) {
+      // The check itself failing must not block capture — loud, not fatal.
+      // eslint-disable-next-line no-console
+      console.warn('orchestrator: quiet-window check errored (continuing)', quietErr);
+    }
+  }
 
   if (compensation) {
     const missingEffectMaps = computeWriteEndpointsWithoutEffectMap(

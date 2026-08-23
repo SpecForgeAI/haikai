@@ -46,7 +46,7 @@ charset config, sequence rows, uniqueness probes).
    twice (configurable gap), REFUSES to start until every drifting table is
    volatile/audit-sink (named list); write-only foundations answer records
    `audit_sink` policy consumed by S0 tolerance + compensation
-   (count-only, never compensated) + parity. STATUS: pending.
+   (count-only, never compensated) + parity. STATUS: MERGED.
 6. **web.xml servlet roots** — root detector for `HttpRequestHandler`-
    implementing beans mapped via `servlet-mapping`; corpus roots + endpoint
    candidates defaulted capture-scope EXCLUDED (like internal
@@ -68,6 +68,13 @@ charset config, sequence rows, uniqueness probes).
    fallback. STATUS: pending.
 
 ## Per-item as-built notes
+
+### Item 5 (as-built)
+- Frontend crud_write_only 'keep_all' answer carries payload {audit_sink: true}; MCP materializes constraints_metadata.audit_sink + decision ref per named table.
+- AMVS: compensationMetadata.auditSinkTables (from constraints_metadata.audit_sink); end-of-job fingerprint tolerates audit sinks alongside volatile/keyless; runQuietWindowCheck (captureCompensation): counts every in-scope table twice gapSeconds apart (default 120), drift on unclassified tables = refusal payload naming each drifter; orchestrator fires it after compensation setup (compensation active + adapter) and REFUSES capture start (finalStatus failed, loud remedy message: quiet window or record volatile/audit-sink); tolerated-drift trace note; check errors are loud-not-fatal; test seams skipQuietCheck/gap/sleep.
+- Gateway: IrTable.auditSink -> manifest.audit_sink_tables -> parity reconcile SKIPS audit sinks (they grow under any traffic; comparing is meaningless).
+- Tests: quiet-check refusal + tolerance pin, auditSinkTables metadata pin; suites: AMVS orchestrator 5/10 + foundationScopeReaders 10, frontend 29, mcp 533 full, gateway 263.
+- PICKUP: AMVS + frontend + mcp-server + gateway restarts.
 
 ### Item 4 (as-built)
 - Pack capability probeKeyCandidate (Sybase: `(SELECT COUNT(*)) vs (SELECT COUNT(*) FROM (SELECT DISTINCT cols))` via /query, identifier-guarded); orchestrator Phase 5b generates <=3 tuples per PK-less table (unique-index cols; +temporal valid_from/valid_to pair; first-col+temporal fallback), probe budget 60, envelope keyProbes; runManager enriches table candidates data.parity_key_probes + steps_payload keyProbeTableCount.

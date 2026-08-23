@@ -195,6 +195,73 @@ export interface EndOfJobFingerprintResult {
   detail: string | null;
 }
 
+/**
+ * Quiet-window guardrail (Oracle Nine item 5): fingerprint every in-scope
+ * table's row count TWICE, `gapSeconds` apart, BEFORE any scenario fires.
+ * Any drifting table not covered by volatile / audit-sink / keyless /
+ * excluded policy proves the database is NOT quiet — the capture REFUSES
+ * to start, naming every drifter (concurrent batch feeds and external
+ * writers make the S0 fingerprint a guaranteed failure; better to refuse
+ * in two minutes than fail after an hour).
+ */
+export async function runQuietWindowCheck(args: {
+  adapter: DbAdapter;
+  metadata: CompensationMetadataIndex;
+  schema: string | null;
+  gapSeconds?: number;
+  sleep?: (ms: number) => Promise<void>;
+}): Promise<{
+  quiet: boolean;
+  drifted: Array<{ table: string; before: number; after: number }>;
+  toleratedDrift: string[];
+  gapSeconds: number;
+}> {
+  const gapSeconds = args.gapSeconds ?? 120;
+  const sleep = args.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+  const tolerated = new Set<string>([
+    ...(args.metadata.volatileTables ?? []),
+    ...(args.metadata.auditSinkTables ?? []),
+  ]);
+  for (const [lower, meta] of args.metadata.byTable) {
+    if (meta.keyPolicy === 'keyless_multiset') tolerated.add(lower);
+    if (meta.scope === 'excluded') tolerated.add(lower);
+  }
+  const tables = [...args.metadata.byTable.values()].map((m) => m.table);
+  const countAll = async (): Promise<Map<string, number>> => {
+    const counts = new Map<string, number>();
+    for (const table of tables) {
+      try {
+        const n = await args.adapter.countRows({
+          schema: args.schema,
+          table,
+          limits: { maxRows: 1, timeoutSeconds: 30 },
+        });
+        if (typeof n === 'number') counts.set(table.toLowerCase(), n);
+      } catch {
+        // Unreadable table: no drift signal either way — skip honestly.
+      }
+    }
+    return counts;
+  };
+  const before = await countAll();
+  await sleep(gapSeconds * 1000);
+  const after = await countAll();
+  const drifted: Array<{ table: string; before: number; after: number }> = [];
+  const toleratedDrift: string[] = [];
+  for (const [lower, beforeCount] of before) {
+    const afterCount = after.get(lower);
+    if (afterCount === undefined || afterCount === beforeCount) continue;
+    if (tolerated.has(lower)) {
+      toleratedDrift.push(lower);
+      continue;
+    }
+    drifted.push({ table: lower, before: beforeCount, after: afterCount });
+  }
+  drifted.sort((a, b) => (a.table < b.table ? -1 : 1));
+  toleratedDrift.sort();
+  return { quiet: drifted.length === 0, drifted, toleratedDrift, gapSeconds };
+}
+
 export async function runEndOfJobFingerprint(args: {
   projectId: string;
   architectureId: string;
@@ -230,6 +297,7 @@ export async function runEndOfJobFingerprint(args: {
       };
     }
     const tolerated = new Set<string>(args.metadata.volatileTables ?? []);
+    for (const table of args.metadata.auditSinkTables ?? []) tolerated.add(table.toLowerCase());
     for (const table of args.keylessWrittenTables ?? []) tolerated.add(table.toLowerCase());
     const report = await verifyS0Fingerprint(
       args.readAdapter,
