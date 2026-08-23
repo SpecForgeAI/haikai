@@ -641,6 +641,7 @@ export function buildSourceSchemaIr(inputs: GenerationInputs): SourceSchemaIr {
 
   const ir: SourceSchemaIr = {
     scopeReceipt: inputs.model.scopeReceipt ?? null,
+    sourceCharset: null,
     sourceEngine,
     targetEngine,
     tables,
@@ -1169,3 +1170,57 @@ export const defaultInputFetchDeps: InputFetchDeps = {
   fetchDbDecisions: defaultFetchDbDecisions,
   fetchResolvedPackDecisions: defaultFetchResolvedPackDecisions,
 };
+
+
+/**
+ * Item 3 (2026-08-23): the DB scan persists the detected server charset on
+ * its run's steps payload — fetch it (fail-soft null) so the pack manifest
+ * carries it and the data plane declares it on extraction connections.
+ */
+export async function fetchServerCharsetFacts(
+  amsBaseUrl: string,
+  projectId: string,
+  architectureId: string,
+  fetchFn: typeof fetch = fetch,
+): Promise<{
+  charset: string | null;
+  sortorderName: string | null;
+  caseSensitive: boolean | null;
+} | null> {
+  try {
+    const response = await fetchFn(
+      `${amsBaseUrl}/api/model/projects/${encodeURIComponent(projectId)}` +
+        `/architectures/${encodeURIComponent(architectureId)}/discovery/runs`,
+      { headers: { Accept: 'application/json' } },
+    );
+    if (!response.ok) return null;
+    const runs = (await response.json()) as Array<{
+      discovery_kind?: string;
+      status?: string;
+      started_at?: string;
+      steps_payload?: { database?: { server_charset?: unknown } };
+    }>;
+    const latest = (Array.isArray(runs) ? runs : [])
+      .filter(
+        (r) =>
+          String(r.discovery_kind ?? '') === 'database' &&
+          String(r.status ?? '').toUpperCase() === 'COMPLETED',
+      )
+      .sort((a, b) => String(b.started_at ?? '').localeCompare(String(a.started_at ?? '')))[0];
+    const facts = latest?.steps_payload?.database?.server_charset as
+      | { charset?: unknown; sortorderName?: unknown; caseSensitive?: unknown }
+      | null
+      | undefined;
+    if (!facts) return null;
+    return {
+      charset: facts.charset === null || facts.charset === undefined ? null : String(facts.charset),
+      sortorderName:
+        facts.sortorderName === null || facts.sortorderName === undefined
+          ? null
+          : String(facts.sortorderName),
+      caseSensitive: typeof facts.caseSensitive === 'boolean' ? facts.caseSensitive : null,
+    };
+  } catch {
+    return null;
+  }
+}

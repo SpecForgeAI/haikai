@@ -180,6 +180,12 @@ export interface SourceSchemaIr {
   scopeReceipt?: import('./inputs').PackScopeReceipt | null;
   sourceEngine: string;
   targetEngine: string;
+  /** Detected source-server charset facts from the DB scan (item 3). */
+  sourceCharset?: {
+    charset: string | null;
+    sortorderName: string | null;
+    caseSensitive: boolean | null;
+  } | null;
   tables: IrTable[];
   foreignKeys: IrForeignKey[];
   sequences: IrSequence[];
@@ -388,6 +394,11 @@ export interface PackManifest {
    *  the model fetch removed from target generation, with decision refs.
    *  Reconciliation cites this so excluded tables are an EXPLICIT slice,
    *  never a silent absence. */
+  source_charset?: {
+    charset: string | null;
+    sortorderName: string | null;
+    caseSensitive: boolean | null;
+  } | null;
   scope_receipt?: {
     total_entities: number;
     in_scope: number;

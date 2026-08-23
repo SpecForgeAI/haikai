@@ -63,6 +63,9 @@ export interface SidecarCredentials {
   username: string;
   password: string;
   driver?: SybaseDriverChoice;
+  /** DETECTED server charset (e.g. iso_1), declared on every JDBC
+   *  connection so single-byte data decodes byte-correctly (2026-08-23). */
+  charset?: string;
 }
 
 /** Response shape for {@code POST /test-connection}. */
@@ -338,6 +341,7 @@ export async function callSidecarTestConnection(
     database: creds.database,
     username: creds.username,
     password: creds.password,
+    charset: creds.charset ?? null,
     driver: creds.driver ?? 'auto',
   });
 }
@@ -361,6 +365,7 @@ export async function callSidecarIntrospect(
     database: creds.database,
     username: creds.username,
     password: creds.password,
+    charset: creds.charset ?? null,
     driver: creds.driver ?? 'auto',
     includeSchemas: filters.includeSchemas ?? null,
     includeTables: filters.includeTables ?? null,
@@ -388,6 +393,7 @@ export async function callSidecarQuery(
     database: creds.database,
     username: creds.username,
     password: creds.password,
+    charset: creds.charset ?? null,
     driver: creds.driver ?? 'auto',
     sql: query.sql,
     queryTimeoutSeconds: query.queryTimeoutSeconds ?? 30,

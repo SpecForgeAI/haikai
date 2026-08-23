@@ -29,6 +29,10 @@ public class QueryRequest {
     @NotBlank
     private String password;
 
+    /** Optional DETECTED server charset (e.g. iso_1) declared on the JDBC
+     *  connection so single-byte data decodes correctly (2026-08-23). */
+    private String charset;
+
     @NotBlank
     private String sql;
 
@@ -111,5 +115,13 @@ public class QueryRequest {
 
     public void setMaxRows(final Integer maxRows) {
         this.maxRows = maxRows;
+    }
+
+    public String getCharset() {
+        return this.charset;
+    }
+
+    public void setCharset(final String charset) {
+        this.charset = charset;
     }
 }

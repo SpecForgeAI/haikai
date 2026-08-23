@@ -38,6 +38,7 @@ import { logger } from './logger';
 import {
   accountingFromIr,
   buildSourceSchemaIr,
+  fetchServerCharsetFacts,
   canonicalSerialize,
   computeInputSnapshotHash,
   defaultInputFetchDeps,
@@ -919,7 +920,7 @@ export function buildDbMigrationPackArtifacts(
 
   files[bulkManifestIndex] = {
     ...files[bulkManifestIndex],
-    content: emitBulkLoadManifest({ tableOrder, expectedRowCounts, castNotes, seedMargin }),
+    content: emitBulkLoadManifest({ tableOrder, expectedRowCounts, castNotes, seedMargin, sourceCharset: ir.sourceCharset ?? null }),
   };
 
   for (const table of [...orderedTables].sort((a, b) =>
@@ -992,8 +993,39 @@ export function buildDbMigrationPackArtifacts(
   const structuralFindings = deriveStructuralFindings(structuralAccounting);
   const structuralWarnings = structuralFindings.map((f) => f.message);
 
+  // Item 3 (2026-08-23): source charset facts ride the manifest so the data
+  // plane declares the charset on extraction connections; a CASE-SENSITIVE
+  // sortorder raises the target-collation decision (never silently changing
+  // comparison semantics).
+  if (ir.sourceCharset?.caseSensitive === true) {
+    const collationKey = 'target_collation--database';
+    if (!ir.resolvedDecisions[collationKey]) {
+      decisions.push({
+        decisionKey: collationKey,
+        objectRef: 'database',
+        category: 'other',
+        question:
+          `The source server sortorder (${ir.sourceCharset.sortorderName ?? 'unknown'}) is ` +
+          `CASE-SENSITIVE; text equality/uniqueness semantics on the target must be ` +
+          `confirmed. Choose the target collation posture.`,
+        options: [
+          {
+            option: 'preserve_case_sensitive',
+            label: 'Preserve case-sensitive comparison semantics (recommended; default collation)',
+            recommended: true,
+          },
+          {
+            option: 'case_insensitive',
+            label: 'Adopt case-insensitive comparisons (citext / ICU) — a semantics change',
+          },
+        ],
+      } as unknown as PackDecision);
+    }
+  }
+
   const manifest: PackManifest = {
     manifest_version: 1,
+    source_charset: ir.sourceCharset ?? null,
     scope_receipt: ir.scopeReceipt ?? null,
     source_engine: ir.sourceEngine,
     target_engine: ir.targetEngine,
@@ -1506,6 +1538,14 @@ export async function generateDbMigrationPack(
   // Stage 2 — IR (merges findings; rejects unsupported engine pairs).
   logger.info(`[diag-gateway] db_migration_pack stage=ir projectId=${projectId}`);
   const ir = buildSourceSchemaIr(inputs);
+  // Item 3 (2026-08-23): source charset facts from the latest DB scan —
+  // fail-soft; the manifest + bulk manifest carry them so the data plane
+  // declares the charset on extraction connections.
+  ir.sourceCharset = await fetchServerCharsetFacts(
+    getConfig().architectureModelServiceBaseUrl,
+    projectId,
+    architectureId,
+  );
 
   // Stages 3-4 — deterministic mapping + emission (one pure call).
   logger.info(`[diag-gateway] db_migration_pack stage=mapping projectId=${projectId}`);

@@ -183,6 +183,47 @@ export class SybaseDiscoveryPack implements DatabaseDiscoveryPack {
     return this.cachedIntrospection;
   }
 
+  /** Server charset/sortorder detection (2026-08-23, item 3). Config ids
+   *  131 (default character set id) and 123 (default sortorder id) are the
+   *  documented ASE knobs. On success the charset is DECLARED on the pack's
+   *  credentials, so every later sidecar call (introspection, profiling,
+   *  proc harvest, probes) decodes strings byte-correctly. */
+  async detectServerCharset(
+    ctx: DatabaseDiscoveryPackContext,
+  ): Promise<{
+    charset: string | null;
+    sortorderName: string | null;
+    caseSensitive: boolean | null;
+  } | null> {
+    const creds = this.requireCreds();
+    const sql =
+      'SELECT cs.name AS charset_name, so.name AS sortorder_name ' +
+      'FROM master.dbo.syscharsets cs, master.dbo.syscharsets so, ' +
+      'master.dbo.sysconfigures c1, master.dbo.sysconfigures c2 ' +
+      "WHERE c1.config = 131 AND cs.id = c1.value AND cs.type < 2000 " +
+      'AND c2.config = 123 AND so.id = c2.value';
+    const r = await callSidecarQuery(creds, {
+      sql,
+      queryTimeoutSeconds: ctx.config.queryTimeoutSeconds ?? 60,
+      maxRows: 5,
+    });
+    const row = (r.rows ?? [])[0] as Record<string, unknown> | undefined;
+    if (!row) return null;
+    const charset = row.charset_name ? String(row.charset_name) : null;
+    const sortorderName = row.sortorder_name ? String(row.sortorder_name) : null;
+    const caseSensitive =
+      sortorderName === null ? null : !/nocase|noaccent|insensitive/i.test(sortorderName);
+    if (charset) {
+      // Declare on all subsequent connections for this run.
+      this.creds = { ...creds, charset };
+    }
+    console.log(
+      `[diag-pack] db_engine=sybase op=charset_detect charset=${charset ?? 'unknown'} ` +
+        `sortorder=${sortorderName ?? 'unknown'} case_sensitive=${String(caseSensitive)}`,
+    );
+    return { charset, sortorderName, caseSensitive };
+  }
+
   /** Live stored-object harvest (2026-08-23) — read-only via /query. */
   async harvestProcSources(
     ctx: DatabaseDiscoveryPackContext,

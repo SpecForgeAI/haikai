@@ -113,6 +113,12 @@ export interface DatabasePackOrchestratorResult {
   /** LIVE stored proc/function/trigger sources (2026-08-23; empty when the
    *  engine pack lacks the capability or the harvest soft-failed). */
   procSources: import('../../scl/sqlProcHarvester').LiveProcSource[];
+  /** Server charset/sortorder detection (item 3; null when unavailable). */
+  serverCharset: {
+    charset: string | null;
+    sortorderName: string | null;
+    caseSensitive: boolean | null;
+  } | null;
   /** Detected sequence-generator idioms with their live rows (item 2). */
   sequenceIdioms: Array<
     import('../../scl/sqlProcHarvester').SequenceGeneratorIdiom & {
@@ -217,6 +223,7 @@ export async function runDatabasePackDiscovery(
     shortCircuited: false,
     procSources: [],
     sequenceIdioms: [],
+    serverCharset: null,
   };
 
   try {
@@ -374,6 +381,19 @@ export async function runDatabasePackDiscovery(
     // repo can lie about proc bodies; the live catalog is what production
     // executes. Soft-fail LOUD — a missing harvest is a warning finding,
     // never silence.
+    // ----------------------------------------------------------- Phase 1b
+    // Charset/sortorder detection (item 3): runs FIRST so the detected
+    // charset is declared on every later connection this run makes.
+    if (typeof pack.detectServerCharset === 'function') {
+      const cs = await withDbPackSoftFail(
+        'detectServerCharset',
+        () => (pack.detectServerCharset as NonNullable<typeof pack.detectServerCharset>)(packCtx),
+        onWarning,
+        pack.engineKey,
+      );
+      result.serverCharset = cs ?? null;
+    }
+
     if (typeof pack.harvestProcSources === 'function') {
       const procStart = Date.now();
       const sources = await withDbPackSoftFail(

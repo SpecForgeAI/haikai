@@ -3326,6 +3326,10 @@ export async function startDatabaseRun(
         procSourceCount: result.procSources.length,
         proc_sources: result.procSources,
         sequenceIdiomCount: result.sequenceIdioms.length,
+        // Item 3: detected server charset/sortorder — the pack + data plane
+        // read this to declare the charset on extraction connections and to
+        // raise the target-collation decision.
+        server_charset: result.serverCharset,
       },
     };
 

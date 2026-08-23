@@ -306,8 +306,14 @@ export function emitBulkLoadManifest(args: {
   expectedRowCounts: Record<string, number>;
   castNotes: Record<string, string[]>;
   seedMargin: number;
+  sourceCharset?: {
+    charset: string | null;
+    sortorderName: string | null;
+    caseSensitive: boolean | null;
+  } | null;
 }): string {
   const manifest = {
+    source_charset: args.sourceCharset ?? null,
     phase_ordering: FIVE_PHASE_ORDERING,
     delete_propagation: DELETE_PROPAGATION_STATEMENT,
     seed_margin: args.seedMargin,

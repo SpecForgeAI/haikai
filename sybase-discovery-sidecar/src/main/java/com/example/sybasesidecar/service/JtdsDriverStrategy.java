@@ -56,10 +56,26 @@ public final class JtdsDriverStrategy implements DriverStrategy {
             final String username,
             final String password
     ) throws SQLException {
+        return this.openConnection(host, port, database, username, password, null);
+    }
+
+    @Override
+    public Connection openConnection(
+            final String host,
+            final int port,
+            final String database,
+            final String username,
+            final String password,
+            final String charset
+    ) throws SQLException {
         if (!this.available) {
             throw new SQLException("jTDS driver not available on classpath");
         }
-        final String url = this.buildJdbcUrl(host, port, database);
+        String url = this.buildJdbcUrl(host, port, database);
+        if (charset != null && !charset.isEmpty()
+                && charset.matches("[A-Za-z0-9_\\-]+")) {
+            url = url + ";charset=" + charset;
+        }
         return DriverManager.getConnection(url, username, password);
     }
 }

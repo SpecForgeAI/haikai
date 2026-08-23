@@ -64,6 +64,24 @@ public class SybaseMutationService {
             final int timeoutSeconds,
             final boolean restoreMode
     ) {
+        return this.mutate(choice, host, port, database, username, password,
+                statements, transactional, timeoutSeconds, restoreMode, null);
+    }
+
+    /** Charset-aware variant (2026-08-23). */
+    public MutationResponse mutate(
+            final SybaseDriverChoice choice,
+            final String host,
+            final int port,
+            final String database,
+            final String username,
+            final String password,
+            final List<String> statements,
+            final boolean transactional,
+            final int timeoutSeconds,
+            final boolean restoreMode,
+            final String charset
+    ) {
         try {
             if (restoreMode) {
                 MutationSqlGuard.assertRestoreBatch(statements);
@@ -78,7 +96,7 @@ public class SybaseMutationService {
         Connection conn = null;
         final List<Integer> rowCounts = new ArrayList<>();
         try {
-            conn = this.openWritableConnection(choice, host, port, database, username, password);
+            conn = this.openWritableConnection(choice, host, port, database, username, password, charset);
             if (transactional) {
                 conn.setAutoCommit(false);
             }
@@ -134,13 +152,14 @@ public class SybaseMutationService {
             final int port,
             final String database,
             final String username,
-            final String password
+            final String password,
+            final String charset
     ) throws SQLException {
         if (choice == SybaseDriverChoice.AUTO) {
             SQLException jtdsErr;
             try {
                 final Connection conn =
-                        this.jtds.openConnection(host, port, database, username, password);
+                        this.jtds.openConnection(host, port, database, username, password, charset);
                 LOG.info("[diag-sidecar] op=mutate driver_attempt driver=jtds result=ok auto=true");
                 return conn;
             } catch (final SQLException e) {
@@ -151,13 +170,13 @@ public class SybaseMutationService {
                 throw jtdsErr;
             }
             final Connection conn =
-                    this.jconnect.openConnection(host, port, database, username, password);
+                    this.jconnect.openConnection(host, port, database, username, password, charset);
             LOG.info("[diag-sidecar] op=mutate driver_attempt driver=jconnect result=ok auto=true");
             return conn;
         }
         final DriverStrategy strat =
                 choice == SybaseDriverChoice.JCONNECT ? this.jconnect : this.jtds;
-        final Connection conn = strat.openConnection(host, port, database, username, password);
+        final Connection conn = strat.openConnection(host, port, database, username, password, charset);
         LOG.info("[diag-sidecar] op=mutate driver_attempt driver={} result=ok forced=true", strat.name());
         return conn;
     }

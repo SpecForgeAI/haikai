@@ -28,6 +28,10 @@ public class IntrospectionRequest {
     @NotBlank
     private String password;
 
+    /** Optional DETECTED server charset (e.g. iso_1) declared on the JDBC
+     *  connection so single-byte data decodes correctly (2026-08-23). */
+    private String charset;
+
     private List<String> includeSchemas;
     private List<String> includeTables;
 
@@ -113,5 +117,13 @@ public class IntrospectionRequest {
 
     public void setQueryTimeoutSeconds(final Integer queryTimeoutSeconds) {
         this.queryTimeoutSeconds = queryTimeoutSeconds;
+    }
+
+    public String getCharset() {
+        return this.charset;
+    }
+
+    public void setCharset(final String charset) {
+        this.charset = charset;
     }
 }
