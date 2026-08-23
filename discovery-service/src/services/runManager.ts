@@ -2785,6 +2785,34 @@ async function startServiceScopedRun(
           );
         }
       }
+      // Shakedown fix 3 (2026-08-23): the repo-vs-live proc merge findings
+      // (drift / live-only / repo-only / duplicate) previously lived ONLY on
+      // the structural corpus artifact (Structural Model tab). They are
+      // migration-load-bearing — promote them into the run findings register
+      // where every other loud signal lands. Soft-fail, never dents the run.
+      if (structural.corpus) {
+        try {
+          const procFindings = (structural.corpus.findings ?? []).filter((f) =>
+            String(f.kind ?? '').startsWith('proc_'),
+          );
+          if (procFindings.length > 0) {
+            const inputs = procMergeFindingInputs(procFindings);
+            await findingEmitter.emitFindings(
+              { runId, projectId, architectureId: '' },
+              inputs,
+            );
+            console.log(
+              `[RunManager:service-scoped] Proc merge findings promoted to run register: ${inputs.length}`,
+            );
+          }
+        } catch (procFindingErr) {
+          console.warn(
+            `[RunManager:service-scoped] Proc finding promotion failed (corpus copy remains authoritative): ${
+              procFindingErr instanceof Error ? procFindingErr.message : String(procFindingErr)
+            }`,
+          );
+        }
+      }
       structuralScan = structural.outcome;
       console.log(
         `[RunManager:service-scoped] Structural scan ${structuralScan.status}` +
@@ -3187,6 +3215,36 @@ function convertDatabasePayloadsToCandidates(
  * candidate per corpus `web_xml:` root. Pure + deduped against existing
  * candidate names so re-scans stay additive.
  */
+/**
+ * Map repo-vs-live proc merge findings (SclFinding kind `proc_*`) to run
+ * findings register inputs (shakedown fix 3, 2026-08-23). Pure — pinned by
+ * tests; the emission site stays soft-fail.
+ */
+export function procMergeFindingInputs(
+  procFindings: Array<{ kind: string; symbol?: string; detail?: string; candidates?: string[] }>,
+): FindingEmitInput[] {
+  const severityByKind: Record<string, string> = {
+    proc_repo_drift: 'medium',
+    proc_repo_duplicate: 'medium',
+    proc_live_only: 'medium',
+    proc_repo_only: 'low',
+  };
+  return procFindings.map((f) => ({
+    findingType: String(f.kind),
+    category: 'proc_catalog',
+    severity: severityByKind[String(f.kind)] ?? 'low',
+    title: `${String(f.kind)}: ${String(f.symbol ?? '')}`,
+    summary: String(f.detail ?? ''),
+    detailJson: {
+      procName: String(f.symbol ?? ''),
+      kind: String(f.kind),
+      candidates: f.candidates ?? null,
+    },
+    source: 'scl_proc_merge',
+    createdByStage: 'structural_scan',
+  }));
+}
+
 export function mintOperationalHttpCandidates(
   roots: Array<{ kind?: string; symbol?: string; detail?: string }>,
   runId: string,

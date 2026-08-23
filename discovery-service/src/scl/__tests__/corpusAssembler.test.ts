@@ -321,3 +321,39 @@ describe('web.xml handler roots (Oracle Nine item 6)', () => {
     ).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Shakedown fix 3 (2026-08-23): proc merge findings -> run findings register
+// ---------------------------------------------------------------------------
+import { procMergeFindingInputs } from '../../services/runManager';
+
+describe('procMergeFindingInputs', () => {
+  it('maps drift/live-only kinds to register inputs with severity + provenance', () => {
+    const inputs = procMergeFindingInputs([
+      {
+        kind: 'proc_repo_drift',
+        symbol: 'updatetree_roll',
+        detail: 'repo and live bodies differ (md5 mismatch)',
+        candidates: ['db/procs/005.updateTree_roll.sql'],
+      },
+      { kind: 'proc_live_only', symbol: 'updatebook_x22', detail: 'live catalog only' },
+      { kind: 'proc_unknown_future', symbol: 'p', detail: 'd' },
+    ]);
+    expect(inputs).toHaveLength(3);
+    expect(inputs[0]).toMatchObject({
+      findingType: 'proc_repo_drift',
+      category: 'proc_catalog',
+      severity: 'medium',
+      title: 'proc_repo_drift: updatetree_roll',
+      source: 'scl_proc_merge',
+      createdByStage: 'structural_scan',
+    });
+    expect(inputs[0].detailJson).toMatchObject({
+      procName: 'updatetree_roll',
+      candidates: ['db/procs/005.updateTree_roll.sql'],
+    });
+    expect(inputs[1].severity).toBe('medium');
+    // Unknown future kinds degrade to low, never throw.
+    expect(inputs[2].severity).toBe('low');
+  });
+});

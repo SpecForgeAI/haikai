@@ -293,6 +293,23 @@ export const StructuralModelTab: React.FC<StructuralModelTabProps> = ({
             </span>
           </div>
         </div>
+        {/* Shakedown fix 3b (2026-08-23): the live-vs-repo proc merge counts
+            were persisted but rendered NOWHERE. Drift between repo and live
+            proc bodies is migration-load-bearing — say it here, loudly. */}
+        {stats?.procMerge && (
+          <p className={styles.annotationSummary} data-testid="structural-model-proc-merge">
+            Proc catalog (live-merged): {stats.procMerge.mergedCount ?? 0} procs ·{' '}
+            {stats.procMerge.repoCount ?? 0} repo · {stats.procMerge.liveCount ?? 0} live ·{' '}
+            {stats.procMerge.driftCount ?? 0} drift · {stats.procMerge.liveOnlyCount ?? 0} live-only ·{' '}
+            {stats.procMerge.repoOnlyCount ?? 0} repo-only ·{' '}
+            {stats.procMerge.repoDuplicateCount ?? 0} repo-duplicate
+          </p>
+        )}
+        {stats && !stats.procMerge && scan.status === 'completed' && (
+          <p className={styles.annotationSummary} data-testid="structural-model-proc-merge-absent">
+            Proc catalog: repo-only (no completed database scan supplied live proc sources)
+          </p>
+        )}
         {annotation && (
           <p className={styles.annotationSummary} data-testid="structural-model-annotation-summary">
             Annotation: {annotation.annotated ?? 0} annotated ·{' '}
