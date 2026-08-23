@@ -105,6 +105,9 @@ export interface IrTable {
   /** Foundations sequence-generator decision materialized on the legacy
    *  sequence TABLE (Oracle Nine item 2): target identity strategy +
    *  confirmed name -> table.column mappings. */
+  /** VERIFIED parity key from foundations (item 4) — the reconcile join
+   *  anchor when the PK is absent, surrogate, or bi-temporally weak. */
+  parityKey?: { columns: string[]; verified: boolean; decision_ref?: string } | null;
   sequenceGenerator?: {
     strategy: 'native' | 'native_with_view' | 'table_emulation' | string;
     name_column?: string | null;
@@ -394,6 +397,12 @@ export interface PackManifest {
    *  the model fetch removed from target generation, with decision refs.
    *  Reconciliation cites this so excluded tables are an EXPLICIT slice,
    *  never a silent absence. */
+  parity_keys?: Array<{
+    schemaName: string | null;
+    tableName: string;
+    columns: string[];
+    verified: boolean;
+  }> | null;
   source_charset?: {
     charset: string | null;
     sortorderName: string | null;

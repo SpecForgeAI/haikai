@@ -41,7 +41,7 @@ charset config, sequence rows, uniqueness probes).
    key-posture foundations propose a VERIFIED `parity_key` per table
    (stored like key_policy, reconciler-materialized); reconcile join
    consumes it; count+checksum for truly keyless; pinned test that the
-   `9999-12-31` open sentinel survives type mapping. STATUS: pending.
+   `9999-12-31` open sentinel survives type mapping. STATUS: MERGED.
 5. **Quiet-window guardrail + audit-sink** — AMVS pre-capture fingerprints
    twice (configurable gap), REFUSES to start until every drifting table is
    volatile/audit-sink (named list); write-only foundations answer records
@@ -68,6 +68,15 @@ charset config, sequence rows, uniqueness probes).
    fallback. STATUS: pending.
 
 ## Per-item as-built notes
+
+### Item 4 (as-built)
+- Pack capability probeKeyCandidate (Sybase: `(SELECT COUNT(*)) vs (SELECT COUNT(*) FROM (SELECT DISTINCT cols))` via /query, identifier-guarded); orchestrator Phase 5b generates <=3 tuples per PK-less table (unique-index cols; +temporal valid_from/valid_to pair; first-col+temporal fallback), probe budget 60, envelope keyProbes; runManager enriches table candidates data.parity_key_probes + steps_payload keyProbeTableCount.
+- Frontend key_posture: a live-VERIFIED unique tuple rides EVERY option payload (parity_key + parity_key_verified) with detail note; no-unique -> parity_mode count_checksum on every option; probes fingerprint joins the evidence hash (changed probes reopen).
+- MCP materializes constraints_metadata.parity_key {columns, verified, decision_ref} / parity_mode.
+- Gateway: IrTable.parityKey from constraints_metadata; manifest.parity_keys; migrationDataParityReconcile PREFERS verified parity keys over manifest PKs (surrogate/absent/bi-temporally-weak PKs no longer force unverifiable).
+- Sentinel pin: timestamp-truncate canonicalizes the 9999-12-31 open sentinel to a finite epoch identical from both engines' renderings.
+- Tests: frontend 2 pins (verified-tuple payload, honest count+checksum), sentinel pin; suites: discovery 148, gateway 33/284+17, frontend foundations 22, mcp 4.
+- PICKUP: discovery-service + frontend + mcp-server + gateway restarts; DB scan re-run probes keys.
 
 ### Item 3 (as-built)
 - Sidecar (Java, REBUILD REQUIRED on pickup): optional `charset` threaded request-models -> controller -> query/mutation services -> DriverStrategy 6-arg overload (jConnect props CHARSET; jTDS `;charset=` URL param, identifier-validated); old signatures preserved (default null); 93 Java tests green.

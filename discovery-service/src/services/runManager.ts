@@ -3228,6 +3228,17 @@ export async function startDatabaseRun(
         };
       }
     }
+    // Parity-key probe enrichment (item 4): probes ride the table candidate
+    // so the key-posture foundations card proposes a VERIFIED parity key.
+    for (const probeEntry of result.keyProbes) {
+      const target = result.candidates.find(
+        (c) =>
+          c.candidateType === 'physical_data_entities' &&
+          String(c.name ?? '').toLowerCase() === probeEntry.tableName.toLowerCase(),
+      );
+      if (!target) continue;
+      (target.data as Record<string, unknown>).parity_key_probes = probeEntry.probes;
+    }
     if (result.candidates.length > 0) {
       const converted = convertDatabasePayloadsToCandidates(result.candidates, runId);
       const sortedCandidates = sortCandidatesParentsFirst(converted);
@@ -3330,6 +3341,7 @@ export async function startDatabaseRun(
         // read this to declare the charset on extraction connections and to
         // raise the target-collation decision.
         server_charset: result.serverCharset,
+        keyProbeTableCount: result.keyProbes.length,
       },
     };
 

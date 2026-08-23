@@ -40,12 +40,13 @@
     {
       "body_json": {
         "annotations": [
+          "@Path(\"/nodes\")",
           "@GET",
           "@Path(\"/{nodeId}\")",
           "@Produces(MediaType.APPLICATION_JSON)"
         ],
-        "contentHash": "d4b2380a3aa9270de2e85914ce337cd563b85c6f06bf4b197cf196e9866bdeab",
-        "key": "T-6e89b7944dfe",
+        "contentHash": "1a46a3044344a11c9c2966b5c1c5fb2415062478caf68624832672adce3a8d3f",
+        "key": "T-a6ac463def56",
         "kind": "behaviour_table",
         "outcomeSignature": [
           {
@@ -127,8 +128,8 @@
         "startLine": 18,
         "symbol": "com.legacy.hier.api.NodeResource#getNode(String)"
       },
-      "content_hash": "d4b2380a3aa9270de2e85914ce337cd563b85c6f06bf4b197cf196e9866bdeab",
-      "contract_key": "T-6e89b7944dfe",
+      "content_hash": "1a46a3044344a11c9c2966b5c1c5fb2415062478caf68624832672adce3a8d3f",
+      "contract_key": "T-a6ac463def56",
       "fan_in": 1,
       "kind": "behaviour_table",
       "roots_json": {
@@ -183,11 +184,12 @@
     {
       "body_json": {
         "annotations": [
+          "@Path(\"/views\")",
           "@GET",
           "@Produces({MediaType.APPLICATION_JSON, MediaType.APPLICATION_XML})"
         ],
-        "contentHash": "0dbe3a76a8111ff375c036138c01b4298e6da36aab0671d985f5eacd7ce1db64",
-        "key": "T-ff2f0c4e9174",
+        "contentHash": "a1a354b38658963e22fdf6fffb885ab8ea956758a5274851f5a132eeba20e972",
+        "key": "T-7d13d433c613",
         "kind": "behaviour_table",
         "outcomeSignature": [
           {
@@ -299,8 +301,8 @@
         "startLine": 38,
         "symbol": "com.legacy.hier.api.ViewResource#getAllViews(String,String,HttpHeaders)"
       },
-      "content_hash": "0dbe3a76a8111ff375c036138c01b4298e6da36aab0671d985f5eacd7ce1db64",
-      "contract_key": "T-ff2f0c4e9174",
+      "content_hash": "a1a354b38658963e22fdf6fffb885ab8ea956758a5274851f5a132eeba20e972",
+      "contract_key": "T-7d13d433c613",
       "fan_in": 1,
       "kind": "behaviour_table",
       "roots_json": {
@@ -316,12 +318,13 @@
     {
       "body_json": {
         "annotations": [
+          "@Path(\"/views\")",
           "@GET",
           "@Path(\"/{viewId}\")",
           "@Produces({MediaType.APPLICATION_JSON, MediaType.APPLICATION_XML})"
         ],
-        "contentHash": "d040ae12098fb17f56accac92a1cd581c974249189a2e5203856fdfd25ce38e0",
-        "key": "T-4e986345c65b",
+        "contentHash": "7da5e569b12050006a1757a08d8d86106af444c8523e2baed4841b44f600a192",
+        "key": "T-719726597d65",
         "kind": "behaviour_table",
         "outcomeSignature": [
           {
@@ -437,8 +440,8 @@
         "startLine": 22,
         "symbol": "com.legacy.hier.api.ViewResource#getView(String,String,Integer,HttpHeaders)"
       },
-      "content_hash": "d040ae12098fb17f56accac92a1cd581c974249189a2e5203856fdfd25ce38e0",
-      "contract_key": "T-4e986345c65b",
+      "content_hash": "7da5e569b12050006a1757a08d8d86106af444c8523e2baed4841b44f600a192",
+      "contract_key": "T-719726597d65",
       "fan_in": 1,
       "kind": "behaviour_table",
       "roots_json": {
@@ -453,8 +456,8 @@
     },
     {
       "body_json": {
-        "contentHash": "69d5137216bf263da78d6b56614c969b19fae7cb4e7992cb3bf38ba9fe6d4f1d",
-        "key": "Q-69d5137216bf",
+        "contentHash": "5f69702d539bf52cbad5b7b32f858a7f9c7d2531844fae9ad093bddb4fed40ad",
+        "key": "Q-5f69702d539b",
         "kind": "boundary",
         "operations": [
           {
@@ -464,7 +467,7 @@
               "path": "src/main/java/com/legacy/hier/dao/ViewDao.java"
             },
             "resultShape": "S-1f2ed1506a4b",
-            "sqlVerbatim": "\"SELECT id, name, valid_from, valid_to FROM hier_view WHERE view_id = ? ORDER BY version DESC\""
+            "sqlVerbatim": "\"SELECT id, name, valid_from, valid_to FROM hier_view WHERE view_id = ? ORDER BY version DESC\" \"findLatest failed for view \""
           },
           {
             "name": "findAll",
@@ -473,14 +476,14 @@
               "path": "src/main/java/com/legacy/hier/dao/ViewDao.java"
             },
             "resultShape": "S-1f2ed1506a4b",
-            "sqlVerbatim": "\"SELECT id, name, valid_from, valid_to FROM hier_view WHERE valid_to IS NULL\""
+            "sqlVerbatim": "\"SELECT id, name, valid_from, valid_to FROM hier_view WHERE valid_to IS NULL\" \"findAll failed\""
           }
         ],
         "sourcePath": "src/main/java/com/legacy/hier/dao/ViewDao.java",
         "symbol": "com.legacy.hier.dao.ViewDao"
       },
-      "content_hash": "69d5137216bf263da78d6b56614c969b19fae7cb4e7992cb3bf38ba9fe6d4f1d",
-      "contract_key": "Q-69d5137216bf",
+      "content_hash": "5f69702d539bf52cbad5b7b32f858a7f9c7d2531844fae9ad093bddb4fed40ad",
+      "contract_key": "Q-5f69702d539b",
       "fan_in": 2,
       "kind": "boundary",
       "roots_json": {
@@ -1261,7 +1264,7 @@
     {
       "body_json": {
         "annotations": [],
-        "contentHash": "5ce90c3ca23784eb47e711413237470745277704ceab65a14d14b8785fa0e51c",
+        "contentHash": "cb432f3374f4e53546157433b9001a0495dbac74a677dd2885e343056f984c62",
         "key": "T-40150aaa1c61",
         "kind": "behaviour_table",
         "outcomeSignature": [
@@ -1272,7 +1275,7 @@
           }
         ],
         "references": [
-          "Q-69d5137216bf"
+          "Q-5f69702d539b"
         ],
         "rows": [
           {
@@ -1281,7 +1284,7 @@
             "index": 0,
             "kind": "terminal",
             "outcome": {
-              "targetKey": "Q-69d5137216bf",
+              "targetKey": "Q-5f69702d539b",
               "targetSymbol": "com.legacy.hier.dao.ViewDao#findAll()",
               "type": "call"
             }
@@ -1297,7 +1300,7 @@
         "startLine": 29,
         "symbol": "com.legacy.hier.provider.ViewCache#getAllViews(AuditInfo)"
       },
-      "content_hash": "5ce90c3ca23784eb47e711413237470745277704ceab65a14d14b8785fa0e51c",
+      "content_hash": "cb432f3374f4e53546157433b9001a0495dbac74a677dd2885e343056f984c62",
       "contract_key": "T-40150aaa1c61",
       "fan_in": 1,
       "kind": "behaviour_table",
@@ -1314,7 +1317,7 @@
     {
       "body_json": {
         "annotations": [],
-        "contentHash": "bcf92f2fa71a75f19f90652ad839009941c70ee89094a4841266853685d86b26",
+        "contentHash": "30e2d725013818a067a2c722c2ff4a25ab3e16d927d408baeee6390d58799b0e",
         "key": "T-401457e9d4b6",
         "kind": "behaviour_table",
         "outcomeSignature": [
@@ -1335,7 +1338,7 @@
           }
         ],
         "references": [
-          "Q-69d5137216bf"
+          "Q-5f69702d539b"
         ],
         "rows": [
           {
@@ -1365,7 +1368,7 @@
             "index": 1,
             "kind": "branch",
             "outcome": {
-              "targetKey": "Q-69d5137216bf",
+              "targetKey": "Q-5f69702d539b",
               "targetSymbol": "com.legacy.hier.dao.ViewDao#findLatest(Integer)",
               "type": "call"
             }
@@ -1418,7 +1421,7 @@
         "startLine": 16,
         "symbol": "com.legacy.hier.provider.ViewCache#getViewViaCache(Integer,AuditInfo)"
       },
-      "content_hash": "bcf92f2fa71a75f19f90652ad839009941c70ee89094a4841266853685d86b26",
+      "content_hash": "30e2d725013818a067a2c722c2ff4a25ab3e16d927d408baeee6390d58799b0e",
       "contract_key": "T-401457e9d4b6",
       "fan_in": 1,
       "kind": "behaviour_table",

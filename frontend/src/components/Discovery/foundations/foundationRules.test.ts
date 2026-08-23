@@ -474,3 +474,53 @@ describe('sequence_generator decision (Oracle Nine item 2)', () => {
     ).toBe(false);
   });
 });
+
+describe('parity-key enrichment on key_posture (Oracle Nine item 4)', () => {
+  const keylessTable = (probes: unknown) => [
+    {
+      candidate_type: 'physical_data_entities',
+      name: 'deal_book',
+      data: { objectType: 'table', parity_key_probes: probes },
+    },
+    {
+      candidate_type: 'physical_data_attributes',
+      name: 'HierarchyId',
+      data: { tableName: 'deal_book', dataType: 'int', isNullable: true },
+    },
+  ];
+
+  it('a live-VERIFIED unique tuple rides every option payload as parity_key', () => {
+    const facts = entityFactsFromCandidates(
+      keylessTable([
+        { columns: ['ValidTo', 'HierarchyId', 'ValidFrom'], total: 954411, distinct: 954000, unique: false },
+        { columns: ['HierarchyId', 'ValidFrom', 'ValidTo', 'AlternateBookId'], total: 954411, distinct: 954411, unique: true },
+      ]),
+    );
+    const q = deriveFoundationQuestions(facts, []).find(
+      (x) => x.question_key === 'FQ-key_posture-deal_book',
+    )!;
+    expect(q.detail).toContain('LIVE-VERIFIED parity key available');
+    for (const option of q.options) {
+      expect((option.payload as Record<string, unknown>).parity_key).toEqual([
+        'HierarchyId',
+        'ValidFrom',
+        'ValidTo',
+        'AlternateBookId',
+      ]);
+      expect((option.payload as Record<string, unknown>).parity_key_verified).toBe(true);
+    }
+  });
+
+  it('no unique tuple -> honest count+checksum mode on every option', () => {
+    const facts = entityFactsFromCandidates(
+      keylessTable([{ columns: ['HierarchyId', 'ValidFrom'], total: 100, distinct: 93, unique: false }]),
+    );
+    const q = deriveFoundationQuestions(facts, []).find(
+      (x) => x.question_key === 'FQ-key_posture-deal_book',
+    )!;
+    expect(q.detail).toContain('count+checksum');
+    for (const option of q.options) {
+      expect((option.payload as Record<string, unknown>).parity_mode).toBe('count_checksum');
+    }
+  });
+});

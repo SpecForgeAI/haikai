@@ -119,6 +119,17 @@ export interface DatabasePackOrchestratorResult {
     sortorderName: string | null;
     caseSensitive: boolean | null;
   } | null;
+  /** VERIFIED parity-key probes for tables without a sound PK (item 4). */
+  keyProbes: Array<{
+    schemaName: string | null;
+    tableName: string;
+    probes: Array<{
+      columns: string[];
+      total: number | null;
+      distinct: number | null;
+      unique: boolean | null;
+    }>;
+  }>;
   /** Detected sequence-generator idioms with their live rows (item 2). */
   sequenceIdioms: Array<
     import('../../scl/sqlProcHarvester').SequenceGeneratorIdiom & {
@@ -224,6 +235,7 @@ export async function runDatabasePackDiscovery(
     procSources: [],
     sequenceIdioms: [],
     serverCharset: null,
+    keyProbes: [],
   };
 
   try {
@@ -464,6 +476,113 @@ export async function runDatabasePackDiscovery(
         `declared=${relDeclared} inferred=${relInferred} ambiguous=${relAmbiguous} ` +
         `elapsed_ms=${Date.now() - relInferStart}`,
     );
+
+    // ----------------------------------------------------------- Phase 5b
+    // Parity-key uniqueness probes (item 4): for tables WITHOUT a declared
+    // PK, probe candidate tuples on the LIVE data so foundations can
+    // propose a VERIFIED parity key instead of an unverifiable guess.
+    // Tuples per table (deduped, max 3): unique-index columns; unique-index
+    // columns + the bi-temporal pair (valid_from/valid_to-style names);
+    // first index columns + the temporal pair. Total probes capped at 60.
+    if (typeof pack.probeKeyCandidate === 'function') {
+      const TEMPORAL_FROM_RE = /^valid_?from$/i;
+      const TEMPORAL_TO_RE = /^valid_?to$/i;
+      const pkTables = new Set(
+        introspection.keysAndIndexes
+          .filter((k: { kind?: string }) => (k as { kind?: string }).kind === 'primary_key')
+          .map((k) =>
+            `${String((k as { schemaName?: string }).schemaName ?? '')}.${String(
+              (k as { tableName?: string }).tableName ?? '',
+            )}`.toLowerCase(),
+          ),
+      );
+      let probeBudget = 60;
+      for (const table of introspection.tables) {
+        if (probeBudget <= 0) break;
+        const schemaName = String((table as { schemaName?: string }).schemaName ?? '') || null;
+        const tableName = String((table as { tableName?: string }).tableName ?? '');
+        if (!tableName) continue;
+        if (pkTables.has(`${schemaName ?? ''}.${tableName}`.toLowerCase())) continue;
+        const tableCols = introspection.columns
+          .filter(
+            (c) =>
+              String((c as { tableName?: string }).tableName ?? '').toLowerCase() ===
+              tableName.toLowerCase(),
+          )
+          .map((c) => String((c as { columnName?: string }).columnName ?? ''));
+        const temporalFrom = tableCols.find((c) => TEMPORAL_FROM_RE.test(c));
+        const temporalTo = tableCols.find((c) => TEMPORAL_TO_RE.test(c));
+        const indexTuples = introspection.keysAndIndexes
+          .filter(
+            (k: { tableName?: string; columns?: string[] }) =>
+              String((k as { tableName?: string }).tableName ?? '').toLowerCase() ===
+                tableName.toLowerCase() &&
+              Array.isArray((k as { columns?: string[] }).columns) &&
+              ((k as { columns?: string[] }).columns as string[]).length > 0,
+          )
+          .map((k) => (k as { columns: string[] }).columns);
+        const tuples: string[][] = [];
+        const pushTuple = (cols: string[]): void => {
+          const key = cols.map((c) => c.toLowerCase()).join('|');
+          if (cols.length === 0) return;
+          if (tuples.some((x) => x.map((c) => c.toLowerCase()).join('|') === key)) return;
+          if (tuples.length >= 3) return;
+          tuples.push(cols);
+        };
+        if (indexTuples[0]) pushTuple(indexTuples[0]);
+        if (indexTuples[0] && temporalFrom && temporalTo) {
+          const augmented = [...indexTuples[0]];
+          for (const extra of [temporalFrom, temporalTo]) {
+            if (!augmented.some((c) => c.toLowerCase() === extra.toLowerCase())) {
+              augmented.push(extra);
+            }
+          }
+          pushTuple(augmented);
+        }
+        if (tuples.length === 0 && temporalFrom && temporalTo && tableCols.length > 0) {
+          pushTuple([tableCols[0], temporalFrom, temporalTo]);
+        }
+        if (tuples.length === 0) continue;
+        const probes: Array<{
+          columns: string[];
+          total: number | null;
+          distinct: number | null;
+          unique: boolean | null;
+        }> = [];
+        for (const columns of tuples) {
+          if (probeBudget <= 0) break;
+          probeBudget--;
+          const probed = await withDbPackSoftFail(
+            `probeKeyCandidate.${tableName}`,
+            () =>
+              (pack.probeKeyCandidate as NonNullable<typeof pack.probeKeyCandidate>)(packCtx, {
+                schemaName,
+                tableName,
+                columns,
+              }),
+            onWarning,
+            pack.engineKey,
+          );
+          if (!probed) continue;
+          probes.push({
+            columns,
+            total: probed.total,
+            distinct: probed.distinct,
+            unique:
+              probed.total !== null && probed.distinct !== null
+                ? probed.total === probed.distinct
+                : null,
+          });
+        }
+        if (probes.length > 0) result.keyProbes.push({ schemaName, tableName, probes });
+      }
+      if (result.keyProbes.length > 0) {
+        console.log(
+          `[diag-pack] db_engine=${pack.engineKey} stage=key_probes ` +
+            `tables=${result.keyProbes.length}`,
+        );
+      }
+    }
 
     // ------------------------------------------------------------- Phase 6
     const candidates = await withDbPackSoftFail(

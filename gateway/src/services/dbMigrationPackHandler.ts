@@ -1025,6 +1025,14 @@ export function buildDbMigrationPackArtifacts(
 
   const manifest: PackManifest = {
     manifest_version: 1,
+    parity_keys: ir.tables
+      .filter((tbl) => tbl.parityKey && tbl.parityKey.columns.length > 0)
+      .map((tbl) => ({
+        schemaName: tbl.schemaName ?? null,
+        tableName: tbl.tableName,
+        columns: (tbl.parityKey as { columns: string[] }).columns,
+        verified: (tbl.parityKey as { verified: boolean }).verified === true,
+      })),
     source_charset: ir.sourceCharset ?? null,
     scope_receipt: ir.scopeReceipt ?? null,
     source_engine: ir.sourceEngine,
