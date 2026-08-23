@@ -143,6 +143,16 @@ export interface JavaProjectIndex {
    * for the corpus closure. Maps resource path → the FQNs it mentions.
    */
   configReferences: Map<string, string[]>;
+  /** web.xml servlet-mappings (Oracle Nine item 6): url-pattern joined to
+   *  its servlet-class + servlet-name — non-annotation HTTP entry points
+   *  (HttpRequestHandler beans, raw servlets) the annotation detectors
+   *  never see. */
+  webXmlHandlerMappings: Array<{
+    urlPattern: string;
+    servletName: string;
+    servletClass: string;
+    sourcePath: string;
+  }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -658,6 +668,38 @@ export async function indexJavaProject(rootDir: string): Promise<JavaProjectInde
     }
   }
 
+  // web.xml servlet-mapping parse (item 6): regex-level, join servlet-name.
+  const webXmlHandlerMappings: JavaProjectIndex['webXmlHandlerMappings'] = [];
+  for (const resPath of resourceXmlFiles) {
+    if (!/(^|[\\/])web\.xml$/i.test(resPath)) continue;
+    let text: string;
+    try {
+      text = fs.readFileSync(resPath, 'utf8');
+    } catch {
+      continue;
+    }
+    const classByName = new Map<string, string>();
+    const servletRe =
+      /<servlet>[\s\S]*?<servlet-name>\s*([^<]+?)\s*<\/servlet-name>[\s\S]*?<servlet-class>\s*([^<]+?)\s*<\/servlet-class>[\s\S]*?<\/servlet>/g;
+    let sm: RegExpExecArray | null;
+    while ((sm = servletRe.exec(text)) !== null) {
+      classByName.set(sm[1], sm[2]);
+    }
+    const mappingRe =
+      /<servlet-mapping>[\s\S]*?<servlet-name>\s*([^<]+?)\s*<\/servlet-name>[\s\S]*?<url-pattern>\s*([^<]+?)\s*<\/url-pattern>[\s\S]*?<\/servlet-mapping>/g;
+    while ((sm = mappingRe.exec(text)) !== null) {
+      const servletName = sm[1];
+      const servletClass = classByName.get(servletName) ?? '';
+      webXmlHandlerMappings.push({
+        urlPattern: sm[2],
+        servletName,
+        servletClass,
+        sourcePath: relPath(resPath),
+      });
+    }
+  }
+  webXmlHandlerMappings.sort((a, b) => (a.urlPattern < b.urlPattern ? -1 : 1));
+
   const stripGenerics = (t: string): string => t.replace(/<.*>$/, '').trim();
   const lastSegment = (t: string): string => {
     const s = stripGenerics(t);
@@ -670,6 +712,7 @@ export async function indexJavaProject(rootDir: string): Promise<JavaProjectInde
     classesBySimpleName,
     parseErrors,
     configReferences,
+    webXmlHandlerMappings,
     __pinnedTrees: pinnedTrees,
     implementationsOf(interfaceSimpleOrFqn: string): JavaClassInfo[] {
       const wanted = lastSegment(interfaceSimpleOrFqn);

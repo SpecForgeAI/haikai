@@ -51,7 +51,7 @@ charset config, sequence rows, uniqueness probes).
    implementing beans mapped via `servlet-mapping`; corpus roots + endpoint
    candidates defaulted capture-scope EXCLUDED (like internal
    auto-exclusion; a cache rebuild mid-capture is exactly what the quiet
-   rule forbids). STATUS: pending.
+   rule forbids). STATUS: MERGED.
 7. **Spring bean-property attribution** — `<bean><property name value>`
    parsed per class; `*table?name*` properties with identifier values
    attribute the runtime-INSERT loader's writes (per-class union across
@@ -68,6 +68,13 @@ charset config, sequence rows, uniqueness probes).
    fallback. STATUS: pending.
 
 ## Per-item as-built notes
+
+### Item 6 (as-built)
+- javaProjectIndex.webXmlHandlerMappings (regex servlet + servlet-mapping join by servlet-name, sorted).
+- corpusAssembler detectWebXmlHandlers: direct servlet-class in index OR HttpRequestHandlerServlet bean resolution (@Component("name") / camelCase simple-name match + implements HttpRequestHandler); entry = handleRequest/service/doVerb; external root detail `web_xml:<url-pattern>`.
+- runManager mintOperationalHttpCandidates (exported pure fn): one OPERATIONAL_HTTP interface + POST endpoint candidates (className/methodName threaded for internal-style walking too), deduped vs existing names; called after structural scan; bulk-saved.
+- AMS INTERNAL_INTERFACE_TYPES += OPERATIONAL_HTTP (auto-classified OUT of capture scope; deliberate opt-in) — AMS REBUILD on pickup.
+- Tests: mint pins (dedup, interface parent, silent no-op), end-to-end root pin (tmp project with web.xml + handler -> external web_xml root). SCL 14/147, AMS compiles.
 
 ### Item 5 (as-built)
 - Frontend crud_write_only 'keep_all' answer carries payload {audit_sink: true}; MCP materializes constraints_metadata.audit_sink + decision ref per named table.

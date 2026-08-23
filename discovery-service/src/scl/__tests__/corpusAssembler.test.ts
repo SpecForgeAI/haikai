@@ -287,3 +287,37 @@ describe('assembleCorpus (fixture legacy app)', () => {
     expect(stableStringify(fresh)).toBe(stableStringify(corpus));
   });
 });
+
+describe('web.xml handler roots (Oracle Nine item 6)', () => {
+  it('mintOperationalHttpCandidates: one interface + deduped endpoints from web_xml roots', async () => {
+    const { mintOperationalHttpCandidates } = await import('../../services/runManager');
+    const minted = mintOperationalHttpCandidates(
+      [
+        { kind: 'external', symbol: 'com.x.CacheRefreshHandler#handleRequest(HttpServletRequest,HttpServletResponse)', detail: 'web_xml:/refreshCache' },
+        { kind: 'external', symbol: 'com.x.InfoHandler#handleRequest()', detail: 'web_xml:/serviceInfo' },
+        { kind: 'internal', symbol: 'com.x.Job#main(String[])', detail: 'has_main' },
+      ],
+      'run-1',
+      [{ name: 'POST /serviceInfo' }], // already inventoried -> deduped
+    );
+    expect(minted[0]).toMatchObject({
+      candidateType: 'interfaces',
+      name: 'Operational endpoints (web.xml)',
+    });
+    expect((minted[0].data as Record<string, unknown>).interface_type).toBe('OPERATIONAL_HTTP');
+    const endpoints = minted.slice(1);
+    expect(endpoints).toHaveLength(1);
+    expect(endpoints[0]).toMatchObject({ candidateType: 'endpoints', name: 'POST /refreshCache' });
+    expect((endpoints[0].data as Record<string, unknown>).className).toBe(
+      'com.x.CacheRefreshHandler',
+    );
+    expect(endpoints[0].parentCandidateId).toBe(minted[0].id);
+  });
+
+  it('no web_xml roots -> nothing minted (silent no-op)', async () => {
+    const { mintOperationalHttpCandidates } = await import('../../services/runManager');
+    expect(
+      mintOperationalHttpCandidates([{ kind: 'internal', symbol: 'X#main()', detail: 'has_main' }], 'r', []),
+    ).toEqual([]);
+  });
+});

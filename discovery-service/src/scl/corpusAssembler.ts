@@ -287,6 +287,53 @@ const detectMain: RootDetector = (slice) => {
   return roots;
 };
 
+/**
+ * External (web.xml, item 6): servlet-mapped HTTP entry points the
+ * annotation pass never sees — raw servlet classes AND
+ * `HttpRequestHandlerServlet` beans (servlet-name = bean name of a class
+ * implementing HttpRequestHandler). The cache-refresh endpoint class is a
+ * real, state-mutating HTTP entry point.
+ */
+const detectWebXmlHandlers: RootDetector = (slice) => {
+  const roots: SclRoot[] = [];
+  const lastSeg = (s: string): string => (s.includes('.') ? s.slice(s.lastIndexOf('.') + 1) : s);
+  for (const mapping of slice.index.webXmlHandlerMappings ?? []) {
+    let cls = slice.index.classesByFqn.get(mapping.servletClass) ?? null;
+    if (!cls && /HttpRequestHandlerServlet$/.test(mapping.servletClass)) {
+      // servlet-name is the BEAN name: match @Component("name") or a class
+      // implementing an interface whose last segment is HttpRequestHandler
+      // and whose lowercased simple name equals the bean name.
+      for (const candidate of slice.index.classesByFqn.values()) {
+        const componentHit = candidate.annotations.some(
+          (a) => a.includes('@Component') && a.includes(`"${mapping.servletName}"`),
+        );
+        const implementsHandler = candidate.interfaces.some(
+          (i) => lastSeg(i.replace(/<.*>$/, '')) === 'HttpRequestHandler',
+        );
+        const nameHit =
+          candidate.simpleName.charAt(0).toLowerCase() + candidate.simpleName.slice(1) ===
+          mapping.servletName;
+        if ((componentHit || nameHit) && implementsHandler) {
+          cls = candidate;
+          break;
+        }
+      }
+    }
+    if (!cls) continue;
+    const entry =
+      cls.methods.find((m) => m.name === 'handleRequest') ??
+      cls.methods.find((m) => m.name === 'service') ??
+      cls.methods.find((m) => /^do(Get|Post|Put|Delete)$/.test(m.name));
+    if (!entry) continue;
+    roots.push({
+      kind: 'external',
+      symbol: methodSymbol(entry),
+      detail: `web_xml:${mapping.urlPattern}`,
+    });
+  }
+  return roots;
+};
+
 /** Internal (b): @Scheduled on the table's method or its declaring class. */
 const detectScheduled: RootDetector = (slice) => {
   const roots: SclRoot[] = [];
@@ -356,6 +403,7 @@ const detectConfigReferenced: RootDetector = (slice) => {
 
 const BUILT_IN_DETECTORS: RootDetector[] = [
   detectExternalHttp,
+  detectWebXmlHandlers,
   detectMain,
   detectScheduled,
   detectFrameworkInvoked,
