@@ -10,6 +10,7 @@
  * ("Extraction pipeline", step 1 — deterministic slice).
  */
 
+import { harvestProcCatalog } from './sqlProcHarvester';
 import { indexJavaProject, type JavaProjectIndex } from './javaProjectIndex';
 import { extractShapes } from './shapeExtractor';
 import { extractBehaviour } from './behaviourExtractor';
@@ -57,6 +58,10 @@ export interface SclSliceResult {
    */
   keyBySymbol: Map<string, string>;
   stats: SclSliceStats;
+  /** Repo-resident stored-proc bodies (db/procs etc.) harvested from `.sql`
+   *  files (2026-08-23) — the Java side only NAMES procs; the bodies name
+   *  the tables. Carried into the corpus for effect-walk expansion. */
+  procCatalog: import('./sqlProcHarvester').ProcCatalogEntry[];
   /**
    * The full Java project index the slice was extracted from. Carried for the
    * corpus assembler (root detection needs class-level annotations /
@@ -76,6 +81,7 @@ export interface SclSliceResult {
  */
 export async function sliceProject(rootDir: string, options?: SclSliceOptions): Promise<SclSliceResult> {
   const index = await indexJavaProject(rootDir);
+  const procCatalog = harvestProcCatalog(rootDir);
   const shapeResult = extractShapes(index);
   const behaviour = extractBehaviour(index, shapeResult.keyBySymbol, options);
 
@@ -94,6 +100,7 @@ export async function sliceProject(rootDir: string, options?: SclSliceOptions): 
     parseErrors: index.parseErrors,
     keyBySymbol,
     index,
+    procCatalog,
     stats: {
       classCount: index.classesByFqn.size,
       tableCount: behaviour.tables.length,
