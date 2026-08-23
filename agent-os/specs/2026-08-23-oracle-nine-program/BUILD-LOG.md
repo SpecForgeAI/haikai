@@ -69,7 +69,7 @@ charset config, sequence rows, uniqueness probes).
 
 ## Per-item as-built notes
 
-### Item 8 (as-built)
+### Item 8 (as-built) — NOTE: committed directly on main (1272a012); branch convention slipped once, content verified green
 - New schedulerAdapters/autosysJil.ts: parseJilText/parseJilFiles (insert_job blocks; job_type/command/box_name/condition/start_times/days_of_week/watch_file); resolveJobsToMains (direct `java FQN` in command, else script-basename lookup in-repo + FQN/unique-simple-name scan of the script; boxes/file-watchers never resolve).
 - runManager (code scan, after structural): resolves against corpus internal-root classes, appends data.schedules entries (job/box/times/days/condition/source) to matching internal endpoint candidates, steps_payload.scheduler {jilJobCount, commandJobsResolved, candidatesEnriched, unresolvedCommandJobs (capped 20, LOUD)}; parse failures non-fatal loud.
 - Tests: parse pin (fields+blocks), resolve pin (script resolution, honest nulls). Discovery 16 suites/154.
