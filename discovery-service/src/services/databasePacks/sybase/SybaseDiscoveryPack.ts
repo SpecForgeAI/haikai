@@ -58,6 +58,7 @@ import {
   attributeStructuralFidelityFields,
   buildConstraintsMetadata,
 } from '../candidateStructuralFidelity';
+import { harvestLiveProcSources } from './sybaseProcHarvest';
 import {
   callSidecarIntrospect,
   callSidecarTestConnection,
@@ -179,6 +180,23 @@ export class SybaseDiscoveryPack implements DatabaseDiscoveryPack {
         `triggers=${intro.triggers.length}`,
     );
     return this.cachedIntrospection;
+  }
+
+  /** Live stored-object harvest (2026-08-23) — read-only via /query. */
+  async harvestProcSources(
+    ctx: DatabaseDiscoveryPackContext,
+  ): Promise<import('../../../scl/sqlProcHarvester').LiveProcSource[]> {
+    const creds = this.requireCreds();
+    const start = Date.now();
+    const sources = await harvestLiveProcSources(
+      creds,
+      ctx.config.queryTimeoutSeconds ?? 60,
+    );
+    console.log(
+      `[diag-pack] db_engine=sybase op=proc_harvest result=ok ` +
+        `objects=${sources.length} elapsed_ms=${Date.now() - start}`,
+    );
+    return sources;
   }
 
   async introspectSchemas(

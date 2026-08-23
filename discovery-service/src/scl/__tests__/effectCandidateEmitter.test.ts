@@ -787,6 +787,8 @@ describe('verb-agnostic effect chains (2026-08-22)', () => {
           writes: ['biz_date_ctrl', 'load_date_log'],
           reads: ['load_deal_book'],
           procCalls: ['updatebook_roll'],
+          bodyMd5: 'x',
+          source: 'repo' as const,
         },
         {
           name: 'updatebook_roll',
@@ -794,6 +796,8 @@ describe('verb-agnostic effect chains (2026-08-22)', () => {
           writes: ['deal_book', 'all_node_map'],
           reads: ['load_deal_book'],
           procCalls: [],
+          bodyMd5: 'x',
+          source: 'repo' as const,
         },
         {
           name: 'importvirtualnodes',
@@ -801,6 +805,8 @@ describe('verb-agnostic effect chains (2026-08-22)', () => {
           writes: ['all_node_map'],
           reads: ['ext_tree_node'],
           procCalls: [],
+          bodyMd5: 'x',
+          source: 'repo' as const,
         },
       ],
     };
@@ -845,6 +851,8 @@ describe('verb-agnostic effect chains (2026-08-22)', () => {
           writes: ['biz_date_ctrl'],
           reads: ['load_deal_book'],
           procCalls: [],
+          bodyMd5: 'x',
+          source: 'repo' as const,
         },
       ],
     };

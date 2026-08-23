@@ -1333,6 +1333,28 @@ class ArchModelClient {
   }
 
   /**
+   * Lists ALL discovery runs for an architecture (2026-08-23; the CODE scan
+   * fetches the latest COMPLETED database run's live proc harvest from its
+   * steps_payload). Returns [] on 404.
+   */
+  async listDiscoveryRuns(
+    projectId: string,
+    architectureId: string,
+  ): Promise<DiscoveryRunResponseDto[]> {
+    try {
+      const response = await this.client.get<DiscoveryRunResponseDto[]>(
+        `/api/model/projects/${encodeURIComponent(projectId)}/architectures/${encodeURIComponent(architectureId)}/discovery/runs`
+      );
+      return Array.isArray(response.data) ? response.data : [];
+    } catch (error) {
+      if ((error as AxiosError).response?.status === 404) {
+        return [];
+      }
+      throw error;
+    }
+  }
+
+  /**
    * Retrieves a discovery run by ID from the architecture-model-service.
    * Calls GET /api/model/projects/{projectId}/architectures/{architectureId}/discovery/runs/{runId}.
    *

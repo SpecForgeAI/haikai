@@ -142,7 +142,13 @@ async function requestAnnotationPass(
  * returns the step outcome. Never throws.
  */
 export async function runStructuralScanStep(
-  args: { projectId: string; architectureId: string; sourceDir: string },
+  args: {
+    projectId: string;
+    architectureId: string;
+    sourceDir: string;
+    /** LIVE proc sources from the latest DB scan (2026-08-23). */
+    liveProcSources?: import('./sqlProcHarvester').LiveProcSource[];
+  },
   deps?: StructuralScanStepDeps
 ): Promise<StructuralScanStepResult> {
   const runScan = deps?.runScan ?? runSclScan;
@@ -181,6 +187,7 @@ export async function runStructuralScanStep(
       architectureId: args.architectureId,
       sourceDir: args.sourceDir,
       amsBaseUrl: ARCHITECTURE_MODEL_SERVICE_BASE_URL,
+      liveProcSources: args.liveProcSources,
     });
     // 2026-08-19 ruling: the annotation pass fires automatically with the
     // scan (the user opted for automatic despite the LLM token cost). A

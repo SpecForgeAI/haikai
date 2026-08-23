@@ -2645,10 +2645,52 @@ async function startServiceScopedRun(
       // failure never fails the code run.
       // -----------------------------------------------------------------------
       const structuralStart = Date.now();
+      // Live proc sources (2026-08-23): the latest COMPLETED database run
+      // carries the live catalog harvest on its steps payload — the corpus
+      // merges it with the repo `.sql` harvest (live wins, drift loud).
+      // FAIL-SOFT: no DB run / no harvest -> repo-only, logged.
+      let liveProcSources:
+        | import('../scl/sqlProcHarvester').LiveProcSource[]
+        | undefined;
+      try {
+        const runs = await archModelClient.listDiscoveryRuns(projectId, architectureId);
+        const dbRuns = (runs ?? [])
+          .filter(
+            (r) =>
+              String((r as { discovery_kind?: string }).discovery_kind ?? '') === 'database' &&
+              String((r as { status?: string }).status ?? '').toUpperCase() === 'COMPLETED',
+          )
+          .sort((a, b) =>
+            String((b as { started_at?: string }).started_at ?? '').localeCompare(
+              String((a as { started_at?: string }).started_at ?? ''),
+            ),
+          );
+        const latest = dbRuns[0] as
+          | { steps_payload?: { database?: { proc_sources?: unknown } } }
+          | undefined;
+        const sources = latest?.steps_payload?.database?.proc_sources;
+        if (Array.isArray(sources) && sources.length > 0) {
+          liveProcSources = sources as import('../scl/sqlProcHarvester').LiveProcSource[];
+          console.log(
+            `[RunManager:service-scoped] Live proc sources: ${liveProcSources.length} object(s) from the latest database run`,
+          );
+        } else {
+          console.log(
+            `[RunManager:service-scoped] Live proc sources: none available (repo-only proc catalog)`,
+          );
+        }
+      } catch (procFetchErr) {
+        console.warn(
+          `[RunManager:service-scoped] Live proc source fetch failed (repo-only proc catalog): ${
+            procFetchErr instanceof Error ? procFetchErr.message : String(procFetchErr)
+          }`,
+        );
+      }
       const structural = await runStructuralScanStep({
         projectId,
         architectureId,
         sourceDir: rootScanDir,
+        liveProcSources,
       });
       structuralScan = structural.outcome;
       console.log(
@@ -3221,6 +3263,10 @@ export async function startDatabaseRun(
         skippedTableCount: result.profile.skippedTables.length,
         // CSD auto-S0 (2026-08-19): taken | failed | skipped (+ id/reason).
         s0Snapshot,
+        // Live stored-object harvest (2026-08-23): raw sources ride the run
+        // so the CODE scan can merge repo-vs-live (live wins, drift loud).
+        procSourceCount: result.procSources.length,
+        proc_sources: result.procSources,
       },
     };
 

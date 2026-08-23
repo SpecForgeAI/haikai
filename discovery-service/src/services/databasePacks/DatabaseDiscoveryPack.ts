@@ -212,6 +212,17 @@ export interface DatabaseDiscoveryPack {
   ): Promise<ProfileResult>;
 
   /**
+   * OPTIONAL capability (2026-08-23): harvest LIVE stored proc/function/
+   * trigger sources from the engine catalog (read-only). Engines without a
+   * stored-object catalog simply omit it. The orchestrator soft-fails and
+   * carries the sources on the run for the CODE scan's repo-vs-live merge
+   * (live wins; loud drift findings).
+   */
+  harvestProcSources?(
+    ctx: DatabaseDiscoveryPackContext,
+  ): Promise<import('../../scl/sqlProcHarvester').LiveProcSource[]>;
+
+  /**
    * Compute declared + inferred + ambiguous relationships. Uses the
    * introspection + profile data the orchestrator already has.
    */

@@ -125,7 +125,7 @@ export type SclContract = SclBehaviourTable | SclShapeContract | SclBoundaryCont
  *     behaviour tables (identical normalized row sequences); members listed in
  *     `candidates`. Never auto-merged — the merge/keep call is a DECISION.
  */
-export interface SclFinding { kind: 'dispatch_ambiguity' | 'complexity_truncated' | 'parse_error' | 'unresolved_calls' | 'near_duplicate_cluster'; symbol: string; detail: string; candidates?: string[]; }
+export interface SclFinding { kind: 'dispatch_ambiguity' | 'complexity_truncated' | 'parse_error' | 'unresolved_calls' | 'near_duplicate_cluster' | 'proc_repo_drift' | 'proc_live_only' | 'proc_repo_duplicate' | 'proc_repo_only'; symbol: string; detail: string; candidates?: string[]; }
 
 // ---------------------------------------------------------------------------
 // Deterministic serialization + content-hashed keys

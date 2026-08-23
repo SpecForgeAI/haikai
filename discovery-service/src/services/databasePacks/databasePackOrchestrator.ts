@@ -108,6 +108,9 @@ export interface DatabasePackOrchestratorResult {
   warningFindings: FindingEmitInput[];
   /** TRUE when the orchestrator hit a fatal-but-soft condition (e.g. null pack). */
   shortCircuited: boolean;
+  /** LIVE stored proc/function/trigger sources (2026-08-23; empty when the
+   *  engine pack lacks the capability or the harvest soft-failed). */
+  procSources: import('../../scl/sqlProcHarvester').LiveProcSource[];
 }
 
 /**
@@ -204,6 +207,7 @@ export async function runDatabasePackDiscovery(
     emittedFindings: [],
     warningFindings,
     shortCircuited: false,
+    procSources: [],
   };
 
   try {
@@ -353,6 +357,27 @@ export async function runDatabasePackDiscovery(
           `profiled=${result.profile.tables.length} ` +
           `soft_failed=${result.profile.skippedTables.length} ` +
           `elapsed_ms=${Date.now() - profileStart}`,
+      );
+    }
+
+    // ----------------------------------------------------------- Phase 4b
+    // Live stored-object harvest (2026-08-23, optional capability): the
+    // repo can lie about proc bodies; the live catalog is what production
+    // executes. Soft-fail LOUD — a missing harvest is a warning finding,
+    // never silence.
+    if (typeof pack.harvestProcSources === 'function') {
+      const procStart = Date.now();
+      const sources = await withDbPackSoftFail(
+        'harvestProcSources',
+        () => (pack.harvestProcSources as NonNullable<typeof pack.harvestProcSources>)(packCtx),
+        onWarning,
+        pack.engineKey,
+      );
+      result.procSources = sources ?? [];
+      console.log(
+        `[diag-pack] db_engine=${pack.engineKey} stage=proc_harvest ` +
+          `objects=${result.procSources.length} ` +
+          `elapsed_ms=${Date.now() - procStart}`,
       );
     }
 
