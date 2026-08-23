@@ -72,7 +72,7 @@ const DAO_IMPL = `package com.x;
 
 public class FilterDaoImpl implements FilterDao {
   public Object getAllFilters(String key) {
-    return run("select * from hir_filter where ValidFrom <= ? and ValidTo > ?");
+    return run("select * from screen_filter where ValidFrom <= ? and ValidTo > ?");
   }
 
   private Object run(String sql) { return null; }
@@ -166,7 +166,7 @@ describe('Guava cache-transparency bridge (2026-08-23)', () => {
   it('the loader chain ends on the DAO boundary with the mined SQL', () => {
     const dao = result.boundaries.find((b) => b.symbol === 'com.x.FilterDao');
     expect(dao).toBeDefined();
-    expect(dao!.operations[0].sqlVerbatim).toContain('from hir_filter');
+    expect(dao!.operations[0].sqlVerbatim).toContain('from screen_filter');
     const loader = result.tables.find((t) =>
       t.symbol.startsWith('com.x.FilterDBLoader#loadFilters'),
     )!;

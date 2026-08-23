@@ -105,13 +105,13 @@ function clampIdent(name: string): string {
 
 /**
  * Resolve every PK / UNIQUE-constraint / index name to be unique within its
- * schema's RELATION namespace (2026-08-06, the live `hir_book_ak1` failure).
+ * schema's RELATION namespace (2026-08-06, the live `deal_book_ak1` failure).
  *
  * Sybase scopes constraint/index names PER TABLE, so a copied table
- * (`temp_hir_book`) legitimately carries the same auto-generated names as its
+ * (`temp_deal_book`) legitimately carries the same auto-generated names as its
  * original. Postgres backs PK/UNIQUE constraints with indexes, and indexes
  * are RELATIONS — one per-schema namespace shared with tables and other
- * indexes — so the verbatim copy fails `relation "hir_book_ak1" already
+ * indexes — so the verbatim copy fails `relation "deal_book_ak1" already
  * exists` on the first clean apply. FK and CHECK constraint names stay
  * verbatim: `pg_constraint` scopes them per table, exactly like Sybase.
  *

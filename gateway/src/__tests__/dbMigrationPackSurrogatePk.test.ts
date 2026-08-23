@@ -181,24 +181,24 @@ describe('applySurrogatePkDecision (unit)', () => {
     // The live 6-table class: the pack declared a PK the source data does
     // not satisfy (duplicate tuples / NULL key members) — the bulk-load
     // preflight names exactly this remedy.
-    const invalid = heap('hir_organisation', ['HierarchyId', 'ValidFrom', 'payload']);
-    invalid.primaryKey = { name: 'pk_hir_organisation', columns: ['HierarchyId', 'ValidFrom'] };
+    const invalid = heap('org_registry', ['HierarchyId', 'ValidFrom', 'payload']);
+    invalid.primaryKey = { name: 'pk_org_registry', columns: ['HierarchyId', 'ValidFrom'] };
     const untouched = heap('keyed_fine', ['a']);
     untouched.primaryKey = { name: 'pk_keyed_fine', columns: ['a'] };
 
     const outcome = applySurrogatePkDecision([invalid, untouched], {
       [SURROGATE_PK_DECISION_KEY]: {
         option: 'add_surrogate_identity_pk',
-        demote_tables: ['DBO.HIR_ORGANISATION'], // case-insensitive match
+        demote_tables: ['DBO.ORG_REGISTRY'], // case-insensitive match
       },
     });
 
-    expect(outcome.demoted).toEqual(['dbo.hir_organisation']);
-    expect(outcome.added).toContain('dbo.hir_organisation');
+    expect(outcome.demoted).toEqual(['dbo.org_registry']);
+    expect(outcome.added).toContain('dbo.org_registry');
     // Natural key survives as a NON-UNIQUE index (still the load order key).
     expect(invalid.indexes).toEqual([
       expect.objectContaining({
-        name: 'ix_hir_organisation_natural_key',
+        name: 'ix_org_registry_natural_key',
         columns: ['HierarchyId', 'ValidFrom'],
         isUnique: false,
       }),

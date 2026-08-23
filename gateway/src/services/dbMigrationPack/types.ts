@@ -423,7 +423,7 @@ export interface PackManifest {
    * Schema-scoped relation renames (2026-08-06): Sybase scopes constraint and
    * index names per TABLE; Postgres backs PK/UNIQUE with indexes — per-SCHEMA
    * relations — so source-verbatim names on copied tables (temp_*, load_*)
-   * collide at schema-apply (`relation "hir_book_ak1" already exists`).
+   * collide at schema-apply (`relation "deal_book_ak1" already exists`).
    * Colliders rename deterministically to <table>_<name>; this is the
    * old->new provenance for constraints_metadata consumers. Absent on packs
    * generated earlier.

@@ -2,9 +2,9 @@
  * Stored-procedure body harvesting (2026-08-23).
  *
  * Ground-truth traces showed the estate's batch pipeline lives in
- * `db/procs/*.sql`: Java names only the PROC (`exec updateHierarchy_hir`),
- * while the proc body names the tables (reads `load_hir_book`, writes
- * `hir_business_date`, nested `exec updateBook_hir` -> `hir_book`). The
+ * `db/procs/*.sql`: Java names only the PROC (`exec updateTree_roll`),
+ * while the proc body names the tables (reads `load_deal_book`, writes
+ * `biz_date_ctrl`, nested `exec updateBook_roll` -> `deal_book`). The
  * repo carries every body — this harvester reads the `.sql` files the
  * Java-only slicer ignored and builds a proc -> tables catalog the effect
  * walk expands through (transitively, cycle-safe).
@@ -113,7 +113,7 @@ export function harvestProcCatalog(rootDir: string): ProcCatalogEntry[] {
 }
 
 /** name -> transitively-closed {writes, reads} (nested `exec` followed,
- *  cycle-safe, depth-capped — updateHierarchy_hir -> updateBook_hir). */
+ *  cycle-safe, depth-capped — updateTree_roll -> updateBook_roll). */
 export function closeProcCatalog(
   catalog: ProcCatalogEntry[],
 ): Map<string, { writes: string[]; reads: string[] }> {

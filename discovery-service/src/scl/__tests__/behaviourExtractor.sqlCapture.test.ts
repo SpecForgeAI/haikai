@@ -196,23 +196,23 @@ describe('DAO-interface + Impl idiom (2026-08-21)', () => {
 
 // ---------------------------------------------------------------------------
 // DAO suffix CASING (2026-08-22 live diagnosis): the same estate mixes
-// `BookDaoImpl` and `BookAttributeMetaDataDAOImpl` — the upper-cased `DAO`
-// suffix never boundary-classified, so `select * from hir_book_attr_name`
+// `LedgerDaoImpl` and `LedgerAttributeMetaDataDAOImpl` — the upper-cased `DAO`
+// suffix never boundary-classified, so `select * from deal_unit_attr_name`
 // was invisible and chains through the DAO died silently.
 // ---------------------------------------------------------------------------
 
 const ATTR_IFACE = `package com.x;
 
-public interface BookAttrDAO {
+public interface UnitAttrDAO {
   java.util.List<String> loadAttrNames(String date);
 }
 `;
 
 const ATTR_IMPL = `package com.x;
 
-public class BookAttrDAOImpl implements BookAttrDAO {
+public class UnitAttrDAOImpl implements UnitAttrDAO {
   public java.util.List<String> loadAttrNames(String date) {
-    return run("select * from book_attr_name where valid_from <= ? and valid_to > ?");
+    return run("select * from unit_attr_name where valid_from <= ? and valid_to > ?");
   }
 
   private java.util.List<String> run(String sql) { return null; }
@@ -226,8 +226,8 @@ describe('DAO suffix casing (2026-08-22)', () => {
   beforeAll(async () => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'scl-daocase-'));
     fs.mkdirSync(path.join(dir, 'com', 'x'), { recursive: true });
-    fs.writeFileSync(path.join(dir, 'com', 'x', 'BookAttrDAO.java'), ATTR_IFACE);
-    fs.writeFileSync(path.join(dir, 'com', 'x', 'BookAttrDAOImpl.java'), ATTR_IMPL);
+    fs.writeFileSync(path.join(dir, 'com', 'x', 'UnitAttrDAO.java'), ATTR_IFACE);
+    fs.writeFileSync(path.join(dir, 'com', 'x', 'UnitAttrDAOImpl.java'), ATTR_IMPL);
     const index = await indexJavaProject(dir);
     expect(index.parseErrors).toEqual([]);
     result = extractBehaviour(index, new Map());
@@ -238,20 +238,20 @@ describe('DAO suffix casing (2026-08-22)', () => {
   });
 
   it('an upper-cased DAO interface is boundary-classified and mines SQL from its Impl', () => {
-    const iface = result.boundaries.find((b) => b.symbol === 'com.x.BookAttrDAO');
+    const iface = result.boundaries.find((b) => b.symbol === 'com.x.UnitAttrDAO');
     expect(iface).toBeDefined();
-    expect(iface!.operations[0].sqlVerbatim).toContain('from book_attr_name');
+    expect(iface!.operations[0].sqlVerbatim).toContain('from unit_attr_name');
   });
 
   it('the DAOImpl class is boundary-classified too (never a behaviour table)', () => {
-    expect(result.boundaries.some((b) => b.symbol === 'com.x.BookAttrDAOImpl')).toBe(true);
-    expect(result.tables.some((t) => t.symbol.startsWith('com.x.BookAttrDAOImpl#'))).toBe(false);
+    expect(result.boundaries.some((b) => b.symbol === 'com.x.UnitAttrDAOImpl')).toBe(true);
+    expect(result.tables.some((t) => t.symbol.startsWith('com.x.UnitAttrDAOImpl#'))).toBe(false);
   });
 });
 
 // ---------------------------------------------------------------------------
 // Config-held SQL (2026-08-23): the static-dispatch-map idiom — proc names
-// live in FIELD initializers (`"hierarchy" -> "updateHierarchy_hir '...'"`),
+// live in FIELD initializers (`"hierarchy" -> "updateTree_roll '...'"`),
 // invisible to method-body mining. Referenced fields with identifier-bearing
 // literals contribute a `config-sql` terminal row the effect walk scans
 // against the harvested proc catalog.
@@ -261,7 +261,7 @@ const XFER_IMPL = `package com.x;
 
 public class XferToTablesImpl {
   private static final java.util.Map<String, String> updateProcedure =
-      java.util.Map.of("hierarchy", "updateHierarchy_hir '" + DATE_TOKEN + "', 'Y'");
+      java.util.Map.of("hierarchy", "updateTree_roll '" + DATE_TOKEN + "', 'Y'");
   private static final String DATE_TOKEN = "@@DATE@@";
 
   public void runUpdate(String unit, String date) {
@@ -301,6 +301,6 @@ describe('config-held SQL rows (2026-08-23)', () => {
     expect(configRow).toBeDefined();
     expect(
       (configRow!.outcome as { verbatim: string }).verbatim,
-    ).toContain('updateHierarchy_hir');
+    ).toContain('updateTree_roll');
   });
 });

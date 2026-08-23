@@ -311,7 +311,7 @@ interface TableDraft {
 }
 
 // Case-INSENSITIVE (2026-08-22 live diagnosis): the same estate mixes
-// `BookDaoImpl` and `BookAttributeMetaDataDAOImpl` — an upper-cased `DAO`
+// `LedgerDaoImpl` and `LedgerAttributeMetaDataDAOImpl` — an upper-cased `DAO`
 // suffix never boundary-classified, so its SQL was invisible and chains
 // through it died on an empty bodyless contract, silently.
 const BOUNDARY_NAME_RE = /(?:dao|repository)$/i;
@@ -1320,7 +1320,7 @@ export function extractBehaviour(
       let rowDrafts = buildRowsForMethod(cls, method);
       // Config-SQL rows (2026-08-23): proc names assembled from FIELD
       // initializers (static dispatch maps — `"hierarchy" ->
-      // "updateHierarchy_hir '...'"`). String-typed constants are already
+      // "updateTree_roll '...'"`). String-typed constants are already
       // mined for boundaries, but table classes executing config-held SQL
       // lost the name entirely. A referenced field whose initializer holds
       // long identifier-bearing literals contributes a terminal row the

@@ -280,7 +280,7 @@ export class SybaseAdapter implements DbAdapter {
     // bigint/numeric values as STRINGS (JSON.parse precision), and quoting
     // one back at ASE against its numeric column is a type error
     // (`Implicit conversion from 'VARCHAR' to 'BIGINT'` — the live
-    // hir_audit_info read failure at 1.2M rows). The predicate builder
+    // audit_trail_info read failure at 1.2M rows). The predicate builder
     // passes the column index, so each cursor member renders under ITS
     // column's declared source type.
     const render = (value: unknown, index: number): string =>
@@ -436,7 +436,7 @@ function sybLiteral(value: unknown, sourceType: string | null = null): string {
   // bigint/numeric/decimal as STRINGS to survive JSON.parse (2^53), so a
   // string cursor value on a numeric column must render UNQUOTED — ASE
   // refuses `VARCHAR > BIGINT` ("Implicit conversion ... not allowed", the
-  // live hir_audit_info failure). Type-driven, never guessed from shape: a
+  // live audit_trail_info failure). Type-driven, never guessed from shape: a
   // varchar column holding digit strings keeps its quotes. A numeric column
   // whose value is NOT a canonical numeric string is corrupt — fail loud,
   // never quote it into a guaranteed engine error.

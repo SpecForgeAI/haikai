@@ -128,7 +128,7 @@ async function migrateOneTable(
   // Order-key column types for TYPE-AWARE cursor rendering (2026-08-12):
   // the sidecar wire carries numerics as strings; the Sybase adapter must
   // know the column type to render an unquoted literal (the live VARCHAR
-  // -> BIGINT conversion failure on hir_audit_info's Uuid cursor).
+  // -> BIGINT conversion failure on audit_trail_info's Uuid cursor).
   const orderByTypes = spec.orderBy.map(
     (c) => typeByColumn.get(c.trim().toLowerCase()) ?? null,
   );

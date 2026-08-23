@@ -182,7 +182,7 @@ export function validatePackFiles(files: ValidatablePackFile[]): string[] {
   }
 
   // 4) Per-schema RELATION-namespace uniqueness (2026-08-06, the live
-  //    `relation "hir_book_ak1" already exists` schema-apply halt): Postgres
+  //    `relation "deal_book_ak1" already exists` schema-apply halt): Postgres
   //    backs PK/UNIQUE constraints with indexes, and indexes share ONE
   //    per-schema namespace with tables and other indexes. Sybase scopes
   //    these names per table, so source-verbatim emission collides on copied

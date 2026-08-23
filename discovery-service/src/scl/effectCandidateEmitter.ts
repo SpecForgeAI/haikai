@@ -215,7 +215,7 @@ interface CorpusIndex {
   /** Repo proc name -> nested proc calls (for transitive referenced-marking). */
   procCallsByName: Map<string, string[]>;
   /** Catalog size + which harvested procs no walked SQL ever referenced —
-   *  manually-run procs (importVNodes) surface here instead of vanishing. */
+   *  manually-run procs (importVirtualNodes) surface here instead of vanishing. */
   procCatalogCount: number;
   httpRoots: Array<{ key: string; symbol: string; method: string; fragment: string }>;
 }
@@ -583,7 +583,7 @@ export interface DeriveResult {
   /** Harvested repo procs (CREATE PROC bodies in `.sql` files). */
   procCatalogCount: number;
   /** Harvested procs NO walked SQL referenced — manually-run procs
-   *  (importVNodes) stay VISIBLE instead of vanishing (capped 15). */
+   *  (importVirtualNodes) stay VISIBLE instead of vanishing (capped 15). */
   procsUnreferenced: string[];
 }
 
@@ -773,7 +773,7 @@ export function deriveCorpusEffectCandidates(args: {
   const readUnderived: ReadUnderivedEndpoint[] = [];
   const chainBreaks: ChainBreakEndpoint[] = [];
   // A proc is "referenced" when walked SQL names it OR a referenced proc
-  // execs it (transitively) — only genuinely orphaned procs (importVNodes)
+  // execs it (transitively) — only genuinely orphaned procs (importVirtualNodes)
   // stay on the unreferenced list.
   const referencedProcs = new Set<string>();
   const markReferenced = (name: string): void => {
