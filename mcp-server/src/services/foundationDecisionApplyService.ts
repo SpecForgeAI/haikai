@@ -157,6 +157,14 @@ export function applyDecisionsToEntities(
           touched = true;
         }
       }
+      if (decision.payload_json?.audit_sink === true) {
+        const constraints = (entity.constraints_metadata ??= {});
+        if (constraints.audit_sink !== true) {
+          constraints.audit_sink = true;
+          constraints.audit_sink_decision_ref = decision.decision_key;
+          touched = true;
+        }
+      }
       const parityKey = decision.payload_json?.parity_key;
       if (Array.isArray(parityKey) && parityKey.length > 0) {
         const constraints = (entity.constraints_metadata ??= {});

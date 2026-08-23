@@ -171,7 +171,15 @@ export async function defaultResolveDataParityTables(
       pkEntry.columns,
     );
   }
-  return orderedTables(packView.manifest).map((qn) => {
+  // Audit-sink tables (item 5) grow under ANY traffic — comparing them is
+  // structurally meaningless; skip with a receipt instead of reporting
+  // false divergence.
+  const auditSinks = new Set(
+    (packView.manifest.audit_sink_tables ?? []).map((qn) => qn.toLowerCase()),
+  );
+  return orderedTables(packView.manifest)
+    .filter((qn) => !auditSinks.has(qn.toLowerCase()))
+    .map((qn) => {
     const dot = qn.indexOf('.');
     const entry: DataParityTable =
       dot > 0

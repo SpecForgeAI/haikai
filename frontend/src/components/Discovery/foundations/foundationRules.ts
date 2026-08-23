@@ -848,7 +848,14 @@ export function deriveJointFoundationQuestions(
         'Acknowledging records the shape; excluding removes them from the target.',
       targets,
       options: [
-        { answer: 'keep_all', label: 'Keep in migration (acknowledged as audit sinks)', scope: 'in_scope', recommended: true },
+        {
+          answer: 'keep_all',
+          label:
+            'Keep in migration, acknowledged as audit sinks (S0-tolerated; never compensated; parity skips with a receipt)',
+          scope: 'in_scope',
+          recommended: true,
+          payload: { audit_sink: true },
+        },
         { answer: 'exclude_all', label: 'Exclude from migration', scope: 'excluded' },
       ],
       evidence_hash: bulkTargetsEvidenceHash('crud_write_only', targets),

@@ -402,6 +402,7 @@ export function buildSourceSchemaIr(inputs: GenerationInputs): SourceSchemaIr {
           null),
       parityKey:
         ((cm as { parity_key?: IrTable['parityKey'] }).parity_key ?? null),
+      auditSink: (cm as { audit_sink?: unknown }).audit_sink === true,
       uniqueConstraints: cm.unique_constraints ?? [],
       checkConstraints: cm.check_constraints ?? [],
       indexes: (cm.indexes ?? []).map((i) => ({
