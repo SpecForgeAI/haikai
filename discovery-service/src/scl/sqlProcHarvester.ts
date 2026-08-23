@@ -14,8 +14,10 @@
  * tables — are what this captures.
  */
 
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
+import type { SclFinding } from './sclTypes';
 import {
   parseProcCallsFromSql,
   parseReadTablesFromSql,
@@ -30,6 +32,27 @@ export interface ProcCatalogEntry {
   reads: string[];
   /** Lowercased bare names of procs this body itself calls (`exec` / `{call}`). */
   procCalls: string[];
+  /** MD5 over the WHITESPACE-NORMALIZED body — the drift comparator
+   *  (live-vs-repo) and duplicate detector key on this, so formatting
+   *  differences never read as divergence. */
+  bodyMd5: string;
+  /** Where the body came from: the repo tree or the live catalog. */
+  source: 'repo' | 'live';
+}
+
+/** One raw proc/function/trigger source pulled from a LIVE catalog by an
+ *  engine pack (e.g. sysobjects+syscomments). Text is the reassembled
+ *  CREATE body. */
+export interface LiveProcSource {
+  name: string;
+  objType?: string;
+  text: string;
+}
+
+/** Whitespace-normalized MD5 — formatting-insensitive body identity. */
+export function normalizedBodyMd5(text: string): string {
+  const normalized = text.replace(/\s+/g, ' ').trim().toLowerCase();
+  return crypto.createHash('md5').update(normalized).digest('hex');
 }
 
 const SKIP_DIRS = new Set(['target', 'build', '.git', 'node_modules']);
@@ -90,6 +113,8 @@ export function harvestProcsFromSql(sqlText: string, sourcePath: string): ProcCa
       procCalls: parseProcCallsFromSql(body)
         .map((p) => p.toLowerCase())
         .filter((p) => p !== selfName),
+      bodyMd5: normalizedBodyMd5(body),
+      source: 'repo',
     });
   }
   return out;
@@ -110,6 +135,134 @@ export function harvestProcCatalog(rootDir: string): ProcCatalogEntry[] {
   }
   out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : a.sourcePath < b.sourcePath ? -1 : 1));
   return out;
+}
+
+/** Parse LIVE catalog sources (engine-pack harvested) into catalog entries.
+ *  Each source is one object's reassembled body; the same CREATE-splitting
+ *  parser runs over it, so a source containing several definitions still
+ *  yields them all. */
+export function catalogFromLiveSources(sources: LiveProcSource[]): ProcCatalogEntry[] {
+  const out: ProcCatalogEntry[] = [];
+  for (const src of sources ?? []) {
+    if (!src || typeof src.text !== 'string' || src.text.length === 0) continue;
+    const parsed = harvestProcsFromSql(src.text, `db://live/${src.name ?? 'object'}`);
+    if (parsed.length > 0) {
+      for (const entry of parsed) out.push({ ...entry, source: 'live' });
+    }
+  }
+  out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  return out;
+}
+
+export interface ProcMergeResult {
+  /** Unique-by-name merged catalog. LIVE WINS on any divergence — the live
+   *  body is what production actually executes. */
+  entries: ProcCatalogEntry[];
+  findings: SclFinding[];
+  summary: {
+    repoCount: number;
+    liveCount: number;
+    mergedCount: number;
+    driftCount: number;
+    liveOnlyCount: number;
+    repoOnlyCount: number;
+    repoDuplicateCount: number;
+  };
+}
+
+/**
+ * Merge the repo harvest with the live-catalog harvest (2026-08-23 audit
+ * finding: the repo LIES — duplicate divergent bodies in-tree and live-only
+ * hand-hacked variants; a bare-name first-wins pick was silent). Rules:
+ *   - live entry present  -> live wins; if a repo body's md5 differs ->
+ *     `proc_repo_drift` finding naming both.
+ *   - live-only           -> kept + `proc_live_only` finding.
+ *   - repo-only           -> kept + `proc_repo_only` finding (a proc the
+ *     live DB no longer carries — stale repo or dropped object).
+ *   - repo duplicates (same name, DIFFERENT md5 across files) ->
+ *     `proc_repo_duplicate` finding listing every path; the live body (or,
+ *     without live, the first path) is what the merged catalog carries.
+ */
+export function mergeProcCatalogs(
+  repo: ProcCatalogEntry[],
+  live: ProcCatalogEntry[],
+): ProcMergeResult {
+  const findings: SclFinding[] = [];
+  const repoByName = new Map<string, ProcCatalogEntry[]>();
+  for (const entry of repo) {
+    const list = repoByName.get(entry.name) ?? [];
+    list.push(entry);
+    repoByName.set(entry.name, list);
+  }
+  const liveByName = new Map<string, ProcCatalogEntry>();
+  for (const entry of live) {
+    if (!liveByName.has(entry.name)) liveByName.set(entry.name, entry);
+  }
+
+  let driftCount = 0;
+  let repoDuplicateCount = 0;
+  for (const [name, entries] of repoByName) {
+    const distinct = new Set(entries.map((e) => e.bodyMd5));
+    if (distinct.size > 1) {
+      repoDuplicateCount++;
+      findings.push({
+        kind: 'proc_repo_duplicate',
+        symbol: name,
+        detail:
+          `${entries.length} in-repo definitions with ${distinct.size} distinct bodies: ` +
+          entries.map((e) => e.sourcePath).join(', '),
+      });
+    }
+  }
+
+  const merged: ProcCatalogEntry[] = [];
+  const seen = new Set<string>();
+  for (const [name, liveEntry] of liveByName) {
+    seen.add(name);
+    merged.push(liveEntry);
+    const repoEntries = repoByName.get(name) ?? [];
+    if (repoEntries.length === 0) {
+      findings.push({
+        kind: 'proc_live_only',
+        symbol: name,
+        detail: 'exists in the LIVE catalog with no repo definition — hand-deployed variant; effect maps use the live body',
+      });
+    } else if (!repoEntries.some((e) => e.bodyMd5 === liveEntry.bodyMd5)) {
+      driftCount++;
+      findings.push({
+        kind: 'proc_repo_drift',
+        symbol: name,
+        detail:
+          `LIVE body differs from every repo definition (live md5 ${liveEntry.bodyMd5.slice(0, 8)} vs ` +
+          repoEntries.map((e) => `${e.sourcePath}:${e.bodyMd5.slice(0, 8)}`).join(', ') +
+          ') — the live body wins; reconcile the repo',
+      });
+    }
+  }
+  for (const [name, entries] of repoByName) {
+    if (seen.has(name)) continue;
+    merged.push(entries[0]);
+    findings.push({
+      kind: 'proc_repo_only',
+      symbol: name,
+      detail: `repo defines it (${entries[0].sourcePath}) but the live catalog does not — stale script or dropped object`,
+    });
+  }
+  merged.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  findings.sort((a, b) => (a.symbol < b.symbol ? -1 : a.symbol > b.symbol ? 1 : a.kind < b.kind ? -1 : 1));
+  return {
+    entries: merged,
+    findings,
+    summary: {
+      repoCount: repo.length,
+      liveCount: live.length,
+      mergedCount: merged.length,
+      driftCount,
+      liveOnlyCount: [...liveByName.keys()].filter((n) => !(repoByName.get(n) ?? []).length).length,
+      repoOnlyCount: [...repoByName.keys()].filter((n) => !liveByName.has(n)).length,
+      repoDuplicateCount,
+    },
+  };
 }
 
 /** name -> transitively-closed {writes, reads} (nested `exec` followed,

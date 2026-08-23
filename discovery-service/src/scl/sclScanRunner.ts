@@ -42,6 +42,9 @@ export interface RunSclScanArgs {
   /** Reuse an already-created scan row (the route creates one up-front so it
    *  can answer 202 with the scan id before the slice starts). */
   scanId?: string;
+  /** LIVE proc sources from the latest DB scan (2026-08-23) — merged with
+   *  the repo harvest inside the slicer (live wins, drift findings). */
+  liveProcSources?: import('./sqlProcHarvester').LiveProcSource[];
 }
 
 export interface RunSclScanDeps {
@@ -121,7 +124,7 @@ export async function runSclScan(args: RunSclScanArgs, deps?: RunSclScanDeps): P
   );
 
   try {
-    const sliced = await slice(args.sourceDir);
+    const sliced = await slice(args.sourceDir, { liveProcSources: args.liveProcSources });
     console.log(
       `[scl-scan] scan ${scanId} sliced: ${sliced.stats.tableCount} tables, ` +
         `${sliced.stats.shapeCount} shapes, ${sliced.stats.boundaryCount} boundaries, ` +

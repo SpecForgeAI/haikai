@@ -10,7 +10,7 @@
  * ("Extraction pipeline", step 1 — deterministic slice).
  */
 
-import { harvestProcCatalog } from './sqlProcHarvester';
+import { catalogFromLiveSources, harvestProcCatalog, mergeProcCatalogs, type ProcMergeResult } from './sqlProcHarvester';
 import { indexJavaProject, type JavaProjectIndex } from './javaProjectIndex';
 import { extractShapes } from './shapeExtractor';
 import { extractBehaviour } from './behaviourExtractor';
@@ -24,6 +24,10 @@ import type {
 export interface SclSliceOptions {
   /** Per-table row budget override (default `MAX_ROWS_PER_TABLE`). */
   maxRowsPerTable?: number;
+  /** LIVE proc/function/trigger sources harvested by the DB scan's engine
+   *  pack (2026-08-23). When present, the repo harvest merges with them —
+   *  LIVE WINS on divergence, with loud drift findings. */
+  liveProcSources?: import('./sqlProcHarvester').LiveProcSource[];
 }
 
 export interface SclSliceStats {
@@ -58,10 +62,13 @@ export interface SclSliceResult {
    */
   keyBySymbol: Map<string, string>;
   stats: SclSliceStats;
-  /** Repo-resident stored-proc bodies (db/procs etc.) harvested from `.sql`
-   *  files (2026-08-23) — the Java side only NAMES procs; the bodies name
-   *  the tables. Carried into the corpus for effect-walk expansion. */
+  /** Proc catalog: repo `.sql` harvest MERGED with live-catalog sources
+   *  when the caller supplies them (live wins; drift findings emitted).
+   *  Carried into the corpus for effect-walk expansion. */
   procCatalog: import('./sqlProcHarvester').ProcCatalogEntry[];
+  /** Merge accounting (repo/live/drift counts) — null when no live sources
+   *  were supplied. Rides corpus stats for the Structural Model header. */
+  procMergeSummary: ProcMergeResult['summary'] | null;
   /**
    * The full Java project index the slice was extracted from. Carried for the
    * corpus assembler (root detection needs class-level annotations /
@@ -81,7 +88,17 @@ export interface SclSliceResult {
  */
 export async function sliceProject(rootDir: string, options?: SclSliceOptions): Promise<SclSliceResult> {
   const index = await indexJavaProject(rootDir);
-  const procCatalog = harvestProcCatalog(rootDir);
+  const repoProcCatalog = harvestProcCatalog(rootDir);
+  let procCatalog = repoProcCatalog;
+  let procMergeSummary: ProcMergeResult['summary'] | null = null;
+  let procMergeFindings: import('./sclTypes').SclFinding[] = [];
+  if (options?.liveProcSources && options.liveProcSources.length > 0) {
+    const liveCatalog = catalogFromLiveSources(options.liveProcSources);
+    const mergeResult = mergeProcCatalogs(repoProcCatalog, liveCatalog);
+    procCatalog = mergeResult.entries;
+    procMergeSummary = mergeResult.summary;
+    procMergeFindings = mergeResult.findings;
+  }
   const shapeResult = extractShapes(index);
   const behaviour = extractBehaviour(index, shapeResult.keyBySymbol, options);
 
@@ -95,12 +112,13 @@ export async function sliceProject(rootDir: string, options?: SclSliceOptions): 
     tables: behaviour.tables,
     shapes: shapeResult.shapes,
     boundaries: behaviour.boundaries,
-    findings: behaviour.findings,
+    findings: [...behaviour.findings, ...procMergeFindings],
     inlined: behaviour.inlined,
     parseErrors: index.parseErrors,
     keyBySymbol,
     index,
     procCatalog,
+    procMergeSummary,
     stats: {
       classCount: index.classesByFqn.size,
       tableCount: behaviour.tables.length,

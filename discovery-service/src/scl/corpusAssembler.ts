@@ -95,6 +95,16 @@ export interface SclReachabilityItem {
 }
 
 export interface SclCorpusStats {
+  /** Live-vs-repo proc merge accounting (null when no live sources). */
+  procMerge?: {
+    repoCount: number;
+    liveCount: number;
+    mergedCount: number;
+    driftCount: number;
+    liveOnlyCount: number;
+    repoOnlyCount: number;
+    repoDuplicateCount: number;
+  } | null;
   rootCount: number;
   externalRootCount: number;
   internalRootCount: number;
@@ -717,5 +727,12 @@ export function assembleCorpus(slice: SclSliceResult, options?: AssembleCorpusOp
     findingCounts,
   };
 
-  return { roots, contracts, reachability, findings: sortedFindings, stats, procCatalog: slice.procCatalog ?? [] };
+  return {
+    roots,
+    contracts,
+    reachability,
+    findings: sortedFindings,
+    stats: { ...stats, procMerge: slice.procMergeSummary ?? null },
+    procCatalog: slice.procCatalog ?? [],
+  };
 }
