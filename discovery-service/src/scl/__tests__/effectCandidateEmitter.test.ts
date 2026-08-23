@@ -14,6 +14,7 @@ import {
   derivePathFragment,
   indexCorpus,
   parseProposalContent,
+  parseReadTablesFromSql,
   parseWriteTablesFromSql,
   proposeEffectCandidatesViaLlm,
   summarizeEmission,
@@ -1004,6 +1005,41 @@ describe('helpers', () => {
     expect(parseWriteTablesFromSql('INSERT INTO dbo.orders (a) VALUES (1)')).toEqual(['orders']);
     expect(parseWriteTablesFromSql('INSERT INTO #tmp SELECT 1')).toEqual([]);
     expect(parseWriteTablesFromSql('SELECT update_count FROM t')).toEqual([]);
+  });
+
+  it('parseReadTablesFromSql walks comma-separated FROM lists with aliases (2026-08-23 shakedown)', () => {
+    // The classic Sybase comma join — previously only the first table read.
+    expect(
+      parseReadTablesFromSql(
+        'select fieldName, validationRule, r.ruleCode from rule_fields f, rule_config r where f.ruleCode = r.ruleCode',
+      ),
+    ).toEqual(['rule_fields', 'rule_config']);
+    // Three-table list, mixed aliases, `as` keyword tolerated.
+    expect(
+      parseReadTablesFromSql('select 1 from deal_book db, org_registry as o, screen_filter'),
+    ).toEqual(['deal_book', 'org_registry', 'screen_filter']);
+    // The alias is never mistaken for a table; clause keywords stop the walk.
+    expect(parseReadTablesFromSql('select 1 from deal_book db where db.x = 1')).toEqual([
+      'deal_book',
+    ]);
+    // Temp/variable list members are filtered, real members still collected.
+    expect(parseReadTablesFromSql('select 1 from #tmp, deal_book')).toEqual(['deal_book']);
+  });
+
+  it('parseReadTablesFromSql pins the update-from and exists-subselect read shapes', () => {
+    // Sybase `update ... from ... where exists (select ... from ...)`:
+    // the update target is a WRITE; both from-clauses are READS.
+    const sql =
+      'update deal_book set err_flag = 1 from deal_book db ' +
+      'where exists (select 1 from deal_book_errors dbe where db.alt_id = dbe.alt_id)';
+    expect(parseReadTablesFromSql(sql)).toEqual(['deal_book', 'deal_book_errors']);
+    expect(parseWriteTablesFromSql(sql)).toEqual(['deal_book']);
+    // Assignment select reads its FROM table.
+    expect(
+      parseReadTablesFromSql('select @failed_rows = count(1) from deal_book where err_flag is not null'),
+    ).toEqual(['deal_book']);
+    // DELETE FROM stays a write, never a read.
+    expect(parseReadTablesFromSql('delete from deal_book where x = 1')).toEqual([]);
   });
 
   it('parseProposalContent tolerates markdown fences', () => {
