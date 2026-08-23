@@ -615,6 +615,25 @@ export function extractBehaviour(
     return { resolveReceiver, resolveStaticImport };
   };
 
+  const CACHE_GET_NAMES = new Set(['get', 'getUnchecked', 'getIfPresent', 'getAll', 'getAllPresent']);
+
+  const isCacheTypedField = (f: JavaFieldInfo): boolean =>
+    /Cache$/.test(lastTypeSegment(f.type));
+
+  /** TRUE when the invocation receiver names a Cache-typed field of `cls`
+   *  (`cache.get(k)` / `this.cache.get(k)`). */
+  const isCacheFieldReceiver = (cls: JavaClassInfo, objectNode: SyntaxNode): boolean => {
+    const name =
+      objectNode.type === 'identifier'
+        ? objectNode.text
+        : objectNode.type === 'field_access' &&
+            objectNode.childForFieldName('object')?.type === 'this'
+          ? objectNode.childForFieldName('field')?.text ?? ''
+          : '';
+    if (!name) return false;
+    return cls.fields.some((f) => f.name === name && isCacheTypedField(f));
+  };
+
   const hasProjectCall = (cls: JavaClassInfo, method: JavaMethodInfo): boolean => {
     if (!method.bodyNode) return false;
     const { resolveReceiver } = receiverResolverFor(cls, method);
@@ -633,6 +652,14 @@ export function extractBehaviour(
       // exist). External-rooted receivers stay inline-eligible.
       const receiver = resolveReceiver(objectNode, 0);
       if (receiver !== 'external') return true;
+      // Cache-transparency (2026-08-23): `cache.get(...)` resolves external
+      // (Guava) and used to make cache-front methods look call-free — they
+      // inlined away and every read chain through a cache EVAPORATED. A
+      // get-family call on a Cache-typed field is a project call in spirit
+      // (the class's own loader runs on a miss).
+      if (CACHE_GET_NAMES.has(nameNode.text) && isCacheFieldReceiver(cls, objectNode)) {
+        return true;
+      }
     }
     // Method references (`store::record`) are calls too — a project-typed
     // or untypeable ref receiver blocks inlining exactly like a call
@@ -1217,6 +1244,71 @@ export function extractBehaviour(
   // in order into one fragment.
   const CLASS_ROUTING_RE = /@(?:Path|RequestMapping)\s*\(/;
 
+  // -------------------------------------------------------------------------
+  // Cache-transparency bridge (2026-08-23, live-estate ruling: "pick up these
+  // chains correctly"). The legacy idiom: a cache-holder class fronts a Guava
+  // LoadingCache whose anonymous CacheLoader.load() — built in the
+  // CONSTRUCTOR — delegates to the real DB loader. `cache.get(k)` resolves
+  // external, so the chain used to evaporate. The bridge mines the class's
+  // loader calls (methods named load/loadAll + anonymous `new *CacheLoader`
+  // bodies in any method OR constructor) and appends them, as
+  // 'cache miss -> loader' rows, to every method that reads a cache field.
+  // -------------------------------------------------------------------------
+  const bridgeRowsByClass = new Map<string, RowDraft[]>();
+  const bridgeRowsFor = (cls: JavaClassInfo): RowDraft[] => {
+    const cached = bridgeRowsByClass.get(cls.fqn);
+    if (cached) return cached;
+    const out: RowDraft[] = [];
+    const seen = new Set<string>();
+    const pushCalls = (rows: RowDraft[]): void => {
+      for (const row of rows) {
+        if (row.outcome.type !== 'call') continue;
+        const key = row.outcome.targetSymbol;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({
+          kind: 'branch',
+          conditionVerbatim: 'cache miss -> loader',
+          conditionRef: row.conditionRef,
+          outcome: row.outcome,
+        });
+      }
+    };
+    for (const m of cls.methods) {
+      if (!m.bodyNode) continue;
+      if (m.name === 'load' || m.name === 'loadAll') pushCalls(buildRowsForMethod(cls, m));
+    }
+    for (const m of [...cls.methods, ...(cls.constructors ?? [])]) {
+      if (!m.bodyNode) continue;
+      for (const anon of collectNodesOfType(m.bodyNode, 'object_creation_expression')) {
+        const typeNode = anon.childForFieldName('type');
+        if (!typeNode || !/CacheLoader$/.test(lastTypeSegment(typeNode.text))) continue;
+        for (const anonMethod of collectNodesOfType(anon, 'method_declaration')) {
+          const anonBody = anonMethod.childForFieldName('body');
+          if (!anonBody) continue;
+          // Resolve in the ENCLOSING class context — the loader delegates to
+          // outer fields; its own parameter never matters for chaining.
+          pushCalls(buildRowsForMethod(cls, { ...m, bodyNode: anonBody }));
+        }
+      }
+    }
+    bridgeRowsByClass.set(cls.fqn, out);
+    return out;
+  };
+
+  const methodReadsCacheField = (cls: JavaClassInfo, method: JavaMethodInfo): boolean => {
+    if (!method.bodyNode) return false;
+    for (const inv of collectNodesOfType(method.bodyNode, 'method_invocation')) {
+      const nameNode = inv.childForFieldName('name');
+      const objectNode = inv.childForFieldName('object');
+      if (!nameNode || !objectNode) continue;
+      if (CACHE_GET_NAMES.has(nameNode.text) && isCacheFieldReceiver(cls, objectNode)) {
+        return true;
+      }
+    }
+    return false;
+  };
+
   const drafts: TableDraft[] = [];
   for (const cls of index.classesByFqn.values()) {
     if (cls.kind === 'interface' || boundaryClassFqns.has(cls.fqn)) continue;
@@ -1226,6 +1318,24 @@ export function extractBehaviour(
       const symbol = methodSymbol(method);
 
       let rowDrafts = buildRowsForMethod(cls, method);
+      if (
+        method.name !== 'load' &&
+        method.name !== 'loadAll' &&
+        cls.fields.some(isCacheTypedField) &&
+        methodReadsCacheField(cls, method)
+      ) {
+        const existing = new Set(
+          rowDrafts
+            .filter((r) => r.outcome.type === 'call')
+            .map((r) => (r.outcome as { targetSymbol: string }).targetSymbol),
+        );
+        rowDrafts = [
+          ...rowDrafts,
+          ...bridgeRowsFor(cls).filter(
+            (b) => !existing.has((b.outcome as { targetSymbol: string }).targetSymbol),
+          ),
+        ];
+      }
       if (rowDrafts.length > maxRows) {
         const total = rowDrafts.length;
         rowDrafts = rowDrafts.slice(0, maxRows);
