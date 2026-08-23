@@ -656,6 +656,73 @@ describe('verb-agnostic effect chains (2026-08-22)', () => {
     expect(tops[0]).toMatch(/\(2\)$/); // the shared broken target counted from BOTH endpoints
   });
 
+  it('KNOWN-class dispatch with 19 implementations resolves (criteria pattern); ?-class stays capped', () => {
+    // 2026-08-23 live root cause: `Criteria#match(T)` has 19 implementations;
+    // the flat cap of 12 severed every hierarchy chain behind the criteria
+    // hop. A KNOWN receiver class now gets fan-out headroom; the strict cap
+    // stays for `?` receivers.
+    const makeCorpus = (targetSymbol: string) => {
+      const impls = Array.from({ length: 19 }, (_, i) =>
+        behaviourTable({
+          key: `T-crit${i}`,
+          symbol: `com.x.CriteriaImpl${i}#match(Node)`,
+          annotations: [],
+          callTargets: i === 0 ? ['Q-bookDao'] : [],
+        }),
+      );
+      const corpus = corpusOf([
+        behaviourTable({
+          key: 'T-list',
+          symbol: 'HierarchyResource#list',
+          annotations: ['@GET', '@Path("hier")'],
+          callTargets: [],
+        }),
+        ...impls,
+        boundary({
+          key: 'Q-bookDao',
+          symbol: 'BookDao',
+          sql: ['select * from hir_book where ValidFrom <= ?'],
+        }),
+      ]);
+      // The impls take one parameter — the helper defaults signatureInputs
+      // to [] which would index them as match/0 while the call wants match/1.
+      for (let i = 1; i <= 19; i++) {
+        (corpus.contracts[i] as { contract: { signatureInputs: unknown[] } }).contract.signatureInputs =
+          [{ name: 'node', typeRef: 'Node' }];
+      }
+      (corpus.contracts[0] as { contract: { rows: unknown[] } }).contract.rows.push({
+        index: 9,
+        kind: 'terminal',
+        conditionVerbatim: null,
+        conditionRef: null,
+        outcome: { type: 'call', targetKey: null, targetSymbol },
+      });
+      return corpus;
+    };
+
+    const result = deriveCorpusEffectCandidates({
+      corpus: makeCorpus('com.x.Criteria#match(T)'),
+      runId: 'run-1',
+      runCandidates: [endpointCandidate('listHier', 'GET', '/api/hier')],
+    });
+    // The dispatch EXPANDS through the 19 impls to the DAO — read derived,
+    // no chain break recorded.
+    expect(
+      result.candidates.map((c) => (c.data as Record<string, unknown>).dataEntityName),
+    ).toEqual(['hir_book']);
+    expect(result.chainBreaks).toHaveLength(0);
+
+    // The SAME fan-out behind an unknown receiver stays refused (loud).
+    const blindResult = deriveCorpusEffectCandidates({
+      corpus: makeCorpus('?#match(?)'),
+      runId: 'run-1',
+      runCandidates: [endpointCandidate('listHier', 'GET', '/api/hier')],
+    });
+    expect(blindResult.candidates).toHaveLength(0);
+    expect(blindResult.chainBreaks).toHaveLength(1);
+    expect(blindResult.chainBreaks[0].broken_calls[0]).toContain('exceed the expansion cap 12');
+  });
+
   it('an internal entrypoint with NO corpus presence lands in internalUnmatched, loudly', () => {
     const internal = {
       id: 'ep-ghost',

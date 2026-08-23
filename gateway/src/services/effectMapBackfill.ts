@@ -265,8 +265,15 @@ export interface DispatchExpansionIndex {
   classFqnsInCorpus: Set<string>;
 }
 
-/** Aligned with the scan emitter (2026-08-21 Item 4). */
+/** Aligned with the scan emitter (2026-08-21 Item 4; tiered 2026-08-23). */
 const DISPATCH_EXPANSION_CAP = 12;
+/** KNOWN-receiver-class dispatch (a real interface/abstract with many
+ *  implementations — the legacy criteria/visitor pattern) gets headroom:
+ *  the live estate's `Criteria#match(T)` has 19 implementations and the
+ *  flat cap of 12 severed EVERY hierarchy chain behind it (2026-08-23).
+ *  The strict cap stays for `?`-receivers, where name-only matching can
+ *  genuinely union strangers. */
+const KNOWN_CLASS_DISPATCH_CAP = 40;
 
 export function buildDispatchIndex(contracts: SclContractDto[]): DispatchExpansionIndex {
   const tablesByNameArity = new Map<string, string[]>();
@@ -342,7 +349,8 @@ function expandDispatch(
   if (tables.length === 0 && clsFqn === '?') tables = expansion.tablesByName.get(name) ?? [];
   const boundaries = expansion.boundariesByOpName.get(name) ?? [];
   const total = tables.length + boundaries.length;
-  if (total === 0 || total > DISPATCH_EXPANSION_CAP) return null;
+  const cap = clsFqn === '?' ? DISPATCH_EXPANSION_CAP : KNOWN_CLASS_DISPATCH_CAP;
+  if (total === 0 || total > cap) return null;
   return { tables, boundaries };
 }
 
@@ -363,8 +371,9 @@ export function unresolvedReason(
     (expansion.tablesByNameArity.get(`${name}/${arity}`) ?? []).length ||
     (expansion.tablesByName.get(name) ?? []).length +
       (expansion.boundariesByOpName.get(name) ?? []).length;
-  if (total > DISPATCH_EXPANSION_CAP) {
-    return `${total} name-matched candidates exceed the expansion cap ${DISPATCH_EXPANSION_CAP}`;
+  const cap = clsFqn === '?' ? DISPATCH_EXPANSION_CAP : KNOWN_CLASS_DISPATCH_CAP;
+  if (total > cap) {
+    return `${total} name-matched candidates exceed the expansion cap ${cap}`;
   }
   if (clsFqn === '?') {
     return 'receiver type could not be determined at scan time (chained/ternary/array receiver)';

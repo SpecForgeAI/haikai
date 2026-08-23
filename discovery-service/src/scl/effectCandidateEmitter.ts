@@ -326,6 +326,13 @@ export interface CallWalkResult {
  *  12 aligns with the gateway mirror (2026-08-21 Item 4 — the extractor
  *  and assembler are uncapped; they carry real type info). */
 const DISPATCH_EXPANSION_CAP = 12;
+/** KNOWN-receiver-class dispatch (a real interface/abstract with many
+ *  implementations — the legacy criteria/visitor pattern) gets headroom:
+ *  the live estate's `Criteria#match(T)` has 19 implementations and the
+ *  flat cap of 12 severed EVERY hierarchy chain behind it (2026-08-23).
+ *  The strict cap stays for `?`-receivers, where name-only matching can
+ *  genuinely union strangers. */
+const KNOWN_CLASS_DISPATCH_CAP = 40;
 
 /**
  * Resolve a null-target call symbol (`Cls#method(A,B)`) by name+arity across
@@ -356,7 +363,8 @@ function expandDispatch(
   if (tables.length === 0 && clsFqn === '?') tables = index.tablesByName.get(name) ?? [];
   const boundaries = index.boundariesByOpName.get(name) ?? [];
   const total = tables.length + boundaries.length;
-  if (total === 0 || total > DISPATCH_EXPANSION_CAP) return null;
+  const cap = clsFqn === '?' ? DISPATCH_EXPANSION_CAP : KNOWN_CLASS_DISPATCH_CAP;
+  if (total === 0 || total > cap) return null;
   return { tables, boundaries };
 }
 
@@ -376,8 +384,9 @@ export function unresolvedReason(targetSymbol: string, index: CorpusIndex): stri
   const total =
     (index.tablesByNameArity.get(`${name}/${arity}`) ?? []).length ||
     (index.tablesByName.get(name) ?? []).length + (index.boundariesByOpName.get(name) ?? []).length;
-  if (total > DISPATCH_EXPANSION_CAP) {
-    return `${total} name-matched candidates exceed the expansion cap ${DISPATCH_EXPANSION_CAP}`;
+  const cap = clsFqn === '?' ? DISPATCH_EXPANSION_CAP : KNOWN_CLASS_DISPATCH_CAP;
+  if (total > cap) {
+    return `${total} name-matched candidates exceed the expansion cap ${cap}`;
   }
   if (clsFqn === '?') {
     return 'receiver type could not be determined at scan time (chained/ternary/array receiver)';
