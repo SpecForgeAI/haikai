@@ -186,3 +186,18 @@ describe('strategies', () => {
     expect(result.appliedRuleIds).toEqual(['CITE.1', 'CITE.2']);
   });
 });
+
+describe('bi-temporal open sentinel (Oracle Nine item 4)', () => {
+  it('the 9999-12-31 open-row sentinel survives timestamp-truncate canonicalization', async () => {
+    const { canonicalize } = await import('../migrationPairRules');
+    const comparison = { strategy: 'timestamp-truncate', params: {} } as never;
+    const sourceRendering = canonicalize('9999-12-31 00:00:00.0', comparison);
+    const targetRendering = canonicalize('9999-12-31T00:00:00.000Z', comparison);
+    // Canonical form is epoch-ms: the open-row sentinel must be finite
+    // (never clipped/overflowed) and identical from both engines'
+    // renderings — an updated row must never read as delete+insert.
+    expect(typeof sourceRendering).toBe('number');
+    expect(Number.isFinite(sourceRendering as number)).toBe(true);
+    expect(sourceRendering).toBe(targetRendering);
+  });
+});

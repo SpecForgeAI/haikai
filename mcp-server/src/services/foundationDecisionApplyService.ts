@@ -157,6 +157,22 @@ export function applyDecisionsToEntities(
           touched = true;
         }
       }
+      const parityKey = decision.payload_json?.parity_key;
+      if (Array.isArray(parityKey) && parityKey.length > 0) {
+        const constraints = (entity.constraints_metadata ??= {});
+        constraints.parity_key = {
+          columns: parityKey.map((c) => String(c)),
+          verified: decision.payload_json?.parity_key_verified === true,
+          decision_ref: decision.decision_key,
+        };
+        touched = true;
+      }
+      const parityMode = decision.payload_json?.parity_mode;
+      if (parityMode === 'count_checksum') {
+        const constraints = (entity.constraints_metadata ??= {});
+        constraints.parity_mode = 'count_checksum';
+        touched = true;
+      }
       const seqStrategy = decision.payload_json?.sequence_strategy;
       if (typeof seqStrategy === 'string' && seqStrategy.length > 0) {
         const constraints = (entity.constraints_metadata ??= {});

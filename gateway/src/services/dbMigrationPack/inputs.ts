@@ -400,6 +400,8 @@ export function buildSourceSchemaIr(inputs: GenerationInputs): SourceSchemaIr {
       sequenceGenerator:
         ((cm as { sequence_generator?: IrTable['sequenceGenerator'] }).sequence_generator ??
           null),
+      parityKey:
+        ((cm as { parity_key?: IrTable['parityKey'] }).parity_key ?? null),
       uniqueConstraints: cm.unique_constraints ?? [],
       checkConstraints: cm.check_constraints ?? [],
       indexes: (cm.indexes ?? []).map((i) => ({

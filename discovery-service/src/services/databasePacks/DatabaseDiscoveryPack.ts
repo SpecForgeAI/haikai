@@ -239,6 +239,17 @@ export interface DatabaseDiscoveryPack {
     caseSensitive: boolean | null;
   } | null>;
 
+  /**
+   * OPTIONAL capability (2026-08-23, item 4): probe whether a column tuple
+   * is UNIQUE on the live data (`count(*)` vs `count(distinct tuple)`),
+   * read-only. Powers VERIFIED parity-key proposals for tables without a
+   * sound primary key.
+   */
+  probeKeyCandidate?(
+    ctx: DatabaseDiscoveryPackContext,
+    args: { schemaName: string | null; tableName: string; columns: string[] },
+  ): Promise<{ total: number | null; distinct: number | null } | null>;
+
   probeSequenceRows?(
     ctx: DatabaseDiscoveryPackContext,
     idiom: import('../../scl/sqlProcHarvester').SequenceGeneratorIdiom,

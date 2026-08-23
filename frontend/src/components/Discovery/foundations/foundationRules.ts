@@ -96,6 +96,13 @@ export interface EntityFacts {
   /** DB-scan enrichment (Oracle Nine item 2): the table IS a legacy
    *  sequence-generator (increment proc + rows), with live values and
    *  proposed name -> table.column mappings. */
+  /** Live uniqueness probes for parity-key proposals (item 4). */
+  parityKeyProbes?: Array<{
+    columns: string[];
+    total: number | null;
+    distinct: number | null;
+    unique: boolean | null;
+  }> | null;
   sequenceGeneratorIdiom?: {
     procName?: string;
     numberColumn?: string;
@@ -138,6 +145,8 @@ export function entityFactsFromCandidates(candidates: CandidateLike[]): EntityFa
         null,
       sequenceGeneratorIdiom:
         (data.sequence_generator_idiom as EntityFacts['sequenceGeneratorIdiom']) ?? null,
+      parityKeyProbes:
+        (data.parity_key_probes as EntityFacts['parityKeyProbes']) ?? null,
     });
   }
   for (const c of candidates) {
@@ -501,6 +510,32 @@ export function deriveFoundationQuestions(
         { answer: 'exclude', label: 'Exclude the table from migration', scope: 'excluded' },
       );
     }
+    // Parity-key enrichment (item 4): a live-VERIFIED unique tuple rides
+    // EVERY option's payload, so whichever key answer the human records,
+    // the reconcile join gets a proven key; with no verified tuple on a
+    // keyless table, parity degrades honestly to count+checksum.
+    const verifiedProbe = (t.parityKeyProbes ?? []).find((pr) => pr.unique === true) ?? null;
+    if (verifiedProbe) {
+      detail +=
+        ` LIVE-VERIFIED parity key available: (${verifiedProbe.columns.join(', ')}) is unique ` +
+        `across ${verifiedProbe.total ?? '?'} rows — recorded with your answer for the ` +
+        `reconcile join.`;
+      for (const option of options) {
+        option.payload = {
+          ...(option.payload ?? {}),
+          parity_key: verifiedProbe.columns,
+          parity_key_verified: true,
+        };
+      }
+    } else if ((t.parityKeyProbes ?? []).length > 0) {
+      detail +=
+        ` No probed tuple is unique on the live data (${(t.parityKeyProbes ?? [])
+          .map((pr) => `(${pr.columns.join(', ')}): ${pr.distinct}/${pr.total}`)
+          .join('; ')}) — parity uses count+checksum for this table.`;
+      for (const option of options) {
+        option.payload = { ...(option.payload ?? {}), parity_mode: 'count_checksum' };
+      }
+    }
     const q = reconcile({
       question_key: `FQ-key_posture-${t.name.toLowerCase()}`,
       rule_key: 'key_posture',
@@ -512,6 +547,9 @@ export function deriveFoundationQuestions(
         table: t.name.toLowerCase(),
         posture: posture.posture,
         columns: posture.uniqueColumns,
+        parityProbes: (t.parityKeyProbes ?? [])
+          .map((pr) => [pr.columns.map((c) => c.toLowerCase()).join(','), pr.unique] as const)
+          .sort((a, b) => (a[0] < b[0] ? -1 : 1)),
         attrs: t.attributes
           .map((a) => [a.name.toLowerCase(), a.isNullable, a.isPrimaryKey] as const)
           .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)),

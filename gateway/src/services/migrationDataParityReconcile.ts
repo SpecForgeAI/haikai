@@ -158,14 +158,30 @@ export async function defaultResolveDataParityTables(
     if (k.isSurrogate === true) continue;
     pkByTable.set(`${k.schemaName ?? ''}.${k.tableName ?? ''}`.toLowerCase(), k.columns);
   }
+  // VERIFIED parity keys (item 4) take precedence over the manifest PK —
+  // they exist precisely for tables whose PK is absent, surrogate, or
+  // bi-temporally weak (proven-unique tuples from the live probes).
+  const parityKeyByTable = new Map<string, string[]>();
+  for (const pkEntry of packView.manifest.parity_keys ?? []) {
+    if (pkEntry.verified !== true || !Array.isArray(pkEntry.columns) || pkEntry.columns.length === 0) {
+      continue;
+    }
+    parityKeyByTable.set(
+      `${pkEntry.schemaName ?? ''}.${pkEntry.tableName ?? ''}`.toLowerCase(),
+      pkEntry.columns,
+    );
+  }
   return orderedTables(packView.manifest).map((qn) => {
     const dot = qn.indexOf('.');
     const entry: DataParityTable =
       dot > 0
         ? { schema: qn.slice(0, dot), table: qn.slice(dot + 1) }
         : { schema: null, table: qn };
-    const pk = pkByTable.get(`${entry.schema ?? ''}.${entry.table}`.toLowerCase());
-    if (pk) entry.primaryKey = pk;
+    const lookupKey = `${entry.schema ?? ''}.${entry.table}`.toLowerCase();
+    const parityKey = parityKeyByTable.get(lookupKey);
+    const pk = pkByTable.get(lookupKey);
+    if (parityKey) entry.primaryKey = parityKey;
+    else if (pk) entry.primaryKey = pk;
     return entry;
   });
 }

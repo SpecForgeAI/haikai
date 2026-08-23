@@ -241,6 +241,40 @@ export class SybaseDiscoveryPack implements DatabaseDiscoveryPack {
     return sources;
   }
 
+  /** Live uniqueness probe (2026-08-23, item 4) — read-only via /query. */
+  async probeKeyCandidate(
+    ctx: DatabaseDiscoveryPackContext,
+    args: { schemaName: string | null; tableName: string; columns: string[] },
+  ): Promise<{ total: number | null; distinct: number | null } | null> {
+    const creds = this.requireCreds();
+    const safe = (ident: string): string => {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(ident)) {
+        throw new Error(`unsafe identifier in key probe: ${ident}`);
+      }
+      return ident;
+    };
+    const qn = args.schemaName
+      ? `${safe(args.schemaName)}.${safe(args.tableName)}`
+      : safe(args.tableName);
+    const cols = args.columns.map(safe).join(', ');
+    const sql =
+      `SELECT (SELECT COUNT(*) FROM ${qn}) AS total_rows, ` +
+      `(SELECT COUNT(*) FROM (SELECT DISTINCT ${cols} FROM ${qn}) AS d) AS distinct_rows`;
+    const r = await callSidecarQuery(creds, {
+      sql,
+      queryTimeoutSeconds: ctx.config.queryTimeoutSeconds ?? 120,
+      maxRows: 1,
+    });
+    const row = (r.rows ?? [])[0] as Record<string, unknown> | undefined;
+    if (!row) return null;
+    const total = Number(row.total_rows);
+    const distinct = Number(row.distinct_rows);
+    return {
+      total: Number.isFinite(total) ? total : null,
+      distinct: Number.isFinite(distinct) ? distinct : null,
+    };
+  }
+
   /** Sequence-table row probe (2026-08-23) — read-only via /query. */
   async probeSequenceRows(
     ctx: DatabaseDiscoveryPackContext,
