@@ -73,6 +73,17 @@ export interface SclAnnotationSummary {
 /** The scan's opaque stats payload: the miner's camelCase corpus stats plus
  * the annotation pass's snake_case `scl_annotation` block. */
 export interface SclScanStats {
+  /** Live-vs-repo proc merge accounting (null / absent when the scan had no
+   *  live DB catalog to merge — repo-only proc harvest). */
+  procMerge?: {
+    repoCount?: number;
+    liveCount?: number;
+    mergedCount?: number;
+    driftCount?: number;
+    liveOnlyCount?: number;
+    repoOnlyCount?: number;
+    repoDuplicateCount?: number;
+  } | null;
   rootCount?: number;
   externalRootCount?: number;
   internalRootCount?: number;

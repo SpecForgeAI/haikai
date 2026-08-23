@@ -268,6 +268,41 @@ it('renders the scan status card with key stats + the annotation summary', async
   expect(screen.queryByTestId('structural-model-annotation-pending')).toBeNull();
 });
 
+it('renders the proc-merge summary counts when live sources were merged (2026-08-23)', async () => {
+  getLatestScanMock.mockResolvedValue({
+    ...SCAN,
+    stats_json: {
+      ...(SCAN.stats_json as Record<string, unknown>),
+      procMerge: {
+        repoCount: 32,
+        liveCount: 29,
+        mergedCount: 35,
+        driftCount: 2,
+        liveOnlyCount: 3,
+        repoOnlyCount: 6,
+        repoDuplicateCount: 1,
+      },
+    },
+  } as SclScan);
+
+  renderTab();
+
+  const line = await screen.findByTestId('structural-model-proc-merge');
+  expect(line).toHaveTextContent('35 procs');
+  expect(line).toHaveTextContent('2 drift');
+  expect(line).toHaveTextContent('3 live-only');
+  expect(screen.queryByTestId('structural-model-proc-merge-absent')).toBeNull();
+});
+
+it('says repo-only loudly when a completed scan merged no live proc sources (2026-08-23)', async () => {
+  renderTab();
+
+  expect(await screen.findByTestId('structural-model-proc-merge-absent')).toHaveTextContent(
+    'repo-only',
+  );
+  expect(screen.queryByTestId('structural-model-proc-merge')).toBeNull();
+});
+
 it('renders an explicit annotation-pending line when a completed scan has no merged summary (2026-08-20)', async () => {
   const { scl_annotation: _dropped, ...statsWithoutAnnotation } =
     SCAN.stats_json as Record<string, unknown> & { scl_annotation: unknown };
