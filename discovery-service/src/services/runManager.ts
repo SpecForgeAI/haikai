@@ -2896,6 +2896,9 @@ async function startServiceScopedRun(
             unproposed: proposalPhase.unproposed,
             readUnderived: derivedPhase.readUnderived,
             chainBreaks: derivedPhase.chainBreaks,
+            // Shakedown fix 2 (2026-08-23): table -> caller-less proc
+            // touchers; the foundations never-touched card annotates WHY.
+            orphanProcTouchers: derivedPhase.orphanProcTouchers,
           };
           console.log(
             `[RunManager:service-scoped] Effect candidates: ${derivedPhase.candidates.length} corpus-derived ` +

@@ -70,6 +70,30 @@ import {
 import { CandidateBulkFillPanel } from './CandidateBulkFillPanel';
 import styles from './DiscoveryRunDetailView.module.css';
 
+/** Pull the code run's table -> caller-less-proc-touchers map out of the
+ *  step payload (shakedown fix 2, 2026-08-23). The map rides
+ *  steps_payload.<codeStep>.effectCandidates.orphanProcTouchers; step key
+ *  names vary, so every step value is checked. Absent -> undefined (the
+ *  never-touched card keeps its generic note). */
+function extractOrphanProcTouchers(
+  stepsPayload: Record<string, unknown> | null | undefined,
+): Record<string, string[]> | undefined {
+  if (!stepsPayload || typeof stepsPayload !== 'object') return undefined;
+  for (const value of Object.values(stepsPayload)) {
+    const effectCandidates = (value as { effectCandidates?: { orphanProcTouchers?: unknown } } | null)
+      ?.effectCandidates;
+    const map = effectCandidates?.orphanProcTouchers;
+    if (map && typeof map === 'object' && !Array.isArray(map)) {
+      const out: Record<string, string[]> = {};
+      for (const [table, procs] of Object.entries(map as Record<string, unknown>)) {
+        if (Array.isArray(procs)) out[table.toLowerCase()] = procs.map((p) => String(p));
+      }
+      return Object.keys(out).length > 0 ? out : undefined;
+    }
+  }
+  return undefined;
+}
+
 const VALID_STEPS = ['1a', '1b', '1c', '1d'] as const;
 
 function formatProgressIndicator(currentStep: string): string {
@@ -850,6 +874,7 @@ export const DiscoveryRunDetailPage: React.FC = () => {
             mode={selectedRun.discovery_kind === 'code' ? 'code' : 'database'}
             onApplied={() => setLastSaveTimestamp(Date.now())}
             modelRefreshKey={lastSaveTimestamp}
+            orphanProcTouchers={extractOrphanProcTouchers(selectedRun.steps_payload)}
           />
         )}
       {/* Estate continuation (Spec 5): after the DB scan lands, guide the

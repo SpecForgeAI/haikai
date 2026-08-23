@@ -635,6 +635,11 @@ export interface DeriveResult {
   /** Harvested procs NO walked SQL referenced — manually-run procs
    *  (importVirtualNodes) stay VISIBLE instead of vanishing (capped 15). */
   procsUnreferenced: string[];
+  /** table(lower) -> caller-less proc names touching it (shakedown fix 2,
+   *  2026-08-23): lets the foundations never-touched card say WHY a table
+   *  is dark ("only touched by caller-less deployed procs X, Y") instead
+   *  of leaving the operator to a forensic session. Capped 100 tables. */
+  orphanProcTouchers: Record<string, string[]>;
 }
 
 function normName(value: unknown): string {
@@ -1023,6 +1028,23 @@ export function deriveCorpusEffectCandidates(args: {
     .filter((name) => !referencedProcs.has(name))
     .sort()
     .slice(0, 15);
+  const orphanProcTouchers: Record<string, string[]> = {};
+  for (const [procName, tables] of index.procTablesByName) {
+    if (referencedProcs.has(procName)) continue;
+    for (const table of [...tables.writes, ...tables.reads]) {
+      const key = table.toLowerCase();
+      const list = (orphanProcTouchers[key] ??= []);
+      if (!list.includes(procName)) list.push(procName);
+    }
+  }
+  for (const key of Object.keys(orphanProcTouchers)) orphanProcTouchers[key].sort();
+  // Deterministic cap: keep the alphabetically-first 100 tables.
+  const cappedOrphanTouchers = Object.fromEntries(
+    Object.keys(orphanProcTouchers)
+      .sort()
+      .slice(0, 100)
+      .map((k) => [k, orphanProcTouchers[k]]),
+  );
   return {
     candidates,
     uncovered,
@@ -1034,6 +1056,7 @@ export function deriveCorpusEffectCandidates(args: {
     chainBreaks,
     procCatalogCount: index.procCatalogCount,
     procsUnreferenced,
+    orphanProcTouchers: cappedOrphanTouchers,
   };
 }
 

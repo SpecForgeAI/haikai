@@ -45,6 +45,9 @@ export interface FoundationsReviewPanelProps {
    *  its save timestamp so the joint questions materialize right after the
    *  code run's candidates are saved (no reload needed). */
   modelRefreshKey?: number;
+  /** table(lower) -> caller-less proc touchers from the code run's
+   *  emission summary — annotates the never-touched card (code mode). */
+  orphanProcTouchers?: Record<string, string[]>;
 }
 
 const cardStyle: React.CSSProperties = {
@@ -62,6 +65,7 @@ export const FoundationsReviewPanel: React.FC<FoundationsReviewPanelProps> = ({
   mode = 'database',
   onApplied,
   modelRefreshKey,
+  orphanProcTouchers,
 }) => {
   const [decisions, setDecisions] = useState<FoundationDecisionDto[]>([]);
   const [decisionsLoaded, setDecisionsLoaded] = useState(false);
@@ -141,6 +145,7 @@ export const FoundationsReviewPanel: React.FC<FoundationsReviewPanelProps> = ({
           evidence_hash: d.evidence_hash,
           stale: d.stale,
         })),
+        { orphanProcTouchers },
       );
     }
     if (facts.length === 0) return [];
@@ -156,7 +161,7 @@ export const FoundationsReviewPanel: React.FC<FoundationsReviewPanelProps> = ({
         stale: d.stale,
       })),
     );
-  }, [facts, decisions, decisionsLoaded, mode, rawModel]);
+  }, [facts, decisions, decisionsLoaded, mode, rawModel, orphanProcTouchers]);
 
   useEffect(() => {
     const stale: string[] = [];

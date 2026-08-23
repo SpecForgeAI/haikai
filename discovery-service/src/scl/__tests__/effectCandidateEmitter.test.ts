@@ -830,6 +830,12 @@ describe('verb-agnostic effect chains (2026-08-22)', () => {
     // The manually-run proc nothing references stays VISIBLE.
     expect(result.procCatalogCount).toBe(3);
     expect(result.procsUnreferenced).toEqual(['importvirtualnodes']);
+    // ...and its touched tables carry the WHY for the never-touched card
+    // (2026-08-23 shakedown fix 2). Referenced procs contribute nothing.
+    expect(result.orphanProcTouchers).toEqual({
+      all_node_map: ['importvirtualnodes'],
+      ext_tree_node: ['importvirtualnodes'],
+    });
   });
 
   it('config-held proc dispatch (field-initializer map) derives via the walked config-sql row', () => {

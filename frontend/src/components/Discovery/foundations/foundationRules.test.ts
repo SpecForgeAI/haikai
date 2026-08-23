@@ -204,6 +204,27 @@ describe('joint CRUD-matrix rules (Spec 5)', () => {
     expect(conflict.options[0]).toMatchObject({ answer: 'keep_excluded', recommended: true });
   });
 
+  it('annotates never-touched targets with caller-less proc touchers, hash unchanged (2026-08-23)', () => {
+    const plain = deriveJointFoundationQuestions(JOINT_MODEL, []);
+    const annotated = deriveJointFoundationQuestions(JOINT_MODEL, [], {
+      orphanProcTouchers: {
+        ghost_table: ['importvirtualnodes', 'removetreebranch'],
+        unrelated_table: ['someproc'],
+      },
+    });
+    const never = annotated.find((q) => q.question_key === 'FQ-crud_never')!;
+    expect(never.targets).toHaveLength(1);
+    expect(never.targets[0].note).toBe(
+      'only touched by caller-less deployed proc(s): importvirtualnodes, removetreebranch — no rooted code path reaches them',
+    );
+    // The annotation is presentation-only: the evidence hash stays the
+    // name-based hash, so a stored decision never goes stale from it.
+    const plainNever = plain.find((q) => q.question_key === 'FQ-crud_never')!;
+    expect(never.evidence_hash).toBe(plainNever.evidence_hash);
+    // Tables WITHOUT orphan touchers keep the generic note.
+    expect(plainNever.targets[0].note).toBe('no discovered endpoint reads or writes this table');
+  });
+
   it('a settled joint decision with unchanged evidence stays silent', () => {
     const open = deriveJointFoundationQuestions(JOINT_MODEL, []);
     const never = open.find((q) => q.question_key === 'FQ-crud_never')!;
