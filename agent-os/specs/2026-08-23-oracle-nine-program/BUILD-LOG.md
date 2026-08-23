@@ -67,6 +67,38 @@ charset config, sequence rows, uniqueness probes).
    translated mechanically to the recorder recipe; LLM induction demoted to
    fallback. STATUS: MERGED.
 
+## Shakedown round 1 (2026-08-23, live foundations review on the estate)
+
+Evidence session: 12 in-scope never-touched tables vs 7 expected. Forensics
+(operator greps + register cross-reference) proved 10 of 12 correct-dark
+(caller-less deployed procs, dead attr subsystem, DDL-seeded lookups,
+external deploy tool) and 2 dark from ONE parser gap. Three fixes, one
+--no-ff merge each:
+
+1. **Comma-join FROM read extraction** — `parseReadTablesFromSql` walks the
+   FROM clause as a comma-separated list w/ optional `as`/aliases,
+   conservative stop-words; shared parser (proc bodies + Java verbatim).
+   Pins: comma lists, update-from, exists-subselect, assignment-select,
+   delete-from exclusion. Lights the two config tables read via the
+   classic Sybase comma join.
+2. **Never-touched card WHY annotation** — emitter derive now returns
+   `orphanProcTouchers` (table -> caller-less proc names, transitively
+   closed, cap 100); rides steps_payload effectCandidates; run detail page
+   passes it to FoundationsReviewPanel; crud_never target notes read
+   "only touched by caller-less deployed proc(s): X, Y". Evidence hash is
+   name-based so stored decisions never stale from the richer note.
+3. **Proc findings promotion + merge-count rendering** — proc_* merge
+   findings (drift/live-only/repo-only/duplicate) now ALSO emit into the
+   run findings register (category proc_catalog, source scl_proc_merge,
+   soft-fail; pure mapper procMergeFindingInputs pinned); Structural Model
+   tab renders the procMerge summary counts, with an explicit repo-only
+   line when no live sources merged.
+
+Pickup deltas: discovery-service restart (fixes 1-3 backend), frontend
+restart (fixes 2-3 UI). No AMS/gateway/sidecar changes in this round.
+Re-run: code scan (DB scan already COMPLETED on the new build) ->
+foundations review -> expect 10 dark never-touched tables, annotated.
+
 ## Per-item as-built notes
 
 ### Item 9 (as-built)

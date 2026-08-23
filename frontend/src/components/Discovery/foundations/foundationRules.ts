@@ -765,6 +765,13 @@ export function crudFactsFromModel(model: RawModelLike): CrudFacts[] {
 export function deriveJointFoundationQuestions(
   model: RawModelLike,
   decisions: StoredFoundationDecision[],
+  opts?: {
+    /** table(lower) -> caller-less proc names touching it (code-scan
+     *  emission summary). Never changes WHICH tables are dark — only lets
+     *  the never-touched card say WHY (evidence hash is name-based, so
+     *  richer notes never stale a stored decision). */
+    orphanProcTouchers?: Record<string, string[]>;
+  },
 ): FoundationQuestion[] {
   // No committed code evidence -> no joint questions. Every rule below
   // reasons over effect edges; without the code save they are all vacuous
@@ -811,9 +818,16 @@ export function deriveJointFoundationQuestions(
     (f) => f.scope === 'in_scope' && f.reads + f.writes + f.executes === 0,
   );
   if (never.length > 0 && hasReadEvidence) {
-    const targets = never.map((f) =>
-      jointTarget(f, 'no discovered endpoint reads or writes this table'),
-    );
+    const orphanTouchers = opts?.orphanProcTouchers ?? {};
+    const targets = never.map((f) => {
+      const procs = orphanTouchers[f.name.toLowerCase()] ?? [];
+      return jointTarget(
+        f,
+        procs.length > 0
+          ? `only touched by caller-less deployed proc(s): ${procs.join(', ')} — no rooted code path reaches them`
+          : 'no discovered endpoint reads or writes this table',
+      );
+    });
     const q = reconcile({
       question_key: 'FQ-crud_never',
       rule_key: 'crud_never',
