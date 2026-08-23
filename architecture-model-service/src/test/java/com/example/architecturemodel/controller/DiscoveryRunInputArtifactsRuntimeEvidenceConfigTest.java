@@ -155,6 +155,45 @@ class DiscoveryRunInputArtifactsRuntimeEvidenceConfigTest {
     }
 
     /**
+     * Oracle Nine item 9: {@code runtimeEvidenceConfig.logPatternHint} (the
+     * app's log4j/logback ConversionPattern) rides the same PATCH and
+     * persists trimmed beside M.
+     */
+    @Test
+    @DisplayName("(1b) PATCH with runtimeEvidenceConfig.logPatternHint persists the trimmed pattern")
+    void patch_withLogPatternHint_persistsTrimmed() throws Exception {
+        String body = objectMapper.writeValueAsString(Map.of(
+            "logFiles", List.of(
+                logFileMeta("art-1", "app.log", 12_345L, ".log",
+                    "text/plain", "2026-05-11T10:00:00Z",
+                    "discovery-runs/" + runId + "/logs/app.log")
+            ),
+            "attemptedCount", 1,
+            "runtimeEvidenceConfig", Map.of(
+                "maxLogPathPrefixSegments", 2,
+                "logPatternHint", "  %d{dd,HH:mm:ss,SSS} %p [%t] [%c{1}] - %m%n  "
+            )
+        ));
+
+        mockMvc.perform(patch(BASE_PATH, projectId, architectureId, runId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+            .andExpect(status().isOk());
+
+        DiscoveryRunEntity reloaded = discoveryRunRepository.findById(runId).orElseThrow();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> runtimeEvidenceConfig =
+            (Map<String, Object>) reloaded.getConfigSnapshot().get("runtimeEvidenceConfig");
+        assertThat(runtimeEvidenceConfig).isNotNull();
+        assertThat(runtimeEvidenceConfig.get("logPatternHint"))
+            .as("logPatternHint must persist trimmed")
+            .isEqualTo("%d{dd,HH:mm:ss,SSS} %p [%t] [%c{1}] - %m%n");
+        assertThat(((Number) runtimeEvidenceConfig.get("maxLogPathPrefixSegments")).intValue())
+            .as("M must persist beside the pattern in the same merge")
+            .isEqualTo(2);
+    }
+
+    /**
      * Test (2): a follow-up PATCH that does NOT carry the
      * {@code runtimeEvidenceConfig} key MUST leave the previously-persisted
      * M value UNCHANGED. This is the "omit means preserve" contract called

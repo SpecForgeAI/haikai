@@ -1,0 +1,9 @@
+04,17:00:03,214 INFO [feed-worker-1] [RequestLog] - POST /api/deal-books/42/positions statusCode=201
+04,17:00:03,377 ERROR [feed-worker-1] [FeedRunner] - feed row rejected
+java.lang.IllegalStateException: unmapped screen filter
+	at com.example.feeds.FeedRunner.apply(FeedRunner.java:88)
+	at com.example.feeds.FeedRunner.run(FeedRunner.java:31)
+04,17:00:04,001 INFO [http-worker-3] [RequestLog] - GET /api/deal-books/42 statusCode=200
+04,17:00:04,455 INFO [http-worker-4] [RequestLog] - GET /api/org-registry/nodes?depth=2 statusCode=200
+04,17:00:05,102 WARN [http-worker-3] [RequestLog] - DELETE /api/screen-filters/7 statusCode=404
+04,17:00:06,340 INFO [scheduler-1] [BatchKickoff] - nightly ledger sync started

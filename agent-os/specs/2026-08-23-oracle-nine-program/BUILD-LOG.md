@@ -65,9 +65,16 @@ charset config, sequence rows, uniqueness probes).
 9. **Log pointing + deterministic pattern translation** — code-scan config
    accepts app-log path + pattern; log4j/logback ConversionPattern
    translated mechanically to the recorder recipe; LLM induction demoted to
-   fallback. STATUS: pending.
+   fallback. STATUS: MERGED.
 
 ## Per-item as-built notes
+
+### Item 9 (as-built)
+- Log POINTING = the existing upload flow (log-corpus spec); item 9's real gap was the PATTERN: new `logPatternTranslation.ts` translates any log4j/logback ConversionPattern mechanically to a LogRecipe — `%d{...}` date-format walk (SimpleDateFormat letter runs + ISO8601/ABSOLUTE/DATE names), level alternation, padded-converter tolerance, unknown converters degrade to wildcards (reported, never fatal). Record delimiter = start_regex from the rendered prefix, so stack traces fold into parent records; fields = the shared TG1 method/path/status rules (engine strips absolute URLs + normalizes, same as fallback).
+- Per-file honesty: translated recipe accepted ONLY when it matches >= half that file's sampled blocks AND extracts >= 1 observation; otherwise fall through to reuse -> LLM induction unchanged. origin `pattern_translation`, llmCallsUsed 0; persists under steps_payload.v3.runtimeEvidence.recipe for cross-run reuse.
+- Config carriage mirrors the M knob: FE StartDiscoveryRunModal optional "Log line pattern" input (visible with files) -> uploadDiscoveryRunLogFiles 6th arg -> multipart `runtimeEvidenceConfig` rider {maxLogPathPrefixSegments, logPatternHint} -> gateway forwards verbatim (types widened ×3) -> AMS RuntimeEvidenceConfigDto.logPatternHint (@Size 500, trimmed, omit-preserves) -> config_snapshot.runtimeEvidenceConfig.logPatternHint -> orchestrator readLogPatternHint (defensive, 500 cap).
+- Tests: translator 7 (incl. engine round-trip w/ folded stack trace), orchestrator E2E 2 (relay NEVER called on match; honest fall-through on mismatch), AMS merge 5 (incl. trimmed-persist), FE rider 6. Full discovery sweep: only the two suites already failing at baseline fail (modelScopeGuard, startDatabaseRunCandidatePersistence — pre-existing, verified via ae2fbed0 worktree).
+- Fixes the observed zero-observation `fallback:validation_failed_exhausted` capture: declare the app's real pattern (e.g. `%d{dd,HH:mm:ss,SSS} %p [%t] [%c{1}] - %m%n`) in the run modal and extraction is deterministic.
 
 ### Item 8 (as-built) — NOTE: committed directly on main (1272a012); branch convention slipped once, content verified green
 - New schedulerAdapters/autosysJil.ts: parseJilText/parseJilFiles (insert_job blocks; job_type/command/box_name/condition/start_times/days_of_week/watch_file); resolveJobsToMains (direct `java FQN` in command, else script-basename lookup in-repo + FQN/unique-simple-name scan of the script; boxes/file-watchers never resolve).

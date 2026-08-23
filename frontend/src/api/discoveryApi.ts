@@ -1613,7 +1613,8 @@ export async function uploadDiscoveryRunLogFiles(
   architectureId: string,
   runId: string,
   files: File[],
-  maxLogPathPrefixSegments?: number
+  maxLogPathPrefixSegments?: number,
+  logPatternHint?: string
 ): Promise<unknown> {
   const url = `${GATEWAY_BASE}/api/v1/discovery/projects/${encodeURIComponent(projectId)}/architectures/${encodeURIComponent(architectureId)}/runs/${encodeURIComponent(runId)}/log-files`;
 
@@ -1625,10 +1626,17 @@ export async function uploadDiscoveryRunLogFiles(
   // Spec 2026-05-11 Section 1: rider field carrying the M value. Only
   // appended when the caller supplies a number, so existing callers that
   // omit this 5th argument produce a byte-for-byte identical request body.
-  if (typeof maxLogPathPrefixSegments === 'number') {
+  const trimmedPatternHint =
+    typeof logPatternHint === 'string' ? logPatternHint.trim() : '';
+  if (typeof maxLogPathPrefixSegments === 'number' || trimmedPatternHint.length > 0) {
     formData.append(
       'runtimeEvidenceConfig',
-      JSON.stringify({ maxLogPathPrefixSegments })
+      JSON.stringify({
+        ...(typeof maxLogPathPrefixSegments === 'number'
+          ? { maxLogPathPrefixSegments }
+          : {}),
+        ...(trimmedPatternHint.length > 0 ? { logPatternHint: trimmedPatternHint } : {}),
+      })
     );
   }
 

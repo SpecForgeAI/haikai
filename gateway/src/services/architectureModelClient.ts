@@ -2284,7 +2284,7 @@ export interface LogFilesPatchRequest {
    * `inputArtifacts.logFiles[]` merge. Omit the field entirely to
    * leave the existing snapshot value unchanged on AMS.
    */
-  runtimeEvidenceConfig?: { maxLogPathPrefixSegments?: number };
+  runtimeEvidenceConfig?: { maxLogPathPrefixSegments?: number; logPatternHint?: string };
 }
 
 /**

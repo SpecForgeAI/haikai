@@ -3,12 +3,15 @@ package com.example.architecturemodel.model.dto.discovery;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Size;
 
 /**
  * Optional sub-DTO carried by {@link LogFilesPatchRequest} to persist
  * per-run runtime-evidence matcher configuration alongside the uploaded
- * log files. Today the only key is {@code maxLogPathPrefixSegments} ("M"),
- * the tier-3 suffix-matcher prefix-tolerance knob.
+ * log files. Keys: {@code maxLogPathPrefixSegments} ("M"), the tier-3
+ * suffix-matcher prefix-tolerance knob, and {@code logPatternHint} (Oracle
+ * Nine item 9), the app's log4j/logback ConversionPattern -- translated
+ * deterministically to an extraction recipe before any LLM induction.
  *
  * <p>Persisted at {@code config_snapshot.runtimeEvidenceConfig.maxLogPathPrefixSegments}
  * (sibling of {@code config_snapshot.inputArtifacts.logFiles[]}). Conceptually
@@ -38,5 +41,9 @@ public record RuntimeEvidenceConfigDto(
     @JsonProperty("maxLogPathPrefixSegments")
     @Min(value = 0, message = "maxLogPathPrefixSegments must be >= 0")
     @Max(value = 5, message = "maxLogPathPrefixSegments must be <= 5")
-    Integer maxLogPathPrefixSegments
+    Integer maxLogPathPrefixSegments,
+
+    @JsonProperty("logPatternHint")
+    @Size(max = 500, message = "logPatternHint must be <= 500 characters")
+    String logPatternHint
 ) {}
