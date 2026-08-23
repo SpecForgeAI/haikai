@@ -260,7 +260,7 @@ describe('phased advance (pause vs final) + resume', () => {
           report_json: {
             tables: [
               { table: 'orders', schema: 'dbo', verdict: 'divergent' },
-              { table: 'hir_book', schema: 'dbo', verdict: 'divergent' },
+              { table: 'deal_book', schema: 'dbo', verdict: 'divergent' },
               { table: 'clean_one', schema: 'dbo', verdict: 'clean' },
             ],
           },
@@ -284,7 +284,7 @@ describe('phased advance (pause vs final) + resume', () => {
     const log = overridePatch![2].decision_log_json as Array<Record<string, unknown>>;
     const entry = log[log.length - 1];
     expect(entry).toMatchObject({ type: 'data_parity_override' });
-    expect(entry.divergent_tables).toEqual(['dbo.orders', 'dbo.hir_book']);
+    expect(entry.divergent_tables).toEqual(['dbo.orders', 'dbo.deal_book']);
   });
 
   it('resumeMigration on a non-paused run is a no-op', async () => {

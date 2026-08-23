@@ -621,8 +621,8 @@ export function buildDbMigrationPackArtifacts(
   // --- schema-scoped relation names (2026-08-06) ----------------------------
   // Sybase scopes constraint/index names per TABLE; Postgres backs PK/UNIQUE
   // with indexes, which are per-SCHEMA relations — so a copied table
-  // (temp_hir_book) carrying its original's auto-generated names fails
-  // `relation "hir_book_ak1" already exists` on the first clean apply (the
+  // (temp_deal_book) carrying its original's auto-generated names fails
+  // `relation "deal_book_ak1" already exists` on the first clean apply (the
   // live 2026-08-06 schema-apply halt). Resolve ONCE across all emitted
   // tables; colliders rename deterministically to <table>_<name>.
   const relationNames = resolveRelationNames(realTables);

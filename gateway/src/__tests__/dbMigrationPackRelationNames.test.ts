@@ -4,9 +4,9 @@
  * Sybase scopes constraint/index names per TABLE; Postgres backs PK/UNIQUE
  * constraints with indexes, which are per-SCHEMA relations (one namespace
  * shared with tables and other indexes). The generator used to reproduce
- * source names verbatim, so a copied table (`temp_hir_book`) carrying its
- * original's auto-generated `hir_book_ak1` failed the FIRST clean
- * schema-apply with `relation "hir_book_ak1" already exists` (live
+ * source names verbatim, so a copied table (`temp_deal_book`) carrying its
+ * original's auto-generated `deal_book_ak1` failed the FIRST clean
+ * schema-apply with `relation "deal_book_ak1" already exists` (live
  * 2026-08-06). Colliders now rename deterministically to `<table>_<name>`
  * (63-byte clamped), the renames are carried as provenance, and the
  * pack-validation gate independently refuses any pack whose relation
@@ -56,29 +56,29 @@ function makeColumn(name: string): EmittableColumn {
 /** The live 2026-08-06 collision pair: a table and its temp_ copy. */
 function hirBookPair(): IrTable[] {
   const constraint = {
-    name: 'hir_book_ak1',
+    name: 'deal_book_ak1',
     columns: ['ValidTo', 'HierarchyId', 'ValidFrom'],
   };
   return [
-    makeTable({ tableName: 'hir_book', uniqueConstraints: [{ ...constraint }] }),
-    makeTable({ tableName: 'temp_hir_book', uniqueConstraints: [{ ...constraint }] }),
+    makeTable({ tableName: 'deal_book', uniqueConstraints: [{ ...constraint }] }),
+    makeTable({ tableName: 'temp_deal_book', uniqueConstraints: [{ ...constraint }] }),
   ];
 }
 
 describe('resolveRelationNames', () => {
   it('the lexicographically-first table keeps its source name; the copy renames to <table>_<name>', () => {
     const resolved = resolveRelationNames(hirBookPair());
-    expect(resolved.nameFor('dbo', 'hir_book', 'hir_book_ak1')).toBe('hir_book_ak1');
-    expect(resolved.nameFor('dbo', 'temp_hir_book', 'hir_book_ak1')).toBe(
-      'temp_hir_book_hir_book_ak1'
+    expect(resolved.nameFor('dbo', 'deal_book', 'deal_book_ak1')).toBe('deal_book_ak1');
+    expect(resolved.nameFor('dbo', 'temp_deal_book', 'deal_book_ak1')).toBe(
+      'temp_deal_book_deal_book_ak1'
     );
     expect(resolved.renames).toEqual([
       {
         schemaName: 'dbo',
-        tableName: 'temp_hir_book',
+        tableName: 'temp_deal_book',
         kind: 'unique_constraint',
-        from: 'hir_book_ak1',
-        to: 'temp_hir_book_hir_book_ak1',
+        from: 'deal_book_ak1',
+        to: 'temp_deal_book_deal_book_ak1',
       },
     ]);
   });
@@ -87,7 +87,7 @@ describe('resolveRelationNames', () => {
     const forward = resolveRelationNames(hirBookPair());
     const reversed = resolveRelationNames(hirBookPair().reverse());
     expect(reversed.renames).toEqual(forward.renames);
-    expect(reversed.nameFor('dbo', 'hir_book', 'hir_book_ak1')).toBe('hir_book_ak1');
+    expect(reversed.nameFor('dbo', 'deal_book', 'deal_book_ak1')).toBe('deal_book_ak1');
   });
 
   it('non-colliding names emit verbatim with zero renames', () => {
@@ -118,8 +118,8 @@ describe('resolveRelationNames', () => {
 
   it('same name in DIFFERENT schemas never renames (per-schema namespaces)', () => {
     const resolved = resolveRelationNames([
-      makeTable({ schemaName: 'dbo', tableName: 'hir_book', uniqueConstraints: [{ name: 'ak1', columns: ['a'] }] }),
-      makeTable({ schemaName: 'ref', tableName: 'hir_book', uniqueConstraints: [{ name: 'ak1', columns: ['a'] }] }),
+      makeTable({ schemaName: 'dbo', tableName: 'deal_book', uniqueConstraints: [{ name: 'ak1', columns: ['a'] }] }),
+      makeTable({ schemaName: 'ref', tableName: 'deal_book', uniqueConstraints: [{ name: 'ak1', columns: ['a'] }] }),
     ]);
     expect(resolved.renames).toEqual([]);
   });
@@ -207,18 +207,18 @@ describe('emitters apply resolved names', () => {
     const tables = hirBookPair();
     const relationNames = resolveRelationNames(tables);
     const ddl = emitTableChangeset({
-      table: tables[1], // temp_hir_book
+      table: tables[1], // temp_deal_book
       columns: [makeColumn('ValidTo'), makeColumn('HierarchyId'), makeColumn('ValidFrom')],
       omitted: [],
       skipped: [],
       relationNames,
     });
     expect(ddl).toContain(
-      'CONSTRAINT "temp_hir_book_hir_book_ak1" UNIQUE ("ValidTo", "HierarchyId", "ValidFrom")'
+      'CONSTRAINT "temp_deal_book_deal_book_ak1" UNIQUE ("ValidTo", "HierarchyId", "ValidFrom")'
     );
-    expect(ddl).not.toContain('CONSTRAINT "hir_book_ak1"');
+    expect(ddl).not.toContain('CONSTRAINT "deal_book_ak1"');
     expect(ddl).toContain(
-      "-- RENAMED UNIQUE constraint 'hir_book_ak1' -> 'temp_hir_book_hir_book_ak1'"
+      "-- RENAMED UNIQUE constraint 'deal_book_ak1' -> 'temp_deal_book_deal_book_ak1'"
     );
   });
 
@@ -226,41 +226,41 @@ describe('emitters apply resolved names', () => {
     const tables = hirBookPair();
     const relationNames = resolveRelationNames(tables);
     const ddl = emitTableChangeset({
-      table: tables[0], // hir_book
+      table: tables[0], // deal_book
       columns: [makeColumn('ValidTo'), makeColumn('HierarchyId'), makeColumn('ValidFrom')],
       omitted: [],
       skipped: [],
       relationNames,
     });
-    expect(ddl).toContain('CONSTRAINT "hir_book_ak1" UNIQUE');
+    expect(ddl).toContain('CONSTRAINT "deal_book_ak1" UNIQUE');
     expect(ddl).not.toContain('-- RENAMED');
   });
 
   it('emitIndexesChangeset renames colliding index names and points the CLUSTER hint at the emitted name', () => {
     const original = makeTable({
-      tableName: 'hir_book',
+      tableName: 'deal_book',
       indexes: [
-        { name: 'hir_book_ix1', columns: ['a'], isUnique: false, isClustered: false, columnDirections: null, method: null, predicate: null },
+        { name: 'deal_book_ix1', columns: ['a'], isUnique: false, isClustered: false, columnDirections: null, method: null, predicate: null },
       ],
     });
     const copy = makeTable({
-      tableName: 'temp_hir_book',
+      tableName: 'temp_deal_book',
       indexes: [
-        { name: 'hir_book_ix1', columns: ['a'], isUnique: false, isClustered: true, columnDirections: null, method: null, predicate: null },
+        { name: 'deal_book_ix1', columns: ['a'], isUnique: false, isClustered: true, columnDirections: null, method: null, predicate: null },
       ],
     });
     const relationNames = resolveRelationNames([original, copy]);
     const { content } = emitIndexesChangeset({
       tables: [original, copy],
-      emittedTables: new Set(['dbo.hir_book', 'dbo.temp_hir_book']),
+      emittedTables: new Set(['dbo.deal_book', 'dbo.temp_deal_book']),
       relationNames,
     });
-    expect(content).toContain('CREATE INDEX "hir_book_ix1" ON "dbo"."hir_book"');
+    expect(content).toContain('CREATE INDEX "deal_book_ix1" ON "dbo"."deal_book"');
     expect(content).toContain(
-      'CREATE INDEX "temp_hir_book_hir_book_ix1" ON "dbo"."temp_hir_book"'
+      'CREATE INDEX "temp_deal_book_deal_book_ix1" ON "dbo"."temp_deal_book"'
     );
-    expect(content).toContain("-- RENAMED index 'hir_book_ix1' -> 'temp_hir_book_hir_book_ix1'");
-    expect(content).toContain('USING "temp_hir_book_hir_book_ix1";');
+    expect(content).toContain("-- RENAMED index 'deal_book_ix1' -> 'temp_deal_book_deal_book_ix1'");
+    expect(content).toContain('USING "temp_deal_book_deal_book_ix1";');
   });
 });
 
@@ -288,11 +288,11 @@ describe('validatePackFiles relation-namespace backstop', () => {
   it('refuses a pack where two tables declare the same UNIQUE constraint name in one schema', () => {
     const problems = validatePackFiles([
       master,
-      tableFile('hir_book', 'hir_book_ak1'),
-      tableFile('temp_hir_book', 'hir_book_ak1'),
+      tableFile('deal_book', 'deal_book_ak1'),
+      tableFile('temp_deal_book', 'deal_book_ak1'),
     ]);
     expect(problems).toHaveLength(1);
-    expect(problems[0]).toContain('relation name "hir_book_ak1" is declared by both');
+    expect(problems[0]).toContain('relation name "deal_book_ak1" is declared by both');
     expect(problems[0]).toContain('already exists');
   });
 
@@ -302,12 +302,12 @@ describe('validatePackFiles relation-namespace backstop', () => {
       content:
         '--liquibase formatted sql logicalFilePath:liquibase/changesets/030-indexes.sql\n' +
         '--changeset db-migration-pack:indexes context:post-load splitStatements:false\n' +
-        'CREATE INDEX "hir_book_ie3" ON "dbo"."hir_book" ("a");\n' +
-        'CREATE INDEX "hir_book_ie3" ON "dbo"."temp_hir_book" ("a");\n',
+        'CREATE INDEX "deal_book_ie3" ON "dbo"."deal_book" ("a");\n' +
+        'CREATE INDEX "deal_book_ie3" ON "dbo"."temp_deal_book" ("a");\n',
     };
     const problems = validatePackFiles([master, indexes]);
     expect(problems).toHaveLength(1);
-    expect(problems[0]).toContain('relation name "hir_book_ie3" is declared by both');
+    expect(problems[0]).toContain('relation name "deal_book_ie3" is declared by both');
   });
 
   it('refuses an index name colliding with a constraint name', () => {
@@ -316,21 +316,21 @@ describe('validatePackFiles relation-namespace backstop', () => {
       content:
         '--liquibase formatted sql logicalFilePath:liquibase/changesets/030-indexes.sql\n' +
         '--changeset db-migration-pack:indexes context:post-load splitStatements:false\n' +
-        'CREATE INDEX "hir_book_ak1" ON "dbo"."other_tbl" ("x");\n',
+        'CREATE INDEX "deal_book_ak1" ON "dbo"."other_tbl" ("x");\n',
     };
-    const problems = validatePackFiles([master, tableFile('hir_book', 'hir_book_ak1'), indexes]);
+    const problems = validatePackFiles([master, tableFile('deal_book', 'deal_book_ak1'), indexes]);
     expect(problems).toHaveLength(1);
-    expect(problems[0]).toContain('"hir_book_ak1"');
+    expect(problems[0]).toContain('"deal_book_ak1"');
   });
 
   it('refuses an identifier over Postgres\'s 63-byte truncation limit, naming it', () => {
     const longName = 'l'.repeat(70);
-    const problems = validatePackFiles([master, tableFile('hir_book', longName)]);
+    const problems = validatePackFiles([master, tableFile('deal_book', longName)]);
     expect(problems).toHaveLength(1);
     expect(problems[0]).toContain('70 bytes');
     expect(problems[0]).toContain('truncates');
     // Exactly 63 bytes is fine.
-    expect(validatePackFiles([master, tableFile('hir_book', 'k'.repeat(63))])).toEqual([]);
+    expect(validatePackFiles([master, tableFile('deal_book', 'k'.repeat(63))])).toEqual([]);
   });
 
   it('refuses a duplicate constraint name on ONE table (per-table pg_constraint scope)', () => {
@@ -370,28 +370,28 @@ describe('validatePackFiles relation-namespace backstop', () => {
       content:
         '--liquibase formatted sql logicalFilePath:liquibase/changesets/050-views.sql\n' +
         '--changeset db-migration-pack:views context:post-load splitStatements:false\n' +
-        'CREATE VIEW "dbo"."hir_book" AS SELECT 1;\n',
+        'CREATE VIEW "dbo"."deal_book" AS SELECT 1;\n',
     };
-    const problems = validatePackFiles([master, tableFile('hir_book', 'hir_book_ak1'), view]);
+    const problems = validatePackFiles([master, tableFile('deal_book', 'deal_book_ak1'), view]);
     expect(problems).toHaveLength(1);
-    expect(problems[0]).toContain('relation name "hir_book" is declared by both');
+    expect(problems[0]).toContain('relation name "deal_book" is declared by both');
   });
 
   it('accepts distinct names, and the SAME name across different schemas', () => {
     const otherSchema = {
-      filePath: 'liquibase/changesets/010-tables/ref.hir_book.sql',
+      filePath: 'liquibase/changesets/010-tables/ref.deal_book.sql',
       content:
-        '--liquibase formatted sql logicalFilePath:liquibase/changesets/010-tables/ref.hir_book.sql\n' +
-        '--changeset db-migration-pack:table-ref.hir_book context:structural splitStatements:false\n' +
-        'CREATE TABLE "ref"."hir_book" (\n' +
+        '--liquibase formatted sql logicalFilePath:liquibase/changesets/010-tables/ref.deal_book.sql\n' +
+        '--changeset db-migration-pack:table-ref.deal_book context:structural splitStatements:false\n' +
+        'CREATE TABLE "ref"."deal_book" (\n' +
         '    "id" numeric(19,0),\n' +
-        '    CONSTRAINT "hir_book_ak1" UNIQUE ("id")\n' +
+        '    CONSTRAINT "deal_book_ak1" UNIQUE ("id")\n' +
         ');\n',
     };
     const problems = validatePackFiles([
       master,
-      tableFile('hir_book', 'hir_book_ak1'),
-      tableFile('temp_hir_book', 'temp_hir_book_hir_book_ak1'),
+      tableFile('deal_book', 'deal_book_ak1'),
+      tableFile('temp_deal_book', 'temp_deal_book_deal_book_ak1'),
       otherSchema,
     ]);
     expect(problems).toEqual([]);

@@ -27,10 +27,10 @@ describe('extractOverrideDivergentTables', () => {
       {
         type: 'data_parity_override',
         at: 't2',
-        divergent_tables: ['dbo.orders', 'dbo.hir_book'],
+        divergent_tables: ['dbo.orders', 'dbo.deal_book'],
       },
     ]);
-    expect(result).toEqual({ at: 't2', tables: ['dbo.orders', 'dbo.hir_book'] });
+    expect(result).toEqual({ at: 't2', tables: ['dbo.orders', 'dbo.deal_book'] });
   });
 });
 

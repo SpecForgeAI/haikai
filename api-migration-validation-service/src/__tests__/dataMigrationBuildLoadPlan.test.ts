@@ -83,16 +83,16 @@ describe('buildLoadPlan (Spec Y)', () => {
     // and boundary-trimmed pagination handles its duplicates.
     const demotedManifest = {
       expected_schema: {
-        tables: [{ schemaName: 'dbo', tableName: 'hir_organisation' }],
+        tables: [{ schemaName: 'dbo', tableName: 'org_registry' }],
         columns: [
-          { schemaName: 'dbo', tableName: 'hir_organisation', columnName: 'HierarchyId', dataType: 'int' },
-          { schemaName: 'dbo', tableName: 'hir_organisation', columnName: 'ValidFrom', dataType: 'datetime' },
-          { schemaName: 'dbo', tableName: 'hir_organisation', columnName: 'payload', dataType: 'varchar' },
-          { schemaName: 'dbo', tableName: 'hir_organisation', columnName: 'id', dataType: 'bigint', isIdentity: true, isSurrogate: true },
+          { schemaName: 'dbo', tableName: 'org_registry', columnName: 'HierarchyId', dataType: 'int' },
+          { schemaName: 'dbo', tableName: 'org_registry', columnName: 'ValidFrom', dataType: 'datetime' },
+          { schemaName: 'dbo', tableName: 'org_registry', columnName: 'payload', dataType: 'varchar' },
+          { schemaName: 'dbo', tableName: 'org_registry', columnName: 'id', dataType: 'bigint', isIdentity: true, isSurrogate: true },
         ],
         keysAndIndexes: [
-          { schemaName: 'dbo', tableName: 'hir_organisation', kind: 'primary_key', columns: ['id'], isSurrogate: true },
-          { schemaName: 'dbo', tableName: 'hir_organisation', kind: 'index', columns: ['HierarchyId', 'ValidFrom'] },
+          { schemaName: 'dbo', tableName: 'org_registry', kind: 'primary_key', columns: ['id'], isSurrogate: true },
+          { schemaName: 'dbo', tableName: 'org_registry', kind: 'index', columns: ['HierarchyId', 'ValidFrom'] },
         ],
       },
     };

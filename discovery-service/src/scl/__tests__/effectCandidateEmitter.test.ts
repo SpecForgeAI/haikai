@@ -681,7 +681,7 @@ describe('verb-agnostic effect chains (2026-08-22)', () => {
         boundary({
           key: 'Q-bookDao',
           symbol: 'BookDao',
-          sql: ['select * from hir_book where ValidFrom <= ?'],
+          sql: ['select * from deal_book where ValidFrom <= ?'],
         }),
       ]);
       // The impls take one parameter — the helper defaults signatureInputs
@@ -709,7 +709,7 @@ describe('verb-agnostic effect chains (2026-08-22)', () => {
     // no chain break recorded.
     expect(
       result.candidates.map((c) => (c.data as Record<string, unknown>).dataEntityName),
-    ).toEqual(['hir_book']);
+    ).toEqual(['deal_book']);
     expect(result.chainBreaks).toHaveLength(0);
 
     // The SAME fan-out behind an unknown receiver stays refused (loud).
@@ -734,7 +734,7 @@ describe('verb-agnostic effect chains (2026-08-22)', () => {
       boundary({
         key: 'Q-dao',
         symbol: 'FilterDao',
-        sql: ['select * from hir_filter where ValidFrom <= ?'],
+        sql: ['select * from screen_filter where ValidFrom <= ?'],
       }),
     ]);
     (corpus.contracts[0] as { contract: { rows: unknown[] } }).contract.rows.push({
@@ -777,29 +777,29 @@ describe('verb-agnostic effect chains (2026-08-22)', () => {
         boundary({
           key: 'Q-xferDao',
           symbol: 'XferDao',
-          sql: ["exec updateHierarchy_hir '20240101', 'Y'"],
+          sql: ["exec updateTree_roll '20240101', 'Y'"],
         }),
       ]),
       procCatalog: [
         {
-          name: 'updatehierarchy_hir',
+          name: 'updatetree_roll',
           sourcePath: 'db/procs/005.sql',
-          writes: ['hir_business_date', 'hir_load_date'],
-          reads: ['load_hir_book'],
-          procCalls: ['updatebook_hir'],
+          writes: ['biz_date_ctrl', 'load_date_log'],
+          reads: ['load_deal_book'],
+          procCalls: ['updatebook_roll'],
         },
         {
-          name: 'updatebook_hir',
+          name: 'updatebook_roll',
           sourcePath: 'db/procs/001.sql',
-          writes: ['hir_book', 'hir_all_node'],
-          reads: ['load_hir_book'],
+          writes: ['deal_book', 'all_node_map'],
+          reads: ['load_deal_book'],
           procCalls: [],
         },
         {
-          name: 'importvnodes',
-          sourcePath: 'db/procs/importVNodes.sql',
-          writes: ['hir_all_node'],
-          reads: ['ven_hierarchy_node'],
+          name: 'importvirtualnodes',
+          sourcePath: 'db/procs/importVirtualNodes.sql',
+          writes: ['all_node_map'],
+          reads: ['ext_tree_node'],
           procCalls: [],
         },
       ],
@@ -814,19 +814,19 @@ describe('verb-agnostic effect chains (2026-08-22)', () => {
       return `${data.access_mode}:${String(data.dataEntityName).toLowerCase()}`;
     });
     expect(edges.sort()).toEqual([
-      'read:load_hir_book',
-      'write:hir_all_node',
-      'write:hir_book',
-      'write:hir_business_date',
-      'write:hir_load_date',
+      'read:load_deal_book',
+      'write:all_node_map',
+      'write:biz_date_ctrl',
+      'write:deal_book',
+      'write:load_date_log',
     ]);
     // The manually-run proc nothing references stays VISIBLE.
     expect(result.procCatalogCount).toBe(3);
-    expect(result.procsUnreferenced).toEqual(['importvnodes']);
+    expect(result.procsUnreferenced).toEqual(['importvirtualnodes']);
   });
 
   it('config-held proc dispatch (field-initializer map) derives via the walked config-sql row', () => {
-    // The XferToHiFiTablesImpl idiom: the proc name lives in a static Map
+    // The XferToTablesImpl idiom: the proc name lives in a static Map
     // initializer; the extractor emits a config-sql terminal row, and the
     // walk scans it against the catalog by NAME (no exec syntax adjacent).
     const corpus = {
@@ -840,10 +840,10 @@ describe('verb-agnostic effect chains (2026-08-22)', () => {
       ]),
       procCatalog: [
         {
-          name: 'updatehierarchy_hir',
+          name: 'updatetree_roll',
           sourcePath: 'db/procs/005.sql',
-          writes: ['hir_business_date'],
-          reads: ['load_hir_book'],
+          writes: ['biz_date_ctrl'],
+          reads: ['load_deal_book'],
           procCalls: [],
         },
       ],
@@ -855,7 +855,7 @@ describe('verb-agnostic effect chains (2026-08-22)', () => {
       conditionRef: null,
       outcome: {
         type: 'terminal',
-        verbatim: "updateHierarchy_hir ' + DATE_TOKEN + ', 'Y'",
+        verbatim: "updateTree_roll ' + DATE_TOKEN + ', 'Y'",
         ref: { path: 'x', line: 1 },
         outcomeLabel: 'config-sql',
       },
@@ -869,7 +869,7 @@ describe('verb-agnostic effect chains (2026-08-22)', () => {
       const data = c.data as Record<string, unknown>;
       return `${data.access_mode}:${String(data.dataEntityName).toLowerCase()}`;
     });
-    expect(edges.sort()).toEqual(['read:load_hir_book', 'write:hir_business_date']);
+    expect(edges.sort()).toEqual(['read:load_deal_book', 'write:biz_date_ctrl']);
   });
 
   it('an internal entrypoint with NO corpus presence lands in internalUnmatched, loudly', () => {

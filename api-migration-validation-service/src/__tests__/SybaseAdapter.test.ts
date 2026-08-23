@@ -180,12 +180,12 @@ describe('SybaseAdapter (sidecar-backed)', () => {
     // The sidecar wire carries bigint/numeric as STRINGS (JSON.parse
     // precision); quoting one back at ASE against its numeric column is
     // "Implicit conversion from 'VARCHAR' to 'BIGINT' is not allowed" —
-    // the live hir_audit_info keyset failure at 1.2M rows.
+    // the live audit_trail_info keyset failure at 1.2M rows.
     const recorded = installFetchMock([{ body: { ok: true, rows: [], rowCount: 0 } }]);
     const adapter = new SybaseAdapter(baseConfig, { sidecarBaseUrl: SIDECAR_URL });
     await adapter.fetchOrderedRows({
       schema: 'dbo',
-      table: 'hir_audit_info',
+      table: 'audit_trail_info',
       orderBy: ['Uuid'],
       limits: { maxRows: 500, timeoutSeconds: 30 },
       after: ['1202209'],
@@ -231,17 +231,17 @@ describe('SybaseAdapter (sidecar-backed)', () => {
     const adapter = new SybaseAdapter(baseConfig, { sidecarBaseUrl: SIDECAR_URL });
     const probe = await adapter.probeKeyIntegrity({
       schema: 'dbo',
-      table: 'hir_organisation',
+      table: 'org_registry',
       keyColumns: ['HierarchyId', 'ValidFrom'],
       limits: { maxRows: 1, timeoutSeconds: 30 },
     });
     expect(probe).toEqual({ nullKeys: false, duplicateKeys: true });
     expect(recorded[0].body.sql).toBe(
-      'SELECT TOP 1 1 AS hit FROM "dbo"."hir_organisation" ' +
+      'SELECT TOP 1 1 AS hit FROM "dbo"."org_registry" ' +
         'WHERE "HierarchyId" IS NULL OR "ValidFrom" IS NULL',
     );
     expect(recorded[1].body.sql).toBe(
-      'SELECT TOP 1 1 AS hit FROM "dbo"."hir_organisation" ' +
+      'SELECT TOP 1 1 AS hit FROM "dbo"."org_registry" ' +
         'GROUP BY "HierarchyId", "ValidFrom" HAVING COUNT(*) > 1',
     );
   });

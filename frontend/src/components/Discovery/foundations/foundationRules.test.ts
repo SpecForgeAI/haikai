@@ -386,7 +386,7 @@ describe('legacy cache strategy decision (2026-08-23)', () => {
     const model = {
       metaModel: {
         entities: {
-          physical_data_entities: [{ id: 'e1', name: 'hir_filter' }],
+          physical_data_entities: [{ id: 'e1', name: 'screen_filter' }],
           endpoints: [
             { id: 'ep1', name: 'GET /filters/{filterId}' },
             { id: 'ep2', name: 'GET /views' },

@@ -485,7 +485,7 @@ describe('runDataMigration (Spec Y)', () => {
       }
     }
     const fixtures = {
-      'dbo.hir_organisation': {
+      'dbo.org_registry': {
         count: 4,
         columns: [{ column: 'HierarchyId', dataType: 'int' }],
         rows: [{ HierarchyId: 1 }, { HierarchyId: 1 }, { HierarchyId: 2 }, { HierarchyId: 3 }],
@@ -495,17 +495,17 @@ describe('runDataMigration (Spec Y)', () => {
     const loader = new FakeLoader();
     const report = await runDataMigration({
       source,
-      target: new FakeAdapter({ 'dbo.hir_organisation': 0 }),
+      target: new FakeAdapter({ 'dbo.org_registry': 0 }),
       targetLoader: loader,
-      plan: planFor([spec({ table: 'hir_organisation', orderBy: ['HierarchyId'], loadColumns: ['HierarchyId'] })]),
+      plan: planFor([spec({ table: 'org_registry', orderBy: ['HierarchyId'], loadColumns: ['HierarchyId'] })]),
       ruleset,
       knobs,
     });
-    expect(source.probes).toEqual([{ table: 'hir_organisation', keyColumns: ['HierarchyId'] }]);
+    expect(source.probes).toEqual([{ table: 'org_registry', keyColumns: ['HierarchyId'] }]);
     expect(report.tables[0].status).toBe('unverifiable');
     expect(report.tables[0].reason).toContain('is NOT UNIQUE');
     expect(report.tables[0].reason).toContain('demote_tables');
-    expect(report.tables[0].reason).toContain('"dbo.hir_organisation"');
+    expect(report.tables[0].reason).toContain('"dbo.org_registry"');
     // Nothing was truncated or written — the doomed load never started.
     expect(loader.prepared).toEqual([]);
     expect(loader.loadCalls).toBe(0);
@@ -514,9 +514,9 @@ describe('runDataMigration (Spec Y)', () => {
     const nullSource = new ProbingAdapter({ nullKeys: true, duplicateKeys: false }, {}, fixtures);
     const nullReport = await runDataMigration({
       source: nullSource,
-      target: new FakeAdapter({ 'dbo.hir_organisation': 0 }),
+      target: new FakeAdapter({ 'dbo.org_registry': 0 }),
       targetLoader: new FakeLoader(),
-      plan: planFor([spec({ table: 'hir_organisation', orderBy: ['HierarchyId'], loadColumns: ['HierarchyId'] })]),
+      plan: planFor([spec({ table: 'org_registry', orderBy: ['HierarchyId'], loadColumns: ['HierarchyId'] })]),
       ruleset,
       knobs,
     });
