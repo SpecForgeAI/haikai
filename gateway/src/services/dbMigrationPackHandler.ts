@@ -436,6 +436,72 @@ export function buildSequenceSeeds(
   const restartValue = (highWater: string): string =>
     (BigInt(highWater) + BigInt(seedMargin)).toString();
 
+  // Sequence-generator idiom (Oracle Nine item 2): the legacy estate keeps
+  // ids in a sequence TABLE driven by an increment proc — no identity
+  // columns exist to translate. The foundations decision (materialized on
+  // the table's constraints_metadata) names the strategy + mappings; the
+  // target gets explicit sequences seeded FROM THE LOADED DATA
+  // (setval(max+1)) — deterministic at cutover, no live sampling.
+  for (const table of ir.tables) {
+    const gen = table.sequenceGenerator;
+    if (!gen || table.objectType !== 'table') continue;
+    const qn = qualifiedName(table.schemaName, table.tableName);
+    if (gen.strategy === 'table_emulation') {
+      statements.push({
+        objectRef: `${qn} (sequence generator)`,
+        sql: null,
+        note:
+          `sequence strategy 'table_emulation' (${gen.decision_ref ?? 'decision'}): the legacy ` +
+          `sequence table migrates as data; the increment proc semantics must be ` +
+          `reimplemented in the target service layer.`,
+      });
+      continue;
+    }
+    const viewSelects: string[] = [];
+    for (const m of gen.mappings ?? []) {
+      const seqIdent = `${String(m.sequence_name).toLowerCase().replace(/[^a-z0-9_]/g, '_')}_seq`;
+      const ref = `${qn}:${m.sequence_name}`;
+      if (!m.table || !m.column) {
+        statements.push({
+          objectRef: ref,
+          sql: null,
+          note:
+            `sequence '${m.sequence_name}' has NO confirmed table.column mapping — ` +
+            `no target sequence emitted; confirm the mapping on the foundations card ` +
+            `(${gen.decision_ref ?? 'decision'}).`,
+        });
+        continue;
+      }
+      const targetQq = quotedQualifiedName(table.schemaName, m.table);
+      statements.push({
+        objectRef: ref,
+        sql:
+          `CREATE SEQUENCE IF NOT EXISTS ${quoteIdent(seqIdent)};\n` +
+          `SELECT setval('${seqIdent}', (SELECT COALESCE(MAX(${quoteIdent(m.column)}), 0) + 1 ` +
+          `FROM ${targetQq}), false);`,
+        note: `seeded from loaded ${m.table}.${m.column} max+1 (${gen.decision_ref ?? 'decision'}).`,
+      });
+      viewSelects.push(
+        `SELECT '${String(m.sequence_name).replace(/'/g, "''")}' AS ` +
+          `${quoteIdent(gen.name_column ?? 'sequence_name')}, ` +
+          `last_value AS ${quoteIdent(gen.number_column ?? 'sequence_number')} ` +
+          `FROM ${quoteIdent(seqIdent)}`,
+      );
+    }
+    if (gen.strategy === 'native_with_view' && viewSelects.length > 0) {
+      statements.push({
+        objectRef: `${qn} (compatibility view)`,
+        sql:
+          `CREATE OR REPLACE VIEW ${quotedQualifiedName(table.schemaName, table.tableName)} AS\n` +
+          viewSelects.join('\nUNION ALL\n') +
+          ';',
+        note:
+          `read-compatibility view over the native sequences (a read-only grant existed on ` +
+          `the legacy table; 'permitted but unobserved' — ${gen.decision_ref ?? 'decision'}).`,
+      });
+    }
+  }
+
   for (const table of ir.tables) {
     if (table.objectType !== 'table') continue;
     const qn = qualifiedName(table.schemaName, table.tableName);

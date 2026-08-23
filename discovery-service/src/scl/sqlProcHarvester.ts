@@ -265,6 +265,49 @@ export function mergeProcCatalogs(
   };
 }
 
+/** A detected sequence-generator idiom: a proc/function whose body is the
+ *  legacy "sequence table" pattern — `update T set C = C + 1 [where N = @p]`
+ *  then a select of the value. The identity generator of every create path
+ *  in estates without identity columns (Oracle Nine item 2). */
+export interface SequenceGeneratorIdiom {
+  procName: string;
+  seqTable: string;
+  numberColumn: string;
+  /** The name-discriminator column (`where SequenceName = @p`), or null
+   *  for single-row sequence tables. */
+  nameColumn: string | null;
+}
+
+const SEQ_UPDATE_RE =
+  /update\s+([A-Za-z0-9_."\[\]]+)\s+set\s+([A-Za-z0-9_"\[\]]+)\s*=\s*\2\s*[+]\s*1(?:\s+where\s+([A-Za-z0-9_"\[\]]+)\s*=\s*@)?/i;
+
+/** Detect the sequence-generator idiom across harvested sources. A match
+ *  requires BOTH the self-increment update AND a select in the same body
+ *  (the value must be returned to the caller to count as a generator). */
+export function detectSequenceGeneratorIdioms(
+  sources: LiveProcSource[],
+): SequenceGeneratorIdiom[] {
+  const out: SequenceGeneratorIdiom[] = [];
+  for (const src of sources ?? []) {
+    const text = src?.text ?? '';
+    const m = SEQ_UPDATE_RE.exec(text);
+    if (!m) continue;
+    if (!/\bselect\b/i.test(text)) continue;
+    const bare = (raw: string): string => {
+      const cleaned = raw.replace(/[[\]"]/g, '').trim();
+      return cleaned.split('.').pop() ?? cleaned;
+    };
+    out.push({
+      procName: (src.name ?? '').toLowerCase(),
+      seqTable: bare(m[1]),
+      numberColumn: bare(m[2]),
+      nameColumn: m[3] ? bare(m[3]) : null,
+    });
+  }
+  out.sort((a, b) => (a.procName < b.procName ? -1 : 1));
+  return out;
+}
+
 /** name -> transitively-closed {writes, reads} (nested `exec` followed,
  *  cycle-safe, depth-capped — updateTree_roll -> updateBook_roll). */
 export function closeProcCatalog(

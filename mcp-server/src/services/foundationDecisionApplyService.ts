@@ -157,6 +157,20 @@ export function applyDecisionsToEntities(
           touched = true;
         }
       }
+      const seqStrategy = decision.payload_json?.sequence_strategy;
+      if (typeof seqStrategy === 'string' && seqStrategy.length > 0) {
+        const constraints = (entity.constraints_metadata ??= {});
+        constraints.sequence_generator = {
+          strategy: seqStrategy,
+          name_column: decision.payload_json?.name_column ?? null,
+          number_column: decision.payload_json?.number_column ?? null,
+          mappings: Array.isArray(decision.payload_json?.mappings)
+            ? decision.payload_json?.mappings
+            : [],
+          decision_ref: decision.decision_key,
+        };
+        touched = true;
+      }
       const promote = decision.payload_json?.promote_pk_columns;
       if (Array.isArray(promote) && promote.length > 0) {
         const constraints = (entity.constraints_metadata ??= {});

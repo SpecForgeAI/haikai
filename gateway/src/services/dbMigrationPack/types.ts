@@ -102,6 +102,21 @@ export interface IrTable {
   /** Foundations key policy (Spec 4): keyless_multiset tables ALWAYS take a
    *  surrogate identity PK on the target, decision or no pack decision. */
   keyPolicy?: 'keyless_multiset' | null;
+  /** Foundations sequence-generator decision materialized on the legacy
+   *  sequence TABLE (Oracle Nine item 2): target identity strategy +
+   *  confirmed name -> table.column mappings. */
+  sequenceGenerator?: {
+    strategy: 'native' | 'native_with_view' | 'table_emulation' | string;
+    name_column?: string | null;
+    number_column?: string | null;
+    mappings?: Array<{
+      sequence_name: string;
+      current_value?: number | null;
+      table: string | null;
+      column: string | null;
+    }>;
+    decision_ref?: string;
+  } | null;
   uniqueConstraints: Array<{ name: string; columns: string[] }>;
   checkConstraints: Array<{ name: string; expression: string | null }>;
   indexes: IrIndex[];

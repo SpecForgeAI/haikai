@@ -30,7 +30,7 @@ charset config, sequence rows, uniqueness probes).
    sequence-name→table.column mapping (suffix-matched, human-confirmed);
    options: native sequences (recommended) / native + read-compatibility
    VIEW over pg_sequences (Q1) / keep-table-emulation; pack emits sequences
-   + post-load `setval(max(col)+1)`. STATUS: pending.
+   + post-load `setval(max(col)+1)`. STATUS: MERGED.
 3. **Charset detection + transcode** — sidecar reads charset/sortorder
    config tables; declared on the extraction CONNECTION (jConnect CHARSET)
    so strings decode correctly at source; case-sensitivity → target
@@ -68,6 +68,14 @@ charset config, sequence rows, uniqueness probes).
    fallback. STATUS: pending.
 
 ## Per-item as-built notes
+
+### Item 2 (as-built)
+- Detector detectSequenceGeneratorIdioms (sqlProcHarvester, pure regex incl. backreference: update T set C=C+1 [where N=@p] + select gate). Orchestrator Phase 4c detects over live sources + optional pack capability probeSequenceRows (Sybase: guarded-identifier SELECT of name/value rows via /query, maxRows 200); envelope sequenceIdioms; runManager DB side enriches the sequence TABLE candidate: data.sequence_generator_idiom {procName, columns, rows, proposedMappings} — proposals from introspection columns (exact match then >=4-char suffix, cap 3, self-table excluded); steps_payload sequenceIdiomCount.
+- Frontend rule `sequence_generator` (DB mode, per-table card FQ-sequence_generator-<table>): single target = the sequence table, note = sorted name(current)->table.column mapping summary (evidence hash reopens when rows/proposals change); options native_sequences (rec) / native_with_view (Q1 grant evidence) / table_emulation; payload {sequence_strategy, name_column, number_column, mappings}. EntityFacts gains sequenceGeneratorIdiom.
+- MCP applyDecisionsToEntities materializes payload -> constraints_metadata.sequence_generator {strategy, columns, mappings, decision_ref}.
+- Pack: IrTable.sequenceGenerator read from constraints_metadata (inputs.ts); buildSequenceSeeds emits per confirmed mapping `CREATE SEQUENCE IF NOT EXISTS <name>_seq; SELECT setval(..., MAX(col)+1 FROM loaded table)` in the EXISTING post-load sequences-seed changeset (the architecture's designated reseed home — no AMVS change needed); unmapped sequences = loud note, never silent; native_with_view adds CREATE OR REPLACE VIEW (name/number columns, last_value per sequence, UNION ALL); table_emulation = note (table migrates as data; proc semantics reimplemented in service layer).
+- Tests: detector 2, rules card 2, MCP materialization 1, pack emission 2; cross-package sweep green (mcp 6, gateway 30, discovery 146, frontend 27).
+- PICKUP: discovery-service + frontend + mcp-server + gateway restarts; DB scan re-run -> card appears on DB-run foundations.
 
 ### Item 1 (as-built)
 - New: sybase/sybaseProcHarvest.ts (sysobjects+syscomments reassembly via /query, maxRows 20k, types P/F/TR) + optional pack capability `harvestProcSources` on DatabaseDiscoveryPack + orchestrator Phase 4b (soft-fail loud, envelope `procSources`) + DB run steps_payload.database.{proc_sources, procSourceCount}.

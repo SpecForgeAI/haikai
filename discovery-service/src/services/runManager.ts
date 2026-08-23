@@ -3170,6 +3170,64 @@ export async function startDatabaseRun(
     // transient AMS hiccup.
     // -------------------------------------------------------------------------
     let candidatesPersisted = 0;
+    // Sequence-generator enrichment (2026-08-23, item 2): attach the
+    // detected idiom + live rows + PROPOSED name->table.column mappings to
+    // the sequence TABLE's own entity candidate — the foundations card
+    // derives from candidate data, the human confirms the mapping.
+    if (result.sequenceIdioms.length > 0) {
+      const columnsByLower = new Map<string, Array<{ table: string; column: string }>>();
+      for (const col of result.introspection.columns) {
+        const key = String((col as { columnName?: string }).columnName ?? '').toLowerCase();
+        if (!key) continue;
+        const list = columnsByLower.get(key) ?? [];
+        list.push({
+          table: String((col as { tableName?: string }).tableName ?? ''),
+          column: String((col as { columnName?: string }).columnName ?? ''),
+        });
+        columnsByLower.set(key, list);
+      }
+      for (const idiom of result.sequenceIdioms) {
+        const target = result.candidates.find(
+          (c) =>
+            c.candidateType === 'physical_data_entities' &&
+            String(c.name ?? '').toLowerCase() === idiom.seqTable.toLowerCase(),
+        );
+        if (!target) continue;
+        const proposedMappings = (idiom.rows ?? [])
+          .filter((r) => r.name)
+          .map((r) => {
+            const seqName = String(r.name);
+            const lower = seqName.toLowerCase();
+            // exact column-name match first, then suffix match
+            // (`FilterWorkflowId` -> column `WorkflowId`).
+            let matches = columnsByLower.get(lower) ?? [];
+            let exact = true;
+            if (matches.length === 0) {
+              exact = false;
+              for (const [colLower, list] of columnsByLower) {
+                if (colLower.length >= 4 && lower.endsWith(colLower)) {
+                  matches = [...matches, ...list];
+                }
+              }
+            }
+            return {
+              sequenceName: seqName,
+              currentValue: r.value,
+              proposals: matches
+                .filter((m) => m.table.toLowerCase() !== idiom.seqTable.toLowerCase())
+                .slice(0, 3)
+                .map((m) => ({ table: m.table, column: m.column, exact })),
+            };
+          });
+        (target.data as Record<string, unknown>).sequence_generator_idiom = {
+          procName: idiom.procName,
+          numberColumn: idiom.numberColumn,
+          nameColumn: idiom.nameColumn,
+          rows: idiom.rows,
+          proposedMappings,
+        };
+      }
+    }
     if (result.candidates.length > 0) {
       const converted = convertDatabasePayloadsToCandidates(result.candidates, runId);
       const sortedCandidates = sortCandidatesParentsFirst(converted);
@@ -3267,6 +3325,7 @@ export async function startDatabaseRun(
         // so the CODE scan can merge repo-vs-live (live wins, drift loud).
         procSourceCount: result.procSources.length,
         proc_sources: result.procSources,
+        sequenceIdiomCount: result.sequenceIdioms.length,
       },
     };
 

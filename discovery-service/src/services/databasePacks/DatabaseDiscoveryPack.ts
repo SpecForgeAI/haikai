@@ -223,6 +223,15 @@ export interface DatabaseDiscoveryPack {
   ): Promise<import('../../scl/sqlProcHarvester').LiveProcSource[]>;
 
   /**
+   * OPTIONAL capability (2026-08-23, Oracle Nine item 2): read the rows of a
+   * detected sequence-generator table (name + current value). Read-only.
+   */
+  probeSequenceRows?(
+    ctx: DatabaseDiscoveryPackContext,
+    idiom: import('../../scl/sqlProcHarvester').SequenceGeneratorIdiom,
+  ): Promise<Array<{ name: string | null; value: number | null }>>;
+
+  /**
    * Compute declared + inferred + ambiguous relationships. Uses the
    * introspection + profile data the orchestrator already has.
    */
