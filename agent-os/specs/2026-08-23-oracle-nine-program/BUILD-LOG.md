@@ -256,6 +256,22 @@ vs FQN); (e) fresh project = fresh model, no carried edges. Fixes:
     saved N/M (+ FAILED batch count). No new test (Kiro's call — heavier
     harness; sibling convention already pinned; offer stands).
 
+14. **Kiro on-machine fix replicated (round 7): access_mode in the
+    save-back idempotent match** — the payload proved emission+save both
+    clean (saved 571/571, roots walked) yet read/write cards still
+    reshuffled per run: Pass 2.6's idempotent match keyed
+    (endpoint_id, data_entity_point_id) WITHOUT access_mode, so a read
+    edge and a write edge for the same endpoint+table collapsed — first
+    mode created, second silently 'reused', survivor varying with
+    candidate-API order. Latent since the edge type existed; exposed when
+    round-5 made reads coexist with writes. Predicate now includes
+    `(r.access_mode ?? null) === (row.access_mode ?? null)` (the
+    data_movements sibling was already mode-inclusive). New suite
+    candidateSaveBackEffectAccessMode (4 tests, real
+    saveDiscoveryCandidatesToModel: both modes commit, same-mode
+    idempotent, order-independent, null-mode nullish equality). mcp full
+    sweep 78/537 green. Restart: mcp-server.
+
 Pickup: discovery-service restart only. OPEN: transfer-proc invocation shape
 (estate grep), Blocked-101 breakdown, FindingEmitter persist errors (~476).
 
