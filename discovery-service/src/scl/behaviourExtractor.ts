@@ -321,8 +321,22 @@ function lastTypeSegment(t: string): string {
   return s.includes('.') ? s.slice(s.lastIndexOf('.') + 1) : s;
 }
 
+const ENUM_SQL_HINT_RE = /\b(select|insert|update|delete|exec|truncate|merge)\b/i;
+
+/** An enum whose constants carry SQL constructor args IS a boundary — the
+ *  executor iterates values() and runs each constant's SQL (Kiro
+ *  2026-08-24: the daily COB roll lived entirely in such an enum). */
+function isSqlBearingEnum(cls: JavaClassInfo): boolean {
+  return (
+    cls.kind === 'enum' &&
+    cls.fields.some(
+      (f) => f.type === 'enum-constant' && !!f.initializer && ENUM_SQL_HINT_RE.test(f.initializer),
+    )
+  );
+}
+
 function isBoundaryClass(cls: JavaClassInfo): boolean {
-  if (cls.kind === 'enum') return false;
+  if (cls.kind === 'enum') return isSqlBearingEnum(cls);
   if (BOUNDARY_NAME_RE.test(cls.simpleName)) return true;
   if (cls.annotations.some((a) => /^@Repository(\(|$)/.test(a))) return true;
   // The DAO-interface + Impl idiom (2026-08-21 live diagnosis): the
@@ -448,6 +462,26 @@ export function extractBehaviour(
         ref: mined?.ref ?? null,
         resultShape: resolveResultShape(m, cls),
       });
+    }
+    // Enum boundaries: each SQL-bearing constant is an operation named
+    // after the constant. Method ops (getSql, values) stay sql-less, so a
+    // reach through them falls back to the class-level union — exactly
+    // right for `for (Op op : Op.values()) exec(op.getSql())`.
+    if (cls.kind === 'enum') {
+      for (const f of cls.fields) {
+        if (f.type !== 'enum-constant' || !f.initializer) continue;
+        const literals = f.initializer.match(/"((?:[^"\\]|\\.)*)"/g) ?? [];
+        const sqlPieces = literals
+          .map((lit) => lit.slice(1, -1))
+          .filter((inner) => ENUM_SQL_HINT_RE.test(inner));
+        if (sqlPieces.length === 0) continue;
+        operations.push({
+          name: f.name,
+          sqlVerbatim: sqlPieces.join(' '),
+          ref: { path: cls.filePath, line: f.line },
+          resultShape: null,
+        });
+      }
     }
     const canonical = {
       kind: 'boundary' as const,

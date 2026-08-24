@@ -439,7 +439,7 @@ export function indexCorpus(corpus: SclCorpus): CorpusIndex {
             if (!opReads.some((x) => x.toLowerCase() === table.toLowerCase())) opReads.push(table);
           }
         }
-        if (operation.name) {
+        if (operation.name && operation.sqlVerbatim) {
           const opKey = operation.name.toLowerCase();
           const existing = opTables.get(opKey);
           if (existing) {
@@ -452,8 +452,8 @@ export function indexCorpus(corpus: SclCorpus): CorpusIndex {
           } else {
             opTables.set(opKey, { writes: opWrites, reads: opReads });
           }
-          push(boundariesByOpName, operation.name, contract.key);
         }
+        if (operation.name) push(boundariesByOpName, operation.name, contract.key);
       }
       // Proc-body expansion (2026-08-23): the op SQL names the proc; the
       // harvested body names the tables (transitively closed).
@@ -999,6 +999,13 @@ export function deriveCorpusEffectCandidates(args: {
 }): DeriveResult {
   const index = indexCorpus(args.corpus);
 
+  // Kiro 2026-08-24 (6 tables mislabelled read-only): corpus-PROVEN edges
+  // must never defer to MINED candidates. Seeding existingEdges from the
+  // mining phase suppressed the corpus write; when the mined candidate then
+  // failed to commit (unresolved entity, rejection), the write vanished
+  // while the read survived. existingEdges now dedups only WITHIN this
+  // emission — mined+corpus overlap is handled by the save-back's
+  // intra-scan duplicate suppression, which keeps one committed edge.
   const existingEdges = new Set<string>(); // `${endpoint}|${table}|${mode}`
   const minedWriteCovered = new Set<string>();
   for (const candidate of args.runCandidates) {
@@ -1006,10 +1013,8 @@ export function deriveCorpusEffectCandidates(args: {
     const data = candidate.data as Record<string, unknown> | undefined;
     const name = normName(data?.endpointName);
     if (!name) continue;
-    const table = normName(data?.dataEntityName);
     const mode = normName(data?.access_mode) || 'write';
     if (mode === 'write') minedWriteCovered.add(name);
-    if (table) existingEdges.add(`${name}|${table}|${mode}`);
   }
 
   const candidates: DiscoveryCandidate[] = [];

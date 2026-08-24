@@ -1644,7 +1644,11 @@ function processMessageAndScheduledMethods(
       }
 
       const upperSubtype = subtype.toUpperCase();
-      const endpointName = `${upperSubtype} ${identifier}`;
+      // Kiro 2026-08-24: two @Scheduled methods with the SAME fixedDelay
+      // minted identically-named candidates and one was deduped away (the
+      // access-info twin asymmetry). The class.method suffix makes every
+      // scheduled/listener root unique while keeping the grouping prefix.
+      const endpointName = `${upperSubtype} ${identifier} ${cls.name}.${method.name}`;
       data.fullPath = identifier; // satisfies the structured-metadata gate path requirement
       data.httpMethod = upperSubtype.replace(/-/g, '_');
       out.candidates.push(
