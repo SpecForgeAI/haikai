@@ -792,6 +792,51 @@ describe('verb-agnostic effect chains (2026-08-22)', () => {
     expect(result.orphanProcTouchers).toEqual({});
   });
 
+  it('Kiro dedup-seed fix: corpus-proven edges are emitted even when a mined candidate covers the same edge', () => {
+    const corpus = corpusOf([
+      behaviourTable({
+        key: 'T-w',
+        symbol: 'DateRoller#roll',
+        annotations: ['@GET', '@Path("roll2")'],
+        callTargets: [],
+      }),
+      boundary({ key: 'Q-dao', symbol: 'RollDao', sql: ['update biz_date_ctrl set d = getdate()'] }),
+    ]);
+    (corpus.contracts[0] as { contract: { rows: unknown[] } }).contract.rows.push({
+      index: 0,
+      kind: 'terminal',
+      conditionVerbatim: null,
+      conditionRef: null,
+      outcome: { type: 'call', targetKey: 'Q-dao', targetSymbol: 'RollDao#op0' },
+    });
+    const mined = {
+      id: 'mined-1',
+      runId: 'run-1',
+      candidateType: 'endpoint_data_effects',
+      name: 'rollDate → biz_date_ctrl (write)',
+      confidence: 0.6,
+      status: 'proposed',
+      sourceClusterIds: [],
+      data: {
+        endpointName: 'rollDate',
+        dataEntityName: 'biz_date_ctrl',
+        access_mode: 'write',
+      },
+    } as unknown as DiscoveryCandidate;
+    const result = deriveCorpusEffectCandidates({
+      corpus,
+      runId: 'run-1',
+      runCandidates: [endpointCandidate('rollDate', 'GET', '/api/roll2'), mined],
+    });
+    // The corpus write is emitted regardless of the mined edge — if the
+    // mined candidate later fails to commit, the proven edge survives.
+    const edges = result.candidates.map((c) => {
+      const data = c.data as Record<string, unknown>;
+      return `${data.access_mode}:${String(data.dataEntityName).toLowerCase()}`;
+    });
+    expect(edges).toContain('write:biz_date_ctrl');
+  });
+
   it('Kiro bugs 1+2: read+write coexist; tables attribute per reached OPERATION', () => {
     const corpus = corpusOf([
       behaviourTable({

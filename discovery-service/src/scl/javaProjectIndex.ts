@@ -343,7 +343,10 @@ function fieldsOf(classNode: SyntaxNode): JavaFieldInfo[] {
         type: 'enum-constant',
         annotations: verbatimAnnotations(constant),
         modifiers: [],
-        initializer: null,
+        // Constructor arguments verbatim (Kiro 2026-08-24): legacy estates
+        // hold SQL in enum constants (SqlOperations.UPDATE("update ...")) —
+        // the args are the only place that SQL exists.
+        initializer: constant.childForFieldName('arguments')?.text ?? null,
         line: constant.startPosition.row + 1,
       });
     }

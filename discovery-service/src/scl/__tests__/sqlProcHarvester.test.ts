@@ -79,6 +79,27 @@ describe('harvestProcsFromSql', () => {
     expect(gateClosed.writes.map((w) => w.toLowerCase())).toContain('load_deal_book');
   });
 
+  it('comment headers never swallow the real proc name (Kiro 2026-08-24)', () => {
+    const source = `-- Create proc
+create procedure importVirtualNodes
+AS
+BEGIN
+  delete from all_node_map where HierarchyId < 0
+  insert into all_node_map (HierarchyId) select hierarchy_id from ext_tree_node vhn where hierarchy_id < 0
+END
+/* Create procedure (block comment form) */
+create proc getNextSeq @name varchar(30)
+AS
+BEGIN
+  update seq_registry set SeqNumber = SeqNumber + 1 where SeqName = @name
+END`;
+    const entries = harvestProcsFromSql(source, 'db/procs/both.sql');
+    expect(entries.map((e) => e.name).sort()).toEqual(['getnextseq', 'importvirtualnodes']);
+    // No phantom keyword entry — `create` must never be a catalog proc.
+    expect(entries.some((e) => e.name === 'create')).toBe(false);
+    expect(entries[0].name === 'getnextseq' || entries[0].writes.length > 0).toBe(true);
+  });
+
   it('a plain migration script (no CREATE PROC) harvests NOTHING — ext_* stays honest', () => {
     const script = `insert into all_node_map (HierarchyId)
       select hierarchy_id from ext_tree_node where hierarchy_id < 0`;

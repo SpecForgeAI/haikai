@@ -243,6 +243,20 @@ describe('joint CRUD-matrix rules (Spec 5)', () => {
     expect(questions.some((q) => q.rule_key === 'crud_write_only')).toBe(false);
   });
 
+  it('Kiro round 2: refused tables surface on a CONFLICTING-evidence card, never vanish', () => {
+    const questions = deriveJointFoundationQuestions(JOINT_MODEL, [], {
+      readAnywhereTables: ['audit_log'],
+    });
+    const conflicting = questions.find((q) => q.rule_key === 'crud_conflicting')!;
+    expect(conflicting).toBeDefined();
+    expect(conflicting.targets.map((tg) => tg.entity_name)).toEqual(['audit_log']);
+    expect(conflicting.targets[0].note).toContain('rooted write edge');
+    expect(conflicting.options[0]).toMatchObject({ answer: 'keep_all', recommended: true });
+    expect(conflicting.options[1]).toMatchObject({ answer: 'audit_sink_all' });
+    // And the write-only card stays silent for it (already covered below).
+    expect(questions.some((q) => q.rule_key === 'crud_write_only')).toBe(false);
+  });
+
   it('Kiro backstop: unrooted read evidence REFUSES the write-only bucket', () => {
     const withRefusal = deriveJointFoundationQuestions(JOINT_MODEL, [], {
       readAnywhereTables: ['audit_log'],

@@ -81,6 +81,24 @@ function walkSqlFiles(rootDir: string): string[] {
   return out;
 }
 
+/** Strip line comments (double-dash) and block comments so CREATE PROC matching
+ *  never spans a comment boundary (Kiro 2026-08-24: `-- Create proc` above
+ *  the real statement made the regex capture the statement's own `create`
+ *  keyword as a phantom proc NAME, consuming the real name — 32 phantom
+ *  `create` catalog entries, importVirtualNodes/getNextSequence absent). */
+export function stripSqlComments(text: string): string {
+  return text
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/--[^\n]*/g, '');
+}
+
+/** Captured CREATE names that are SQL keywords are comment-collision
+ *  artifacts, never real proc names. */
+const SQL_KEYWORD_NAMES = new Set([
+  'create', 'proc', 'procedure', 'function', 'as', 'begin', 'end', 'or',
+  'replace', 'if', 'exists', 'table', 'view', 'index', 'trigger',
+]);
+
 const CREATE_PROC_RE =
   /\bcreate\s+(?:proc(?:edure)?|function)\s+([A-Za-z0-9_."\[\]]+)/gi;
 
@@ -93,9 +111,11 @@ function bareName(raw: string): string {
  *  CREATE to the next CREATE (or EOF) — good enough for table mining. */
 export function harvestProcsFromSql(sqlText: string, sourcePath: string): ProcCatalogEntry[] {
   const matches: Array<{ name: string; start: number }> = [];
+  sqlText = stripSqlComments(sqlText);
   CREATE_PROC_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
   while ((m = CREATE_PROC_RE.exec(sqlText)) !== null) {
+    if (SQL_KEYWORD_NAMES.has((m[1] ?? '').replace(/^dbo\./i, '').toLowerCase())) continue;
     matches.push({ name: bareName(m[1]), start: m.index });
   }
   const out: ProcCatalogEntry[] = [];

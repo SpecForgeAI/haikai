@@ -166,6 +166,23 @@ vs FQN); (e) fresh project = fresh model, no carried edges. Fixes:
    write-only bucket REFUSES tables read anywhere in parsed SQL, refusal
    counted in the card detail.
 
+9. **Kiro round-2 fixes (5)** — (a) comment-swallow: stripSqlComments before
+   CREATE PROC harvest + SQL-keyword name reject (32 phantom `create`
+   entries, importVirtualNodes/getNextSequence absent -> ven_* WHY notes
+   restored, phantom-expansion hazard dead); (b) corpus-proven edges no
+   longer defer to MINED candidates (existingEdges seed removed; the 6
+   read-only-mislabelled batch dimension tables regain their proc writes);
+   (c) @Scheduled/listener roots named uniquely (`SCHEDULED <id>
+   Class.method`) — same-fixedDelay twins no longer dedupe away (the
+   access-info asymmetry); (d) refused write-only tables get their own
+   CONFLICTING-evidence card (crud_conflicting: keep read-write
+   recommended / audit-sink acknowledge / exclude) instead of vanishing
+   from review; (e) enum-held SQL: enum constant args captured, SQL-bearing
+   enums become boundaries (op per constant; sql-less method ops fall back
+   to class union — `for (op : values()) exec(op.getSql())` attributes).
+   DEFERRED knowingly: AOP @AuditInfoDBLogging aspect walking (bucket
+   verdict already correct).
+
 Pickup: discovery-service restart only. OPEN: transfer-proc invocation shape
 (estate grep), Blocked-101 breakdown, FindingEmitter persist errors (~476).
 

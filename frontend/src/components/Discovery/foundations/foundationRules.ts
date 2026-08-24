@@ -48,6 +48,7 @@ export interface FoundationQuestion {
     | 'engine_hazard'
     | 'crud_never'
     | 'crud_write_only'
+    | 'crud_conflicting'
     | 'crud_read_only'
     | 'scope_code_conflict'
     | 'legacy_cache_strategy'
@@ -861,7 +862,8 @@ export function deriveJointFoundationQuestions(
     (f) => f.scope === 'in_scope' && f.writes > 0 && f.reads === 0 && f.executes === 0,
   );
   const writeOnly = writeOnlyAll.filter((f) => !readAnywhere.has(f.name.toLowerCase()));
-  const writeOnlyRefused = writeOnlyAll.length - writeOnly.length;
+  const writeOnlyRefusedTables = writeOnlyAll.filter((f) => readAnywhere.has(f.name.toLowerCase()));
+  const writeOnlyRefused = writeOnlyRefusedTables.length;
   if (writeOnly.length > 0 && hasReadEvidence) {
     const targets = writeOnly.map((f) => jointTarget(f, `${f.writes} write edge(s), never read`));
     const q = reconcile({
@@ -887,6 +889,37 @@ export function deriveJointFoundationQuestions(
         { answer: 'exclude_all', label: 'Exclude from migration', scope: 'excluded' },
       ],
       evidence_hash: bulkTargetsEvidenceHash('crud_write_only', targets),
+    });
+    if (q) questions.push(q);
+  }
+
+  // --- conflicting evidence (rooted writes + unrooted reads) — Kiro
+  // 2026-08-24: tables REFUSED from the write-only bucket vanished from
+  // every card (writes>0 skips crud_never AND crud_read_only), so no
+  // decision was ever recorded and they inherited scope silently. The
+  // safest tables in the estate must never be the ones that disappear
+  // from review.
+  if (writeOnlyRefusedTables.length > 0 && hasReadEvidence) {
+    const targets = writeOnlyRefusedTables.map((f) =>
+      jointTarget(
+        f,
+        `${f.writes} rooted write edge(s); read only by SQL the chain rooting cannot see (proc body / boundary text)`,
+      ),
+    );
+    const q = reconcile({
+      question_key: 'FQ-crud_conflicting',
+      rule_key: 'crud_conflicting',
+      title: `${writeOnlyRefusedTables.length} table(s) have CONFLICTING evidence (rooted writes, unrooted reads)`,
+      detail:
+        'Rooted chains write these tables and parsed SQL reads them somewhere the rooting cannot ' +
+        'reach. They are NOT audit sinks — treating them as read-write is the safe posture.',
+      targets,
+      options: [
+        { answer: 'keep_all', label: 'Treat as read-write; keep in migration (recommended)', scope: 'in_scope', recommended: true },
+        { answer: 'audit_sink_all', label: 'The unrooted reads are spurious — acknowledge as audit sinks', scope: 'in_scope', payload: { audit_sink: true } },
+        { answer: 'exclude_all', label: 'Exclude from migration', scope: 'excluded' },
+      ],
+      evidence_hash: bulkTargetsEvidenceHash('crud_conflicting', targets),
     });
     if (q) questions.push(q);
   }
