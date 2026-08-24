@@ -2721,13 +2721,19 @@ async function startServiceScopedRun(
             let enriched = 0;
             for (const job of resolved) {
               if (!job.resolvedMainFqn) continue;
-              const target = allCandidates.find(
-                (c) =>
-                  c.candidateType === 'endpoints' &&
-                  String(
-                    (c.data as { className?: string } | undefined)?.className ?? '',
-                  ) === job.resolvedMainFqn,
-              );
+              const fqn = job.resolvedMainFqn;
+              // Batch-main endpoint candidates carry the FQN in `fullPath`
+              // and the SIMPLE name in `className` (2026-08-24 shakedown:
+              // comparing className against the FQN matched NOTHING --
+              // candidatesEnriched was 0 with 31 jobs resolved).
+              const simpleName = fqn.includes('.') ? fqn.slice(fqn.lastIndexOf('.') + 1) : fqn;
+              const target = allCandidates.find((c) => {
+                if (c.candidateType !== 'endpoints') return false;
+                const data = c.data as { className?: string; fullPath?: string } | undefined;
+                const className = String(data?.className ?? '');
+                const fullPath = String(data?.fullPath ?? '');
+                return fullPath === fqn || className === fqn || className === simpleName;
+              });
               if (!target) continue;
               const schedules =
                 ((target.data as Record<string, unknown>).schedules as unknown[]) ?? [];
@@ -2896,6 +2902,10 @@ async function startServiceScopedRun(
             unproposed: proposalPhase.unproposed,
             readUnderived: derivedPhase.readUnderived,
             chainBreaks: derivedPhase.chainBreaks,
+            // 2026-08-24 shakedown: WHICH internal chains walked (capped 20
+            // upstream) -- diagnosing batch-plane rooting needs the names,
+            // not the count.
+            internalWalkedNames: derivedPhase.internalWalked,
             // Shakedown fix 2 (2026-08-23): table -> caller-less proc
             // touchers; the foundations never-touched card annotates WHY.
             orphanProcTouchers: derivedPhase.orphanProcTouchers,

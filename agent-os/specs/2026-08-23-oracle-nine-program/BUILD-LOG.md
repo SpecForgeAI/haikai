@@ -99,6 +99,33 @@ restart (fixes 2-3 UI). No AMS/gateway/sidecar changes in this round.
 Re-run: code scan (DB scan already COMPLETED on the new build) ->
 foundations review -> expect 10 dark never-touched tables, annotated.
 
+## Shakedown round 2 (2026-08-24, fresh-project re-run)
+
+Findings from the run payload: (a) "expansion cap 12" lines are the
+UNKNOWN-RECEIVER tier of the tiered cap (8f487c72: known-class=40, `?`=12,
+deliberate) — every observed line was `?#toString/append` StringBuilder
+plumbing; (b) batch transfer procs ALL unreferenced (the real gap — Java->proc
+invocation invisible, needs estate grep); (c) phantom alias writes ("grd")
+from Sybase ALIASED UPDATE; (d) jil enrichment matched 0/31 (className simple
+vs FQN); (e) fresh project = fresh model, no carried edges. Fixes:
+
+1. **Alias-aware writes** — `fromAliasMap` + shared `walkFromClauses`;
+   `update <alias> set ... from <table> <alias>` and `delete <alias> from`
+   resolve to the real table; phantom alias tables (blocked at save as
+   unknown entities) eliminated.
+2. **Inert unknown-receiver suppression** — `?#toString/append/equals/...`
+   (JDK-semantic name set) no longer recorded as broken calls; kills the
+   identical noise on every endpoint AND unblocks proven-read chains that
+   were failing on pure StringBuilder plumbing. Known receivers never
+   suppressed.
+3. **jil enrichment match fix** — batch-main candidates carry FQN in
+   `fullPath`, SIMPLE name in `className`; matcher now checks both.
+4. **internalWalkedNames** in effectCandidates payload (which internal
+   chains walked — batch-plane rooting diagnosis needs names not counts).
+
+Pickup: discovery-service restart only. OPEN: transfer-proc invocation shape
+(estate grep), Blocked-101 breakdown, FindingEmitter persist errors (~476).
+
 ## Per-item as-built notes
 
 ### Item 9 (as-built)

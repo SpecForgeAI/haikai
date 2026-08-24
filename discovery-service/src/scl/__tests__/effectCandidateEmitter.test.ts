@@ -14,6 +14,7 @@ import {
   derivePathFragment,
   indexCorpus,
   parseProposalContent,
+  isInertUnknownReceiverCall,
   parseReadTablesFromSql,
   parseWriteTablesFromSql,
   proposeEffectCandidatesViaLlm,
@@ -1046,6 +1047,33 @@ describe('helpers', () => {
     ).toEqual(['deal_book']);
     // DELETE FROM stays a write, never a read.
     expect(parseReadTablesFromSql('delete from deal_book where x = 1')).toEqual([]);
+  });
+
+  it('resolves Sybase aliased update/delete targets to the real table (2026-08-24)', () => {
+    // `update <alias> set ... from <table> <alias>` -- the alias must never
+    // surface as a phantom table.
+    const aliasedUpdate =
+      'update tr set valid_to = @cob from org_registry tr, load_org_registry lo ' +
+      'where tr.org_id = lo.org_id';
+    expect(parseWriteTablesFromSql(aliasedUpdate)).toEqual(['org_registry']);
+    expect(parseReadTablesFromSql(aliasedUpdate)).toEqual(['org_registry', 'load_org_registry']);
+    // Aliased delete form.
+    expect(
+      parseWriteTablesFromSql('delete tr from org_registry tr where tr.org_id < 0'),
+    ).toEqual(['org_registry']);
+    // Plain forms unchanged.
+    expect(parseWriteTablesFromSql('delete from org_registry where x = 1')).toEqual([
+      'org_registry',
+    ]);
+    expect(parseWriteTablesFromSql('update org_registry set x = 1')).toEqual(['org_registry']);
+  });
+
+  it('isInertUnknownReceiverCall suppresses only JDK plumbing on unknown receivers', () => {
+    expect(isInertUnknownReceiverCall('?#toString()')).toBe(true);
+    expect(isInertUnknownReceiverCall('?#append(?)')).toBe(true);
+    expect(isInertUnknownReceiverCall('?#loadDealBooks(?)')).toBe(false);
+    // Known receivers are NEVER suppressed, whatever the name.
+    expect(isInertUnknownReceiverCall('com.example.Util#toString()')).toBe(false);
   });
 
   it('parseProposalContent tolerates markdown fences', () => {
