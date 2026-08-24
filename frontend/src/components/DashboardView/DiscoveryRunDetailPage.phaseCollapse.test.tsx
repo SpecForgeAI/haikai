@@ -22,6 +22,9 @@ vi.mock('../../api/discoveryApi', () => ({
   getDiscoveryCandidates: (...a: unknown[]) => mockGetDiscoveryCandidates(...a),
   saveApprovedCandidates: vi.fn(),
   deleteDiscoveryRun: vi.fn(),
+  getReviewModel: vi.fn().mockResolvedValue(null),
+  updateDiscoveryCandidate: vi.fn(),
+  getDiscoveryFindings: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock('../../api/modelApi', () => ({
@@ -119,6 +122,31 @@ describe('DiscoveryRunDetailPage — phase payload collapse', () => {
 
     fireEvent.click(screen.getByTestId('phase-json-toggle-database'));
     expect(screen.queryByTestId('phase-json-full-database')).toBeNull();
+  });
+
+  it('Refresh refetches the active Candidates tab contents (2026-08-24 bug)', async () => {
+    const r = run({ database: { status: 'completed' } });
+    mockGetDiscoveryRuns.mockResolvedValue([r]);
+    mockGetDiscoveryRun.mockResolvedValue(r);
+    mockGetDiscoveryCandidates.mockResolvedValue([
+      {
+        id: 'c1',
+        candidate_type: 'endpoints',
+        name: 'GET /api/x',
+        status: 'proposed',
+        confidence: 0.9,
+        data: {},
+      },
+    ]);
+
+    renderPage();
+    await screen.findByTestId('phase-list');
+    const callsAfterLoad = mockGetDiscoveryCandidates.mock.calls.length;
+
+    fireEvent.click(screen.getByTestId('refresh-runs-button'));
+    await vi.waitFor(() => {
+      expect(mockGetDiscoveryCandidates.mock.calls.length).toBeGreaterThan(callsAfterLoad);
+    });
   });
 
   it('renders short phase payloads inline with no toggle', async () => {
