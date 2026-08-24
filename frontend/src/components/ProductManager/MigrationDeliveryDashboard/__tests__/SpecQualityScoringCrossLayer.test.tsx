@@ -701,19 +701,21 @@ describe('Cross-layer: the N/A filter chip prunes/keeps null-grade stories', () 
       ).toBeInTheDocument(),
     );
 
-    // Sanity: both stories visible by default.
-    expect(screen.getByText('Story graded B')).toBeInTheDocument();
-    expect(screen.getByText('Story null grade')).toBeInTheDocument();
+    // Sanity: both stories visible by default (hierarchy node-title testids:
+    // the migrate-select panel repeats titles as checkbox labels, so bare
+    // text queries are ambiguous; the pinned behaviour is hierarchy pruning).
+    expect(screen.getByTestId('mdd-hierarchy-node-title-story-graded')).toBeInTheDocument();
+    expect(screen.getByTestId('mdd-hierarchy-node-title-story-null-grade')).toBeInTheDocument();
 
     // Deselect 'na'. The null-grade story should disappear; the graded
     // story should remain.
     fireEvent.click(screen.getByTestId('mdd-dashboard-grade-filter-chip-na'));
     await waitFor(() => {
       expect(
-        screen.queryByText('Story null grade'),
+        screen.queryByTestId('mdd-hierarchy-node-title-story-null-grade'),
       ).not.toBeInTheDocument();
     });
-    expect(screen.getByText('Story graded B')).toBeInTheDocument();
+    expect(screen.getByTestId('mdd-hierarchy-node-title-story-graded')).toBeInTheDocument();
 
     // Confirm helper-level agreement -- both `isGradeAllowedByFilter` paths
     // map the wire null to the 'na' chip.

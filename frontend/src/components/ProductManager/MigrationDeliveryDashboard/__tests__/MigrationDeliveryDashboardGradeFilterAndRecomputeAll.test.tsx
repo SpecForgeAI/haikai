@@ -192,18 +192,21 @@ describe('Dashboard grade filter and bulk recompute (Task Group 8)', () => {
         screen.getByTestId('mdd-dashboard-grade-filter-chip-F'),
       ).toBeInTheDocument();
     });
-    // Both story rows initially visible
-    expect(screen.getByText('Story A (graded B)')).toBeInTheDocument();
-    expect(screen.getByText('Story C (graded F)')).toBeInTheDocument();
+    // Both story rows initially visible. Queried by the HIERARCHY node-title
+    // testid — the migrate-select panel (added later) repeats story titles
+    // as checkbox labels, so bare text queries are ambiguous; the pinned
+    // behaviour is hierarchy pruning.
+    expect(screen.getByTestId('mdd-hierarchy-node-title-story-a')).toBeInTheDocument();
+    expect(screen.getByTestId('mdd-hierarchy-node-title-story-c')).toBeInTheDocument();
 
     // Deselect F
     fireEvent.click(screen.getByTestId('mdd-dashboard-grade-filter-chip-F'));
 
     // Story C (graded F) gets pruned; Story A (graded B) still visible
     await waitFor(() => {
-      expect(screen.queryByText('Story C (graded F)')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('mdd-hierarchy-node-title-story-c')).not.toBeInTheDocument();
     });
-    expect(screen.getByText('Story A (graded B)')).toBeInTheDocument();
+    expect(screen.getByTestId('mdd-hierarchy-node-title-story-a')).toBeInTheDocument();
   });
 
   it('Recompute all quality button POSTs to the bulk endpoint and shows the summary banner', async () => {

@@ -52,7 +52,9 @@ describe('api-migration-validation-service config defaults', () => {
       expect(config.GATEWAY_BASE_URL).toBe('http://localhost:8081');
       expect(config.OAS_SPECS_DIR).toBe('./oas-specs');
       expect(config.LLM_SCENARIO_ROUND_LIMIT).toBe(12);
-      expect(config.LLM_TOOL_CALL_TIMEOUT_MS).toBe(30000);
+      // 180s since the LLM rate-limit program (Spec 2026-07-22): the 30s
+      // default starved tool calls queued behind the shared 429 cool-down.
+      expect(config.LLM_TOOL_CALL_TIMEOUT_MS).toBe(180000);
       expect(config.LLM_SCENARIO_WALL_CLOCK_MS).toBe(300000);
     });
   });

@@ -139,9 +139,12 @@ describe('manifest coordinate registry — union answer shape (Spec 2 Group 2)',
       framework: 'npm + tsc',
       version: '10.9.0',
     });
-    // The bare stems are valid build.tool choice stems (Maven 3.9 / npm + tsc).
+    // The bare stems are valid build.tool choice stems. Version-decoupling
+    // (2026-06-27, target-state 3-spec initiative) made the library choices
+    // BARE stems ('Maven', not 'Maven 3.9') — the version rides the
+    // framework-version answer, never the choice label.
     const buildToolChoices = choicesFor('build.tool');
-    expect(buildToolChoices).toContain('Maven 3.9');
+    expect(buildToolChoices).toContain('Maven');
     expect(buildToolChoices).toContain('npm + tsc');
   });
 });

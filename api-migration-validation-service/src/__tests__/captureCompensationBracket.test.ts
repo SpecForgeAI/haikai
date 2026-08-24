@@ -283,6 +283,11 @@ async function runHarness(args: HarnessArgs) {
       metadataFetcher: async () => buildCompensationMetadataIndex(MODEL),
       effectScopeFetcher: async () => args.effectScope,
       writeAdapterFactory: () => writeAdapter,
+      // Quiet-window guardrail (Oracle Nine item 5) runs BEFORE scenarios
+      // with a 120s two-sweep gap by default — instant here; the guardrail
+      // has its own dedicated coverage.
+      quietCheckGapSeconds: 0,
+      quietCheckSleep: async () => {},
     },
   });
   return { outcome, archMock, writeAdapter };

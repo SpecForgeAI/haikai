@@ -122,10 +122,13 @@ test('probes with a custom header (type=header) and applies it on the wire', asy
     });
 
   expect(res.status).toBe(200);
+  // `authRejected` rides every probe result since the REST-XML capture round
+  // (XML3): a 401/403 on the probe surfaces as an explicit flag.
   expect(res.body).toEqual({
     success: true,
     status: 200,
     durationMs: expect.any(Number),
+    authRejected: false,
   });
 
   expect(lastRequest).not.toBeNull();

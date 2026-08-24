@@ -105,7 +105,7 @@ function makeConfig(llmProvider: 'openai' | 'azure-openai'): Config {
     migrationPlanExpansionBatchSize: 12,
     gatewayPublicBaseUrl: 'http://localhost:8081',
     buildResultsServiceToken: '',
-  } as Config;
+  } as unknown as Config; // fixture: Config grows regularly; the factory pins only llm-relevant fields
 }
 
 // ---------------------------------------------------------------------------

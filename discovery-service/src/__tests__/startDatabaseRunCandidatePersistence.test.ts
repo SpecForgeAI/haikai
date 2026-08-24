@@ -115,6 +115,12 @@ function makeOrchestratorResult(candidates: DatabaseCandidatePayload[]) {
     candidates,
     emittedFindings: [],
     warningFindings: [],
+    // Oracle Nine envelope additions (2026-08-23): present-but-empty, the
+    // shape every modern pack returns.
+    procSources: [],
+    sequenceIdioms: [],
+    serverCharset: null,
+    keyProbes: [],
   };
 }
 

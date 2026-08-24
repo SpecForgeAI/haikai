@@ -1,5 +1,6 @@
 package com.example.architecturemodel.service.discovery;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import com.example.architecturemodel.exception.ResourceNotFoundException;
 import com.example.architecturemodel.model.dto.discovery.DbSurfaceInventoryDto;
 import com.example.architecturemodel.model.dto.discovery.DbSurfaceInventoryDto.DbSurfaceObjectDto;
@@ -65,6 +66,14 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 @Slf4j
+// No-db mode (app.features.include-database=false) runs without JPA
+// repositories; every repository-backed bean carries this guard (2026-08-24
+// sweep — unguarded beans broke the no-db ApplicationContext).
+@ConditionalOnProperty(
+    name = "app.features.include-database",
+    havingValue = "true",
+    matchIfMissing = true
+)
 public class DbSurfaceInventoryService {
 
     /** Haikai workflow tracer (no-op unless HAIKAI_TRACE is set). */

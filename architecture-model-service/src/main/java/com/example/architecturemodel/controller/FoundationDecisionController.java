@@ -4,6 +4,7 @@ import com.example.architecturemodel.model.dto.FoundationDecisionDto;
 import com.example.architecturemodel.service.FoundationDecisionService;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -27,6 +28,14 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/projects/{projectId}/architectures/{architectureId}/foundation-decisions")
 @RequiredArgsConstructor
+// No-db mode (app.features.include-database=false) runs without JPA
+// repositories; every DB-backed controller carries this guard (2026-08-24
+// sweep).
+@ConditionalOnProperty(
+    name = "app.features.include-database",
+    havingValue = "true",
+    matchIfMissing = true
+)
 public class FoundationDecisionController {
 
     private final FoundationDecisionService service;

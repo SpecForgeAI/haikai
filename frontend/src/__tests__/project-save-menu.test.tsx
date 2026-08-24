@@ -74,6 +74,9 @@ describe('Task Group 1: Menu Structure Tests', () => {
       // Terraform import/export pair (at the end) were added.
       const expectedOrder = [
         'project-menu-create',
+        // Edit-project joined the menu 2026-07-27 (Create modal in edit
+        // mode); renders unconditionally, directly after Create.
+        'project-menu-edit',
         'project-menu-open',
         'project-menu-generate-standards',
         'project-menu-save',
@@ -88,7 +91,7 @@ describe('Task Group 1: Menu Structure Tests', () => {
         'project-menu-export-infrastructure-terraform',
       ];
 
-      expect(menuItems.length).toBe(13);
+      expect(menuItems.length).toBe(14);
       expectedOrder.forEach((testId, index) => {
         expect(menuItems[index].getAttribute('data-testid')).toBe(testId);
       });

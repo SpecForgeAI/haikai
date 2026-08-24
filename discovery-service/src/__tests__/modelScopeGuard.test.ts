@@ -25,6 +25,10 @@ const BASELINE = new Set<string>([
   'src/scl/effectCandidateEmitter.ts',
   'src/services/candidateIdentity.ts',
   'src/services/candidateMerge.ts',
+  // Candidate-TYPE discriminator only (`candidateType === 'physical_data_entities'`
+  // on the DB run's own candidates — Oracle Nine item 2 sequence-idiom
+  // enrichment). Never reads the raw model collection.
+  'src/services/runManager.ts',
   'src/services/databasePacks/DatabaseDiscoveryPack.ts',
   'src/services/databasePacks/candidateStructuralFidelity.ts',
   'src/services/databasePacks/postgres/PostgresDiscoveryPack.ts',

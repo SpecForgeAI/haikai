@@ -189,7 +189,10 @@ class ArchitectureIdAutoDeriveTriggerTest {
             assertThat(is)
                 .as("changeset SQL file must be on the classpath at %s", CHANGESET_PATH)
                 .isNotNull();
-            return new String(is.readAllBytes(), StandardCharsets.UTF_8);
+            // Maven resource filtering rewrites classpath resources with
+            // PLATFORM line endings (CRLF on Windows); the assertions pin
+            // multi-line content with \n, so normalise before comparing.
+            return new String(is.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
         }
     }
 }

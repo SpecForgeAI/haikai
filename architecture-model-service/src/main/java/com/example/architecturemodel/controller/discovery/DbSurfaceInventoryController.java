@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
@@ -22,6 +23,14 @@ import java.util.UUID;
 @RequestMapping("/api/projects/{projectId}/architectures/{architectureId}/db-surface-inventory")
 @RequiredArgsConstructor
 @Slf4j
+// No-db mode (app.features.include-database=false) runs without JPA
+// repositories; every DB-backed controller carries this guard (2026-08-24
+// sweep).
+@ConditionalOnProperty(
+    name = "app.features.include-database",
+    havingValue = "true",
+    matchIfMissing = true
+)
 public class DbSurfaceInventoryController {
 
     private final DbSurfaceInventoryService service;

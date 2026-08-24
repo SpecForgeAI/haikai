@@ -486,11 +486,15 @@ describe('Azure OpenAI Client', () => {
         text: () => Promise.resolve('valid-token'),
       });
 
-      // Mock chat request (fails with 429)
+      // Mock chat request (fails with 500). A 429 is no longer a plain
+      // throw: the rate-limit program (Spec 2026-07-22) cool-down-retries
+      // per-minute 429s (60s sleeps — this test used to time out on it) and
+      // throws LlmDailyLimitError on per-day; both have their own coverage.
+      // The plain non-2xx throw path is pinned with a non-rate-limit status.
       (global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: false,
-        status: 429,
-        text: () => Promise.resolve('Rate limit exceeded'),
+        status: 500,
+        text: () => Promise.resolve('Internal server error'),
       });
 
       const client = createAzureOpenAIClient(config);
@@ -506,8 +510,8 @@ describe('Azure OpenAI Client', () => {
       } catch (err: unknown) {
         const error = err as Error;
         expect(error.name).toBe('AzureOpenAIError');
-        expect(error.message).toContain('429');
-        expect(error.message).toContain('Rate limit exceeded');
+        expect(error.message).toContain('500');
+        expect(error.message).toContain('Internal server error');
         expect(error.message).toContain('req-fail');
       }
     });

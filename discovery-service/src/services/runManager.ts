@@ -3563,7 +3563,7 @@ export async function startDatabaseRun(
     // detected idiom + live rows + PROPOSED name->table.column mappings to
     // the sequence TABLE's own entity candidate — the foundations card
     // derives from candidate data, the human confirms the mapping.
-    if (result.sequenceIdioms.length > 0) {
+    if ((result.sequenceIdioms ?? []).length > 0) {
       const columnsByLower = new Map<string, Array<{ table: string; column: string }>>();
       for (const col of result.introspection.columns) {
         const key = String((col as { columnName?: string }).columnName ?? '').toLowerCase();
@@ -3619,7 +3619,7 @@ export async function startDatabaseRun(
     }
     // Parity-key probe enrichment (item 4): probes ride the table candidate
     // so the key-posture foundations card proposes a VERIFIED parity key.
-    for (const probeEntry of result.keyProbes) {
+    for (const probeEntry of result.keyProbes ?? []) {
       const target = result.candidates.find(
         (c) =>
           c.candidateType === 'physical_data_entities' &&
@@ -3723,14 +3723,14 @@ export async function startDatabaseRun(
         s0Snapshot,
         // Live stored-object harvest (2026-08-23): raw sources ride the run
         // so the CODE scan can merge repo-vs-live (live wins, drift loud).
-        procSourceCount: result.procSources.length,
-        proc_sources: result.procSources,
-        sequenceIdiomCount: result.sequenceIdioms.length,
+        procSourceCount: (result.procSources ?? []).length,
+        proc_sources: result.procSources ?? [],
+        sequenceIdiomCount: (result.sequenceIdioms ?? []).length,
         // Item 3: detected server charset/sortorder — the pack + data plane
         // read this to declare the charset on extraction connections and to
         // raise the target-collation decision.
-        server_charset: result.serverCharset,
-        keyProbeTableCount: result.keyProbes.length,
+        server_charset: result.serverCharset ?? null,
+        keyProbeTableCount: (result.keyProbes ?? []).length,
       },
     };
 

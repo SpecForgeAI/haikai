@@ -37,7 +37,7 @@ const GENERIC_MODULE_ALLOWLIST: Record<string, { allowed: number; reason: string
   'services/migrationBookOfWorkHandler.ts': { allowed: 3, reason: 'dialect_affected wiring comments/reasons' },
   'services/migrationBookOfWorkExpansionHandler.ts': { allowed: 3, reason: 'dialect_affected wiring comments/reasons' },
   'services/migrationCodeStreamPlanner.ts': { allowed: 2, reason: 'dialect_affected flag vocabulary' },
-  'routes/migrationExecution.ts': { allowed: 5, reason: 'target-DB credential route comments (Spec N residual)' },
+  'routes/migrationExecution.ts': { allowed: 0, reason: 'generic (credential parsing moved to dbMigrationPack/dbCredentialBlock, 2026-08-24 burn-down)' },
   // Generic-by-construction modules: MUST stay clean.
   'services/migrationDataParityGate.ts': { allowed: 0, reason: 'generic (Spec P part 2)' },
   'services/migrationShapeSpecGenerationHandler.ts': { allowed: 0, reason: 'generic' },

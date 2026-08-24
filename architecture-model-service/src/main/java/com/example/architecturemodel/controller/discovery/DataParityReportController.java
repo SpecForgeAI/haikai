@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.LinkedHashMap;
@@ -35,6 +36,14 @@ import java.util.UUID;
 @RequestMapping("/api/projects/{projectId}/architectures/{architectureId}/data-parity-reports")
 @RequiredArgsConstructor
 @Slf4j
+// No-db mode (app.features.include-database=false) runs without JPA
+// repositories; every DB-backed controller carries this guard (2026-08-24
+// sweep — same gap as DataMigrationReportController).
+@ConditionalOnProperty(
+    name = "app.features.include-database",
+    havingValue = "true",
+    matchIfMissing = true
+)
 public class DataParityReportController {
 
     private static final HaikaiTrace.Tracer TRACE = HaikaiTrace.forService("ams");
