@@ -48,6 +48,37 @@ describe('harvestProcsFromSql', () => {
     ]);
   });
 
+  it('the Sybase return-status nested call (exec @rc = proc) closes the chain (2026-08-24)', () => {
+    // The intermediate-proc idiom: a thin dispatcher proc calls the worker
+    // via `exec @rc = worker` — the @rc capture previously swallowed the
+    // name, the closure lacked the edge, and the worker's config-table
+    // reads stayed dark as a false orphan.
+    const dispatcher = `CREATE PROC validate_gate @entity varchar(30), @strict char(1)
+      AS
+      BEGIN
+        declare @rc int
+        exec @rc = validate_ledger_rows @entity
+        return @rc
+      END`;
+    const worker = `CREATE PROC validate_ledger_rows @entity varchar(30)
+      AS
+      BEGIN
+        select f.fieldName, r.ruleCode from rule_fields f, rule_config r
+          where f.ruleCode = r.ruleCode
+        update load_deal_book set err_flag = 1 where deal_id is null
+      END`;
+    const entries = harvestProcsFromSql(`${dispatcher}\n${worker}`, 'db/procs/val.sql');
+    const gate = entries.find((e) => e.name === 'validate_gate')!;
+    expect(gate.procCalls).toEqual(['validate_ledger_rows']);
+    const closed = closeProcCatalog(entries);
+    const gateClosed = closed.get('validate_gate')!;
+    expect(gateClosed.reads.map((r) => r.toLowerCase()).sort()).toEqual([
+      'rule_config',
+      'rule_fields',
+    ]);
+    expect(gateClosed.writes.map((w) => w.toLowerCase())).toContain('load_deal_book');
+  });
+
   it('a plain migration script (no CREATE PROC) harvests NOTHING — ext_* stays honest', () => {
     const script = `insert into all_node_map (HierarchyId)
       select hierarchy_id from ext_tree_node where hierarchy_id < 0`;

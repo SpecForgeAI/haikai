@@ -110,7 +110,11 @@ function bareTableToken(raw: string): string {
   return (cleaned.split('.').pop() ?? cleaned).trim();
 }
 
-const PROC_CALL_RE = /\{\s*(?:\?\s*=\s*)?call\s+([A-Za-z0-9_."\[\]$#]+)|\bexec(?:ute)?\s+([A-Za-z0-9_."\[\]$#]+)/gi;
+// The exec arm tolerates the Sybase RETURN-STATUS form `exec @rc = proc`
+// (2026-08-24: the nested `validate_load -> validate_books` hop used it, so
+// the catalog closure silently lacked the edge and the callee stayed a
+// false orphan with its config-table reads dark).
+const PROC_CALL_RE = /\{\s*(?:\?\s*=\s*)?call\s+([A-Za-z0-9_."\[\]$#]+)|\bexec(?:ute)?\s+(?:@[A-Za-z0-9_]+\s*=\s*)?([A-Za-z0-9_."\[\]$#]+)/gi;
 
 /** Stored-proc names referenced by one verbatim SQL string
  *  (`{call dbo.sp_x(?)}` / `exec sp_x`) — surfaced in the boundary stats so

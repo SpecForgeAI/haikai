@@ -141,6 +141,16 @@ vs FQN); (e) fresh project = fresh model, no carried edges. Fixes:
    collectFromRootKeys now returns procsExpanded; both call sites mark
    them referenced.
 
+7. **Return-status nested exec (`exec @rc = proc`)** — Kiro's end-to-end
+   trace of the two REAL dark tables (ValidationConfig/Fields) exposed the
+   final hop: Java dispatch literal names `validate_load` (now rooted),
+   whose body calls `validate_books` via the Sybase RETURN-STATUS form —
+   PROC_CALL_RE captured `@rc`, the closure lacked the edge, the callee
+   stayed a false orphan with its config-table reads dark. Exec arm now
+   tolerates `@var =`; closure pinned dispatcher->worker->comma-join reads.
+   Kiro verdicts on the other 10 match the tool's dark-list categories
+   EXACTLY (manual-proc / dead attr / DDL lookups / external tool).
+
 Pickup: discovery-service restart only. OPEN: transfer-proc invocation shape
 (estate grep), Blocked-101 breakdown, FindingEmitter persist errors (~476).
 
