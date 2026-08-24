@@ -455,6 +455,48 @@ export function extractBehaviour(
     return out;
   };
 
+  /** Same-class methods a body calls with an implicit or `this` receiver —
+   *  the private-helper idiom. A DAO's PUBLIC method is the contract unit;
+   *  its private helpers are that op's implementation, so their SQL and
+   *  their DAO->DAO delegations belong to the public op (Kiro 2026-08-24:
+   *  a create op mined sql=null because its INSERT lives in a private
+   *  insert-row helper, and every sequence-DAO delegation site is a private
+   *  helper — so the sequence table looked untouched from every create
+   *  endpoint and the write ops looked contribution-free). */
+  const sameClassCallees = (owner: JavaClassInfo, m: JavaMethodInfo): JavaMethodInfo[] => {
+    if (!m.bodyNode) return [];
+    const out: JavaMethodInfo[] = [];
+    for (const inv of collectNodesOfType(m.bodyNode, 'method_invocation')) {
+      const obj = inv.childForFieldName('object');
+      const nameNode = inv.childForFieldName('name');
+      if (!nameNode) continue;
+      // Implicit receiver (`helper(...)`) or explicit `this.helper(...)` only:
+      // anything with a named receiver is a collaborator, not a helper.
+      if (obj && obj.type !== 'this') continue;
+      const target = owner.methods.find((x) => x.name === nameNode.text && x.name !== m.name);
+      if (target && !out.includes(target)) out.push(target);
+    }
+    return out;
+  };
+
+  /** Transitive same-class helper closure (cycle-safe, depth-capped). */
+  const expandSameClass = (owner: JavaClassInfo, m: JavaMethodInfo): JavaMethodInfo[] => {
+    const seen = new Set<string>([m.name]);
+    const acc: JavaMethodInfo[] = [];
+    const queue: Array<{ m: JavaMethodInfo; d: number }> = [{ m, d: 0 }];
+    while (queue.length > 0) {
+      const cur = queue.shift() as { m: JavaMethodInfo; d: number };
+      if (cur.d > 5) continue;
+      for (const callee of sameClassCallees(owner, cur.m)) {
+        if (seen.has(callee.name)) continue;
+        seen.add(callee.name);
+        acc.push(callee);
+        queue.push({ m: callee, d: cur.d + 1 });
+      }
+    }
+    return acc;
+  };
+
   const buildBoundary = (cls: JavaClassInfo): SclBoundaryContract => {
     // Bodyless ops (interface methods / abstract methods) mine their SQL
     // from the IMPLEMENTING classes' matching methods (2026-08-21: the
@@ -468,6 +510,23 @@ export function extractBehaviour(
       if (!isPublicMethod(m)) continue;
       let mined = mineSqlFromMethod(cls, m);
       let delegations = mineDelegationsFromMethod(cls, m);
+      /** Fold one method's private/same-class helper closure into this op. */
+      const foldHelpers = (helperOwner: JavaClassInfo, from: JavaMethodInfo): void => {
+        for (const helper of expandSameClass(helperOwner, from)) {
+          const helperMined = mineSqlFromMethod(helperOwner, helper);
+          if (helperMined) {
+            mined = mined
+              ? { sqlVerbatim: `${mined.sqlVerbatim} ${helperMined.sqlVerbatim}`, ref: mined.ref }
+              : helperMined;
+          }
+          // The delegating FIELD lives on the helper's owner, so the owner
+          // passed here must be the class that declares the helper.
+          for (const target of mineDelegationsFromMethod(helperOwner, helper)) {
+            if (!delegations.includes(target)) delegations = [...delegations, target];
+          }
+        }
+      };
+      foldHelpers(cls, m);
       if (!mined && !m.bodyNode) {
         for (const impl of implementors) {
           const found = findMethodInHierarchy(impl, m.name, m.paramTypes.length, index);
@@ -481,6 +540,8 @@ export function extractBehaviour(
             for (const target of mineDelegationsFromMethod(found.owner, found.method)) {
               if (!delegations.includes(target)) delegations = [...delegations, target];
             }
+            // An INTERFACE op's helpers live on the impl — mine them there.
+            foldHelpers(found.owner, found.method);
           }
         }
       }
