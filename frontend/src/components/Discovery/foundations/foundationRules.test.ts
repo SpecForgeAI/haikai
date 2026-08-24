@@ -225,6 +225,37 @@ describe('joint CRUD-matrix rules (Spec 5)', () => {
     expect(plainNever.targets[0].note).toBe('no discovered endpoint reads or writes this table');
   });
 
+  it('Kiro bug 3: a read-write edge counts as BOTH read and write evidence', () => {
+    const model = {
+      metaModel: {
+        entities: { physical_data_entities: [{ id: 'e1', name: 'auth_list' }] },
+        relationships: {
+          endpoint_data_effects: [
+            { access_mode: 'read-write', data_entity_point_id: 'dep_phy_e1' },
+          ],
+        },
+      },
+    };
+    const facts = crudFactsFromModel(model);
+    expect(facts[0]).toMatchObject({ name: 'auth_list', reads: 1, writes: 1 });
+    // read-write alone must NOT produce a write-only (audit-sink) card.
+    const questions = deriveJointFoundationQuestions(model, []);
+    expect(questions.some((q) => q.rule_key === 'crud_write_only')).toBe(false);
+  });
+
+  it('Kiro backstop: unrooted read evidence REFUSES the write-only bucket', () => {
+    const withRefusal = deriveJointFoundationQuestions(JOINT_MODEL, [], {
+      readAnywhereTables: ['audit_log'],
+    });
+    // audit_log is write-only by rooted edges, but parsed SQL reads it
+    // somewhere -> refused from the audit-sink bucket, refusal named.
+    const writeOnly = withRefusal.find((q) => q.rule_key === 'crud_write_only');
+    expect(writeOnly).toBeUndefined();
+    const without = deriveJointFoundationQuestions(JOINT_MODEL, []);
+    const writeOnlyBefore = without.find((q) => q.rule_key === 'crud_write_only')!;
+    expect(writeOnlyBefore.targets.map((tg) => tg.entity_name)).toEqual(['audit_log']);
+  });
+
   it('a settled joint decision with unchanged evidence stays silent', () => {
     const open = deriveJointFoundationQuestions(JOINT_MODEL, []);
     const never = open.find((q) => q.question_key === 'FQ-crud_never')!;

@@ -750,8 +750,11 @@ export function crudFactsFromModel(model: RawModelLike): CrudFacts[] {
     const facts = byId.get(id);
     if (!facts) continue;
     const mode = (edge.access_mode ?? '').toLowerCase();
+    // Kiro bug 3 (2026-08-24): a read-write edge is read evidence AND
+    // write evidence — counting it as write-only disagreed with
+    // modelHasReadEvidence and fed the audit-sink misclassification.
     if (mode === 'write' || mode === 'read-write') facts.writes += 1;
-    else if (mode === 'read') facts.reads += 1;
+    if (mode === 'read' || mode === 'read-write') facts.reads += 1;
     else if (mode === 'execute') facts.executes += 1;
   }
   // Same canonical-order rule as entityFactsFromCandidates: model entity
@@ -771,6 +774,11 @@ export function deriveJointFoundationQuestions(
      *  the never-touched card say WHY (evidence hash is name-based, so
      *  richer notes never stale a stored decision). */
     orphanProcTouchers?: Record<string, string[]>;
+    /** Corpus-wide UNROOTED read facts (Kiro backstop, 2026-08-24): a
+     *  table read ANYWHERE in parsed SQL is refused by the write-only
+     *  (audit-sink) bucket — mislabelling an authorization list as an
+     *  audit sink would make the migration skip parity on it. */
+    readAnywhereTables?: string[];
   },
 ): FoundationQuestion[] {
   // No committed code evidence -> no joint questions. Every rule below
@@ -848,9 +856,12 @@ export function deriveJointFoundationQuestions(
   }
 
   // --- write-only (audit sinks)
-  const writeOnly = facts.filter(
+  const readAnywhere = new Set((opts?.readAnywhereTables ?? []).map((x) => x.toLowerCase()));
+  const writeOnlyAll = facts.filter(
     (f) => f.scope === 'in_scope' && f.writes > 0 && f.reads === 0 && f.executes === 0,
   );
+  const writeOnly = writeOnlyAll.filter((f) => !readAnywhere.has(f.name.toLowerCase()));
+  const writeOnlyRefused = writeOnlyAll.length - writeOnly.length;
   if (writeOnly.length > 0 && hasReadEvidence) {
     const targets = writeOnly.map((f) => jointTarget(f, `${f.writes} write edge(s), never read`));
     const q = reconcile({
@@ -859,7 +870,10 @@ export function deriveJointFoundationQuestions(
       title: `${writeOnly.length} table(s) are WRITE-ONLY (audit-sink shape)`,
       detail:
         'Code writes them but nothing reads them back — classic audit/journal tables. ' +
-        'Acknowledging records the shape; excluding removes them from the target.',
+        'Acknowledging records the shape; excluding removes them from the target.' +
+        (writeOnlyRefused > 0
+          ? ` ${writeOnlyRefused} written table(s) were REFUSED from this bucket because parsed SQL reads them somewhere the chain rooting cannot see.`
+          : ''),
       targets,
       options: [
         {

@@ -2148,6 +2148,7 @@ async function startServiceScopedRun(
       jilJobCount: number;
       commandJobsResolved: number;
       candidatesEnriched: number;
+      mintedRoots: number;
       unresolvedCommandJobs: string[];
     } | null = null;
     // SCL 2026-08-20: effect-candidate emission summary (one scan, one
@@ -2718,6 +2719,56 @@ async function startServiceScopedRun(
               })
               .filter((fqn) => fqn.length > 0);
             const resolved = resolveJobsToMains(jilJobs, rootScanDir, [...new Set(mains)]);
+            // Kiro bug 4 (2026-08-24): a main the scheduler PROVABLY runs
+            // (jil job -> shell -> java FQCN) must be an entrypoint even
+            // when the batch detector's heuristics missed it — rescue-mint
+            // a BATCH_MAIN endpoint candidate so its chain roots.
+            let mintedRoots = 0;
+            for (const fqn of new Set(
+              resolved.map((j) => j.resolvedMainFqn).filter((x): x is string => !!x),
+            )) {
+              const simpleName = fqn.includes('.') ? fqn.slice(fqn.lastIndexOf('.') + 1) : fqn;
+              const exists = allCandidates.some((c) => {
+                if (c.candidateType !== 'endpoints') return false;
+                const data = c.data as { className?: string; fullPath?: string } | undefined;
+                return (
+                  String(data?.fullPath ?? '') === fqn ||
+                  String(data?.className ?? '') === fqn ||
+                  String(data?.className ?? '') === simpleName
+                );
+              });
+              if (exists) continue;
+              const minted = {
+                id: uuidv4(),
+                runId,
+                candidateType: 'endpoints',
+                name: `BATCH_MAIN ${fqn}`,
+                confidence: 0.9,
+                status: 'proposed',
+                sourceClusterIds: [],
+                data: {
+                  endpoint_subtype: 'batch-main',
+                  httpMethod: 'BATCH_MAIN',
+                  fullPath: fqn,
+                  className: simpleName,
+                  methodName: 'main',
+                  batchSignalSource: 'jil-resolved',
+                },
+                synthesizedAt: new Date().toISOString(),
+              } as unknown as (typeof allCandidates)[number];
+              allCandidates.push(minted);
+              mintedRoots += 1;
+            }
+            if (mintedRoots > 0) {
+              await archModelClient.bulkSaveCandidates(
+                projectId,
+                runId,
+                allCandidates.slice(-mintedRoots),
+              );
+              console.log(
+                `[RunManager:service-scoped] Scheduler root rescue: ${mintedRoots} jil-resolved main(s) minted as BATCH_MAIN endpoints`,
+              );
+            }
             let enriched = 0;
             for (const job of resolved) {
               if (!job.resolvedMainFqn) continue;
@@ -2756,6 +2807,7 @@ async function startServiceScopedRun(
               jilJobCount: jilJobs.length,
               commandJobsResolved: resolved.filter((j) => j.resolvedMainFqn).length,
               candidatesEnriched: enriched,
+              mintedRoots,
               unresolvedCommandJobs: unresolvedCommands,
             };
             console.log(
@@ -2909,6 +2961,9 @@ async function startServiceScopedRun(
             // Shakedown fix 2 (2026-08-23): table -> caller-less proc
             // touchers; the foundations never-touched card annotates WHY.
             orphanProcTouchers: derivedPhase.orphanProcTouchers,
+            // Kiro backstop: unrooted corpus-wide read facts — the
+            // foundations write-only bucket refuses tables listed here.
+            readAnywhereTables: derivedPhase.readAnywhereTables,
           };
           console.log(
             `[RunManager:service-scoped] Effect candidates: ${derivedPhase.candidates.length} corpus-derived ` +

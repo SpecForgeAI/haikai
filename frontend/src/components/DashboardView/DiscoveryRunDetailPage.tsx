@@ -75,6 +75,20 @@ import styles from './DiscoveryRunDetailView.module.css';
  *  steps_payload.<codeStep>.effectCandidates.orphanProcTouchers; step key
  *  names vary, so every step value is checked. Absent -> undefined (the
  *  never-touched card keeps its generic note). */
+/** Pull the corpus-wide unrooted read facts (Kiro backstop). */
+function extractReadAnywhereTables(
+  stepsPayload: Record<string, unknown> | null | undefined,
+): string[] | undefined {
+  if (!stepsPayload || typeof stepsPayload !== 'object') return undefined;
+  for (const value of Object.values(stepsPayload)) {
+    const effectCandidates = (value as { effectCandidates?: { readAnywhereTables?: unknown } } | null)
+      ?.effectCandidates;
+    const list = effectCandidates?.readAnywhereTables;
+    if (Array.isArray(list) && list.length > 0) return list.map((x) => String(x).toLowerCase());
+  }
+  return undefined;
+}
+
 function extractOrphanProcTouchers(
   stepsPayload: Record<string, unknown> | null | undefined,
 ): Record<string, string[]> | undefined {
@@ -875,6 +889,7 @@ export const DiscoveryRunDetailPage: React.FC = () => {
             onApplied={() => setLastSaveTimestamp(Date.now())}
             modelRefreshKey={lastSaveTimestamp}
             orphanProcTouchers={extractOrphanProcTouchers(selectedRun.steps_payload)}
+            readAnywhereTables={extractReadAnywhereTables(selectedRun.steps_payload)}
           />
         )}
       {/* Estate continuation (Spec 5): after the DB scan lands, guide the

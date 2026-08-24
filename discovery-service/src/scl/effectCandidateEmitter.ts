@@ -294,6 +294,10 @@ interface CorpusIndex {
   tablesByKey: Map<string, SclBehaviourTable>;
   boundaryWritesByKey: Map<string, string[]>;
   boundaryReadsByKey: Map<string, string[]>;
+  /** Per-OPERATION table sets (opName lower -> writes/reads incl. that op's
+   *  own proc closure). Kiro bug 2: reached-op precision; the class union
+   *  above stays as the fallback when a reach has no operation identity. */
+  boundaryOpTablesByKey: Map<string, Map<string, { writes: string[]; reads: string[] }>>;
   boundarySymbolByKey: Map<string, string>;
   /** Per-boundary SQL visibility (2026-08-21 diagnosis: a DAO with ops but
    *  no verbatim SQL means the SQL is INVISIBLE — dynamic / external JDBC —
@@ -339,6 +343,7 @@ export function indexCorpus(corpus: SclCorpus): CorpusIndex {
   const tablesByKey = new Map<string, SclBehaviourTable>();
   const boundaryWritesByKey = new Map<string, string[]>();
   const boundaryReadsByKey = new Map<string, string[]>();
+  const boundaryOpTablesByKey = new Map<string, Map<string, { writes: string[]; reads: string[] }>>();
   const boundarySymbolByKey = new Map<string, string>();
   const boundaryStatsByKey = new Map<
     string,
@@ -398,20 +403,57 @@ export function indexCorpus(corpus: SclCorpus): CorpusIndex {
       let withSql = 0;
       const opNames: string[] = [];
       const procs: string[] = [];
+      // Kiro bug 2 (2026-08-24): tables are attributed PER OPERATION, not
+      // per DAO class — reaching one method must not attribute every
+      // method's tables (the class union made read+write overlap by
+      // construction and mislabelled dozens of endpoints write-only). The
+      // class-level union is kept as the honest fallback for reaches with
+      // no operation identity.
+      const opTables = new Map<string, { writes: string[]; reads: string[] }>();
       for (const operation of boundary.operations ?? []) {
         ops++;
         if (operation.sqlVerbatim) withSql++;
         if (operation.name && opNames.length < 6) opNames.push(operation.name);
+        const opWrites: string[] = [];
+        const opReads: string[] = [];
+        const opProcs: string[] = [];
         for (const proc of parseProcCallsFromSql(operation.sqlVerbatim)) {
-          if (!procs.some((p) => p.toLowerCase() === proc.toLowerCase())) procs.push(proc);
+          if (!opProcs.some((x) => x.toLowerCase() === proc.toLowerCase())) opProcs.push(proc);
+          if (!procs.some((x) => x.toLowerCase() === proc.toLowerCase())) procs.push(proc);
         }
         for (const table of parseWriteTablesFromSql(operation.sqlVerbatim)) {
-          if (!writes.some((t) => t.toLowerCase() === table.toLowerCase())) writes.push(table);
+          if (!opWrites.some((x) => x.toLowerCase() === table.toLowerCase())) opWrites.push(table);
+          if (!writes.some((x) => x.toLowerCase() === table.toLowerCase())) writes.push(table);
         }
         for (const table of parseReadTablesFromSql(operation.sqlVerbatim)) {
-          if (!reads.some((t) => t.toLowerCase() === table.toLowerCase())) reads.push(table);
+          if (!opReads.some((x) => x.toLowerCase() === table.toLowerCase())) opReads.push(table);
+          if (!reads.some((x) => x.toLowerCase() === table.toLowerCase())) reads.push(table);
         }
-        if (operation.name) push(boundariesByOpName, operation.name, contract.key);
+        for (const proc of opProcs) {
+          const closed = procTablesByName.get(proc.toLowerCase());
+          if (!closed) continue;
+          for (const table of closed.writes) {
+            if (!opWrites.some((x) => x.toLowerCase() === table.toLowerCase())) opWrites.push(table);
+          }
+          for (const table of closed.reads) {
+            if (!opReads.some((x) => x.toLowerCase() === table.toLowerCase())) opReads.push(table);
+          }
+        }
+        if (operation.name) {
+          const opKey = operation.name.toLowerCase();
+          const existing = opTables.get(opKey);
+          if (existing) {
+            for (const w of opWrites) {
+              if (!existing.writes.some((x) => x.toLowerCase() === w.toLowerCase())) existing.writes.push(w);
+            }
+            for (const r of opReads) {
+              if (!existing.reads.some((x) => x.toLowerCase() === r.toLowerCase())) existing.reads.push(r);
+            }
+          } else {
+            opTables.set(opKey, { writes: opWrites, reads: opReads });
+          }
+          push(boundariesByOpName, operation.name, contract.key);
+        }
       }
       // Proc-body expansion (2026-08-23): the op SQL names the proc; the
       // harvested body names the tables (transitively closed).
@@ -427,6 +469,7 @@ export function indexCorpus(corpus: SclCorpus): CorpusIndex {
       }
       boundaryWritesByKey.set(contract.key, writes);
       boundaryReadsByKey.set(contract.key, reads);
+      boundaryOpTablesByKey.set(contract.key, opTables);
       boundaryStatsByKey.set(contract.key, { ops, withSql, opNames, procs });
       boundarySymbolByKey.set(contract.key, boundary.symbol);
       const boundaryHash = boundary.symbol.indexOf('#');
@@ -437,6 +480,7 @@ export function indexCorpus(corpus: SclCorpus): CorpusIndex {
     tablesByKey,
     boundaryWritesByKey,
     boundaryReadsByKey,
+    boundaryOpTablesByKey,
     boundarySymbolByKey,
     boundaryStatsByKey,
     tablesByNameArity,
@@ -476,6 +520,7 @@ export function procNamesReferenced(
 
 export interface CallWalkResult {
   boundaries: string[];
+  boundaryOps: Map<string, Set<string>>;
   /** Behaviour-table keys the walk visited (for verbatim-row SQL scanning). */
   visitedTables: string[];
   /** Call sites NOTHING could resolve — where the chain truly broke. */
@@ -517,7 +562,7 @@ const CHAIN_WALK_CAP = capFromEnv('HAIKAI_CHAIN_WALK_CAP', 2000);
 function expandDispatch(
   targetSymbol: string,
   index: CorpusIndex,
-): { tables: string[]; boundaries: string[] } | null {
+): { tables: string[]; boundaries: string[]; opName: string } | null {
   const hash = targetSymbol.indexOf('#');
   const paren = targetSymbol.indexOf('(', hash);
   if (hash < 0 || paren < 0) return null;
@@ -538,7 +583,7 @@ function expandDispatch(
   const total = tables.length + boundaries.length;
   const cap = clsFqn === '?' ? DISPATCH_EXPANSION_CAP : KNOWN_CLASS_DISPATCH_CAP;
   if (total === 0 || total > cap) return null;
-  return { tables, boundaries };
+  return { tables, boundaries, opName: name };
 }
 
 /**
@@ -600,6 +645,16 @@ export function walkCallGraph(
   cap = CHAIN_WALK_CAP,
 ): CallWalkResult {
   const boundaries = new Set<string>();
+  /** boundaryKey -> reached operation names (lowercase). A key present in
+   *  `boundaries` but ABSENT here was reached without op identity — the
+   *  collector falls back to the class-level union for it. */
+  const boundaryOps = new Map<string, Set<string>>();
+  const noteBoundaryOp = (key: string, opName: string | null): void => {
+    if (!opName) return;
+    const set = boundaryOps.get(key) ?? new Set<string>();
+    set.add(opName.toLowerCase());
+    boundaryOps.set(key, set);
+  };
   const brokenCalls: string[] = [];
   const expandedCalls: string[] = [];
   let cacheBridgeCrossed = false;
@@ -623,7 +678,10 @@ export function walkCallGraph(
             );
           }
           for (const t of expansion.tables) if (!visited.has(t)) queue.push(t);
-          for (const b of expansion.boundaries) boundaries.add(b);
+          for (const b of expansion.boundaries) {
+            boundaries.add(b);
+            noteBoundaryOp(b, expansion.opName);
+          }
         } else if (
           brokenCalls.length < 10 &&
           !isInertUnknownReceiverCall(row.outcome.targetSymbol)
@@ -636,11 +694,17 @@ export function walkCallGraph(
         continue;
       }
       const target = row.outcome.targetKey;
-      if (target.startsWith('Q-')) boundaries.add(target);
-      else if (target.startsWith('T-') && !visited.has(target)) queue.push(target);
+      if (target.startsWith('Q-')) {
+        boundaries.add(target);
+        const symbol = String(row.outcome.targetSymbol ?? '');
+        const hash = symbol.indexOf('#');
+        const opRaw = hash >= 0 ? symbol.slice(hash + 1) : '';
+        const paren = opRaw.indexOf('(');
+        noteBoundaryOp(target, paren >= 0 ? opRaw.slice(0, paren) : opRaw || null);
+      } else if (target.startsWith('T-') && !visited.has(target)) queue.push(target);
     }
   }
-  return { boundaries: [...boundaries], visitedTables: [...visited], brokenCalls, expandedCalls, cacheBridgeCrossed };
+  return { boundaries: [...boundaries], boundaryOps, visitedTables: [...visited], brokenCalls, expandedCalls, cacheBridgeCrossed };
 }
 
 // ---------------------------------------------------------------------------
@@ -730,8 +794,13 @@ export interface DeriveResult {
   /** table(lower) -> caller-less proc names touching it (shakedown fix 2,
    *  2026-08-23): lets the foundations never-touched card say WHY a table
    *  is dark ("only touched by caller-less deployed procs X, Y") instead
-   *  of leaving the operator to a forensic session. Capped 100 tables. */
+   *  of leaving the operator to a forensic session. Proc lists capped 10;
+   *  table count guarded at 500 (Kiro bug 5: never cut the estate tail). */
   orphanProcTouchers: Record<string, string[]>;
+  /** Corpus-wide UNROOTED read facts (lowercased table names) from parsed
+   *  boundary ops + terminal verbatims + proc bodies. Blocks the write-only
+   *  bucket for tables that are read somewhere the rooting cannot see. */
+  readAnywhereTables: string[];
 }
 
 function normName(value: unknown): string {
@@ -860,8 +929,32 @@ function collectFromRootKeys(
       const stats = index.boundaryStatsByKey.get(boundaryKey);
       if (!stats || stats.withSql < stats.ops) boundariesFullyVisible = false;
       if (stats && stats.procs.length > 0) procSeen = true;
-      const boundaryReads = index.boundaryReadsByKey.get(boundaryKey) ?? [];
-      const boundaryWrites = index.boundaryWritesByKey.get(boundaryKey) ?? [];
+      // Kiro bug 2: pull the REACHED operations' tables when op identity is
+      // known; the class-level union is only the fallback.
+      const reachedOps = walk.boundaryOps.get(boundaryKey);
+      const opTableSets = index.boundaryOpTablesByKey.get(boundaryKey);
+      let boundaryReads = index.boundaryReadsByKey.get(boundaryKey) ?? [];
+      let boundaryWrites = index.boundaryWritesByKey.get(boundaryKey) ?? [];
+      if (reachedOps && reachedOps.size > 0 && opTableSets && opTableSets.size > 0) {
+        const opReads: string[] = [];
+        const opWrites: string[] = [];
+        let anyOpKnown = false;
+        for (const op of reachedOps) {
+          const setForOp = opTableSets.get(op);
+          if (!setForOp) continue;
+          anyOpKnown = true;
+          for (const r of setForOp.reads) {
+            if (!opReads.some((x) => x.toLowerCase() === r.toLowerCase())) opReads.push(r);
+          }
+          for (const w of setForOp.writes) {
+            if (!opWrites.some((x) => x.toLowerCase() === w.toLowerCase())) opWrites.push(w);
+          }
+        }
+        if (anyOpKnown) {
+          boundaryReads = opReads;
+          boundaryWrites = opWrites;
+        }
+      }
       const blindOps =
         stats && stats.withSql === 0 && stats.opNames.length > 0
           ? `; blind ops: ${stats.opNames.join(', ')}`
@@ -1038,8 +1131,11 @@ export function deriveCorpusEffectCandidates(args: {
         collected.readTables.length > 0 &&
         collected.boundariesFullyVisible &&
         !collected.procSeen;
+      // Kiro bug 1 (2026-08-24): a table the endpoint BOTH reads and writes
+      // gets BOTH edges — suppressing the read pushed genuine read-write
+      // tables (the authorization list, the sequence table) into the
+      // write-only audit-sink bucket, whose recommended action skips parity.
       for (const table of collected.readTables) {
-        if (collected.writeTables.some((w) => w.toLowerCase() === table.toLowerCase())) continue;
         emitRead(
           endpointCandidate.name,
           table,
@@ -1114,7 +1210,6 @@ export function deriveCorpusEffectCandidates(args: {
       emitWrite(endpointCandidate.name, table, detail);
     }
     for (const table of collected.readTables) {
-      if (collected.writeTables.some((w) => w.toLowerCase() === table.toLowerCase())) continue;
       emitRead(endpointCandidate.name, table, 'scl_corpus_read', detail);
     }
     recordChainBreaks(
@@ -1130,6 +1225,27 @@ export function deriveCorpusEffectCandidates(args: {
     .filter((name) => !referencedProcs.has(name))
     .sort()
     .slice(0, 60);
+  // Kiro backstop (2026-08-24): corpus-wide "read ANYWHERE" facts straight
+  // from parsed SQL, unrooted — boundary ops, terminal verbatims, and proc
+  // bodies. The frontend blocks the write-only (audit-sink) bucket for any
+  // table with unrooted read evidence: mislabelling an authorization list
+  // as an audit sink would make the migration skip parity on it.
+  const readAnywhere = new Set<string>();
+  for (const reads of index.boundaryReadsByKey.values()) {
+    for (const r of reads) readAnywhere.add(r.toLowerCase());
+  }
+  for (const closed of index.procTablesByName.values()) {
+    for (const r of closed.reads) readAnywhere.add(r.toLowerCase());
+  }
+  for (const table of index.tablesByKey.values()) {
+    for (const row of table.rows ?? []) {
+      if (row.outcome.type !== 'terminal') continue;
+      for (const r of parseReadTablesFromSql(row.outcome.verbatim ?? '')) {
+        readAnywhere.add(r.toLowerCase());
+      }
+    }
+  }
+
   const orphanProcTouchers: Record<string, string[]> = {};
   for (const [procName, tables] of index.procTablesByName) {
     if (referencedProcs.has(procName)) continue;
@@ -1139,12 +1255,17 @@ export function deriveCorpusEffectCandidates(args: {
       if (!list.includes(procName)) list.push(procName);
     }
   }
-  for (const key of Object.keys(orphanProcTouchers)) orphanProcTouchers[key].sort();
-  // Deterministic cap: keep the alphabetically-first 100 tables.
+  // Kiro bug 5: the alphabetical 100-table cut silently dropped the tail
+  // (the ven_* explanations vanished while validation* survived). Cap the
+  // PER-TABLE proc list instead; the table count is estate-bounded, with a
+  // generous guard for pathological corpora.
+  for (const key of Object.keys(orphanProcTouchers)) {
+    orphanProcTouchers[key] = orphanProcTouchers[key].sort().slice(0, 10);
+  }
   const cappedOrphanTouchers = Object.fromEntries(
     Object.keys(orphanProcTouchers)
       .sort()
-      .slice(0, 100)
+      .slice(0, 500)
       .map((k) => [k, orphanProcTouchers[k]]),
   );
   return {
@@ -1159,6 +1280,7 @@ export function deriveCorpusEffectCandidates(args: {
     procCatalogCount: index.procCatalogCount,
     procsUnreferenced,
     orphanProcTouchers: cappedOrphanTouchers,
+    readAnywhereTables: [...readAnywhere].sort(),
   };
 }
 
