@@ -3543,11 +3543,20 @@ export async function saveDiscoveryCandidatesToModel(
         continue;
       }
 
-      // Idempotent match: same (endpoint_id, data_entity_point_id) pair.
+      // Idempotent match: same (endpoint_id, data_entity_point_id,
+      // access_mode) triple (Kiro 2026-08-24). A read edge and a write edge
+      // for the same endpoint+table are DIFFERENT facts — the wire table has
+      // no unique constraint on the pair, so both rows are legal. Matching
+      // on the pair alone collapsed them: the first mode to arrive was
+      // created, the second silently counted 'reused', and since deferred
+      // order comes from the candidate API (not emission order) WHICH mode
+      // survived varied per run. The data_movements sibling below is already
+      // idempotent on a mode-inclusive key; this one just missed it.
       const existingRel = edeArray.find(
         (r: any) =>
           r.endpoint_id === conversion.row.endpoint_id &&
-          r.data_entity_point_id === conversion.row.data_entity_point_id
+          r.data_entity_point_id === conversion.row.data_entity_point_id &&
+          (r.access_mode ?? null) === (conversion.row.access_mode ?? null)
       );
       if (existingRel) {
         candidateIdToEntityId[candidate.id] = existingRel.id;
