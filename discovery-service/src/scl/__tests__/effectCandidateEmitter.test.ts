@@ -792,6 +792,128 @@ describe('verb-agnostic effect chains (2026-08-22)', () => {
     expect(result.orphanProcTouchers).toEqual({});
   });
 
+  it('Kiro issue B: unresolved ?#toString() NEVER unions the corpus, whatever the cap', () => {
+    // Two toString/0 behaviour tables exist — one belongs to the batch
+    // loader whose rows reference a proc closure that writes staging
+    // tables. An unresolved ?#toString() must NOT expand into them.
+    const corpus = corpusOf([
+      behaviourTable({
+        key: 'T-ep',
+        symbol: 'HierarchyService#post',
+        annotations: ['@POST', '@Path("hier")'],
+        callTargets: ['loader-call'],
+      }),
+      behaviourTable({
+        key: 'T-loader-ts',
+        symbol: 'BatchLoader#toString',
+        annotations: [],
+        callTargets: [],
+      }),
+      behaviourTable({
+        key: 'T-other-ts',
+        symbol: 'OtherThing#toString',
+        annotations: [],
+        callTargets: [],
+      }),
+    ]) as ReturnType<typeof corpusOf> & { procCatalog: unknown[] };
+    // The endpoint's row: an UNRESOLVED toString on an unknown receiver.
+    (corpus.contracts[0] as { contract: { rows: unknown[] } }).contract.rows = [
+      {
+        index: 0,
+        kind: 'terminal',
+        conditionVerbatim: null,
+        conditionRef: null,
+        outcome: { type: 'call', targetKey: null, targetSymbol: '?#toString()' },
+      },
+    ];
+    // The loader's toString row text would expand a staging-write proc.
+    (corpus.contracts[1] as { contract: { rows: unknown[] } }).contract.rows = [
+      {
+        index: 0,
+        kind: 'terminal',
+        conditionVerbatim: null,
+        conditionRef: null,
+        outcome: {
+          type: 'terminal',
+          verbatim: "{? = call deleteloadtable('loadDealBook')}",
+          ref: { path: 'x', line: 1 },
+          outcomeLabel: 'ok',
+        },
+      },
+    ];
+    corpus.procCatalog = [
+      {
+        name: 'deleteloadtable',
+        sourcePath: 'db/procs/dlt.sql',
+        writes: ['load_deal_book'],
+        reads: [],
+        procCalls: [],
+        bodyMd5: 'x',
+        source: 'repo' as const,
+      },
+    ];
+    const result = deriveCorpusEffectCandidates({
+      corpus,
+      runId: 'run-1',
+      runCandidates: [endpointCandidate('postHier', 'POST', '/api/hier')],
+    });
+    // No staging write attributed to the API endpoint; no broken-call noise.
+    const edges = result.candidates.map((c) => {
+      const data = c.data as Record<string, unknown>;
+      return `${data.access_mode}:${String(data.dataEntityName).toLowerCase()}`;
+    });
+    expect(edges).not.toContain('write:load_deal_book');
+    expect(result.chainBreaks).toHaveLength(0);
+  });
+
+  it('Kiro issue A: DAO->DAO delegation reaches the delegate boundary tables', () => {
+    const corpus = corpusOf([
+      behaviourTable({
+        key: 'T-add',
+        symbol: 'FilterService#add',
+        annotations: ['@POST', '@Path("addf")'],
+        callTargets: [],
+      }),
+      boundary({
+        key: 'Q-filterdao',
+        symbol: 'com.x.FilterDao',
+        sql: ['insert into screen_filter (name) values (?)'],
+      }),
+      boundary({
+        key: 'Q-seqdao',
+        symbol: 'com.x.SequenceDao',
+        sql: [
+          "update seq_registry set SeqNumber = SeqNumber + 1 where SeqName = ? select SeqNumber from seq_registry where SeqName = ?",
+        ],
+      }),
+    ]);
+    // FilterDao#op0 (the insert) delegates to SequenceDao#op0 for its id.
+    const filterOps = (corpus.contracts[1] as unknown as {
+      contract: { operations: Array<{ delegatesTo?: string[] }> };
+    }).contract.operations;
+    filterOps[0].delegatesTo = ['com.x.SequenceDao#op0'];
+    (corpus.contracts[0] as { contract: { rows: unknown[] } }).contract.rows.push({
+      index: 0,
+      kind: 'terminal',
+      conditionVerbatim: null,
+      conditionRef: null,
+      outcome: { type: 'call', targetKey: 'Q-filterdao', targetSymbol: 'FilterDao#op0' },
+    });
+    const result = deriveCorpusEffectCandidates({
+      corpus,
+      runId: 'run-1',
+      runCandidates: [endpointCandidate('addFilter', 'POST', '/api/addf')],
+    });
+    const edges = result.candidates.map((c) => {
+      const data = c.data as Record<string, unknown>;
+      return `${data.access_mode}:${String(data.dataEntityName).toLowerCase()}`;
+    });
+    expect(edges).toContain('write:screen_filter');
+    // The delegate's tables arrive through the severed boundary hop.
+    expect(edges).toContain('write:seq_registry');
+    expect(edges).toContain('read:seq_registry');
+  });
+
   it('Kiro issue 1: bare proc/function names in BOUNDARY op SQL expand through the catalog', () => {
     // SimpleJdbcCall idiom: the DAO names the function as a bare string —
     // no exec, no {call} — so the call-syntax parser sees nothing. The

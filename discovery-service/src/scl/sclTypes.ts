@@ -106,7 +106,17 @@ export interface SclShapeContract {
 }
 
 /** One boundary operation: verbatim SQL (or derived-query name) + result shape. */
-export interface SclBoundaryOperation { name: string; sqlVerbatim: string | null; ref: SclSourceRef | null; resultShape: string | null; }
+export interface SclBoundaryOperation {
+  name: string;
+  sqlVerbatim: string | null;
+  ref: SclSourceRef | null;
+  resultShape: string | null;
+  /** Boundary `Fqn#method` targets this operation delegates to (DAO->DAO:
+   *  FilterDaoImpl.addFilter -> SequenceDao.getNext). The walk cannot enter
+   *  a boundary, so without this the delegate's tables are unreachable
+   *  from any endpoint (Kiro 2026-08-24 issue A). */
+  delegatesTo?: string[];
+}
 
 /** `[Q-...]` boundary contract — repos/DAOs/external clients. Extraction stops here. */
 export interface SclBoundaryContract { key: string; kind: 'boundary'; symbol: string; sourcePath: string; operations: SclBoundaryOperation[]; contentHash: string; }

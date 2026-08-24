@@ -282,6 +282,14 @@ const DISPATCH_EXPANSION_CAP = capFromEnv('HAIKAI_DISPATCH_CAP_UNKNOWN', 40);
  *  genuinely union strangers. */
 const KNOWN_CLASS_DISPATCH_CAP = capFromEnv('HAIKAI_DISPATCH_CAP_KNOWN', 120);
 
+// java.lang.Object-inherited names: name+arity dispatch on an UNKNOWN
+// receiver would union the whole corpus (every class implements them) —
+// mirror of the scan emitter's denylist (Kiro 2026-08-24).
+const OBJECT_METHOD_NAMES = new Set([
+  'tostring', 'equals', 'hashcode', 'clone', 'finalize',
+  'getclass', 'notify', 'notifyall', 'wait',
+]);
+
 export function buildDispatchIndex(contracts: SclContractDto[]): DispatchExpansionIndex {
   const tablesByNameArity = new Map<string, string[]>();
   const tablesByClassNameArity = new Map<string, string[]>();
@@ -345,6 +353,7 @@ function expandDispatch(
   if (hash < 0 || paren < 0) return null;
   const clsFqn = targetSymbol.slice(0, hash);
   const name = targetSymbol.slice(hash + 1, paren);
+  if (clsFqn === '?' && OBJECT_METHOD_NAMES.has(name.toLowerCase())) return null;
   const argsText = targetSymbol.slice(paren + 1, targetSymbol.lastIndexOf(')'));
   const arity = argsText.trim() === '' ? 0 : argsText.split(',').length;
   // Class-aware ladder (2026-08-21 Item 4): exact class+name+arity, then
