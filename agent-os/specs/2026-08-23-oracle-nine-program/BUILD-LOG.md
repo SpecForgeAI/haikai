@@ -242,6 +242,20 @@ vs FQN); (e) fresh project = fresh model, no carried edges. Fixes:
     more information can only narrow, never erase. Two new suites at
     Kiro's counts: perOpFallback (3), privateHelpers (4).
 
+13. **Kiro on-machine fix replicated (round 6): per-batch save isolation** —
+    ONE failing bulkSaveCandidates batch aborted the effect-candidate save
+    loop: every later batch silently discarded, allCandidates.push skipped,
+    outer catch replaced the diagnostic payload with {error}. Minted
+    BATCH_MAIN roots emit LAST (estate measurement: 55 batch-plane edges at
+    indices 476-530 of 531 — entirely in the final two batches), so an
+    abort dropped exactly the proc-written tables' edges = the Issue-C
+    "analysed but never committed" branch. Now: per-batch try/catch
+    (matches the pinned startDatabaseRun soft-fail convention),
+    effect_candidate_partial_save warn (batch index + range + error),
+    payload carries emittedTotal/saved/saveFailures, completion log shows
+    saved N/M (+ FAILED batch count). No new test (Kiro's call — heavier
+    harness; sibling convention already pinned; offer stands).
+
 Pickup: discovery-service restart only. OPEN: transfer-proc invocation shape
 (estate grep), Blocked-101 breakdown, FindingEmitter persist errors (~476).
 

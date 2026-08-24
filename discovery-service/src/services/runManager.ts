@@ -2975,12 +2975,47 @@ async function startServiceScopedRun(
             }
           }
           const emitted = [...derivedPhase.candidates, ...proposalPhase.candidates];
+          // Per-batch isolation (Kiro 2026-08-24). ONE failing bulkSave used to
+          // abort this loop: every LATER batch was silently discarded, the
+          // `allCandidates.push` below was skipped, and the outer catch replaced
+          // the whole diagnostic payload with `{error}`. Minted BATCH_MAIN roots
+          // are appended to allCandidates LAST, so their effect edges are
+          // emitted last — measured on this estate: 55 batch-plane edges at
+          // indices 476-530 of 531, i.e. entirely inside the final two batches.
+          // An abort therefore dropped exactly the proc-written tables and left
+          // them looking read-only. Isolate per batch, and account for it.
+          let savedCount = 0;
+          const saveFailures: string[] = [];
           for (let i = 0; i < emitted.length; i += 100) {
-            await archModelClient.bulkSaveCandidates(projectId, runId, emitted.slice(i, i + 100));
+            const batch = emitted.slice(i, i + 100);
+            try {
+              await archModelClient.bulkSaveCandidates(projectId, runId, batch);
+              savedCount += batch.length;
+            } catch (batchErr) {
+              saveFailures.push(
+                `batch ${Math.floor(i / 100)} (candidates ${i}..${i + batch.length - 1}): ${
+                  batchErr instanceof Error ? batchErr.message : String(batchErr)
+                }`,
+              );
+            }
           }
           allCandidates.push(...emitted);
+          if (saveFailures.length > 0) {
+            console.warn(
+              `[diag-runs] code_run=${(runId || '').slice(0, 8)} effect_candidate_partial_save ` +
+                `emitted=${emitted.length} saved=${savedCount} ` +
+                `failed_batches=${saveFailures.length} detail=${saveFailures[0].slice(0, 200)}`,
+            );
+          }
           effectCandidates = {
             derived: derivedPhase.candidates.length,
+            // Persistence accounting: `emittedTotal` vs `saved` is the one pair
+            // that distinguishes "never analysed" from "analysed but never
+            // committed" — the read-only-looking proc-written tables were the
+            // latter, and nothing in the payload could previously show it.
+            emittedTotal: emitted.length,
+            saved: savedCount,
+            saveFailures,
             readMapped: derivedPhase.readMapped,
             internalWalked: derivedPhase.internalWalked.length,
             provenRead: derivedPhase.provenRead.length,
@@ -3010,7 +3045,10 @@ async function startServiceScopedRun(
               `${derivedPhase.internalWalked.length} internal chain(s), ` +
               `${derivedPhase.provenRead.length} proven-read), ` +
               `${proposalPhase.candidates.length} LLM-proposed (${proposalPhase.llmCalls} call(s)), ` +
-              `${proposalPhase.unproposed.length} unproposed in ${Date.now() - emissionStart}ms`,
+              `${proposalPhase.unproposed.length} unproposed; ` +
+              `saved ${savedCount}/${emitted.length}` +
+              (saveFailures.length > 0 ? ` (${saveFailures.length} batch(es) FAILED)` : '') +
+              ` in ${Date.now() - emissionStart}ms`,
           );
         } catch (emissionErr) {
           const message =
