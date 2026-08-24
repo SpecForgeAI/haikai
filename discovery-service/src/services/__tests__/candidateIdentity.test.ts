@@ -88,6 +88,46 @@ describe('buildIdentityKey', () => {
     expect(buildIdentityKey(post)).not.toBe(buildIdentityKey(jaxrs));
   });
 
+  it('endpoints: NON-HTTP (internal) entry points key on class#method, never fusing @Scheduled twins (Kiro 2026-08-24)', () => {
+    // Two @Scheduled methods on ONE class with the SAME fixedDelay: verb
+    // ('SCHEDULED') and path ('fixedDelay=N') are identical — verb+path
+    // fused them and only one could ever root a chain.
+    const twinA = makeCandidate({
+      candidateType: 'endpoints',
+      name: 'SCHEDULED fixedDelay=7200000 AccessLogger.updateViews',
+      data: {
+        httpMethod: 'SCHEDULED',
+        fullPath: 'fixedDelay=7200000',
+        className: 'AccessLogger',
+        methodName: 'updateViews',
+      },
+    });
+    const twinB = makeCandidate({
+      candidateType: 'endpoints',
+      name: 'SCHEDULED fixedDelay=7200000 AccessLogger.updateFilters',
+      data: {
+        httpMethod: 'SCHEDULED',
+        fullPath: 'fixedDelay=7200000',
+        className: 'AccessLogger',
+        methodName: 'updateFilters',
+      },
+    });
+    expect(buildIdentityKey(twinA)).not.toBe(buildIdentityKey(twinB));
+    // Deterministic: the same internal entry point still collapses with itself.
+    expect(buildIdentityKey(twinA)).toBe(buildIdentityKey({ ...twinA, id: 'other' }));
+    // HTTP endpoints keep verb+path (the cross-source merge is untouched):
+    // className/methodName differences must NOT split an HTTP endpoint.
+    const httpA = makeCandidate({
+      candidateType: 'endpoints',
+      data: { httpMethod: 'GET', fullPath: '/api/x', className: 'A', methodName: 'm1' },
+    });
+    const httpB = makeCandidate({
+      candidateType: 'endpoints',
+      data: { httpMethod: 'GET', fullPath: '/api/x', className: 'B', methodName: 'm2' },
+    });
+    expect(buildIdentityKey(httpA)).toBe(buildIdentityKey(httpB));
+  });
+
   it('endpoints: a MALFORMED-brace path twin shares the identity key of its well-formed twin (duplicate-endpoint fix)', () => {
     // The HAIKAI duplicate: the WADL pack emits the well-formed
     // `POST /hierarchy/{businessDate}/{orgUnitId}` while a non-WADL pack emitted

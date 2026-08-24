@@ -183,6 +183,23 @@ vs FQN); (e) fresh project = fresh model, no carried edges. Fixes:
    DEFERRED knowingly: AOP @AuditInfoDBLogging aspect walking (bucket
    verdict already correct).
 
+10. **Kiro round-3 fixes (3)** — (1) bare-name proc/function scan now ALSO
+    runs over BOUNDARY op SQL (SimpleJdbcCall withFunctionName idiom: no
+    exec/{call} syntax, so the call parser saw nothing; behaviour-table
+    plane had the scan, boundary ops didn't — sequence table looked
+    untouched on every create endpoint); empty-closure catalog entries
+    (generic names like greatest/least) are skipped. (2) NON-HTTP endpoint
+    identity keys on class#method (`endpoints|internal|cls|mth`) — verb+path
+    fused same-fixedDelay @Scheduled twins in the MERGE (round-2's unique
+    name only entered the fallback branch); HTTP verbs keep verb+path so
+    the WADL/JAX-RS cross-source merge is untouched. (3A) rescue-mint
+    guard: a class-only candidate (no methodName) cannot root, so it no
+    longer suppresses the BATCH_MAIN mint (nine batch-written tables looked
+    read-only/untouched); (3B) internal candidates without
+    className/methodName surface in internalUnmatched `[no
+    className/methodName]` instead of silently dropping. Merge-engine
+    suites re-run green per Kiro's ordering note.
+
 Pickup: discovery-service restart only. OPEN: transfer-proc invocation shape
 (estate grep), Blocked-101 breakdown, FindingEmitter persist errors (~476).
 

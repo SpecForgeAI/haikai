@@ -792,6 +792,90 @@ describe('verb-agnostic effect chains (2026-08-22)', () => {
     expect(result.orphanProcTouchers).toEqual({});
   });
 
+  it('Kiro issue 1: bare proc/function names in BOUNDARY op SQL expand through the catalog', () => {
+    // SimpleJdbcCall idiom: the DAO names the function as a bare string —
+    // no exec, no {call} — so the call-syntax parser sees nothing. The
+    // walked-terminal plane already scanned for catalog names; boundary
+    // ops did not, so the sequence table looked untouched on every create.
+    const corpus = corpusOf([
+      behaviourTable({
+        key: 'T-create',
+        symbol: 'ViewService#create',
+        annotations: ['@POST', '@Path("mkview")'],
+        callTargets: [],
+      }),
+      boundary({
+        key: 'Q-seqdao',
+        symbol: 'SequenceDao',
+        sql: ['sjc.withFunctionName("seq_next_val") param(seq_name)'],
+      }),
+    ]) as ReturnType<typeof corpusOf> & { procCatalog: unknown[] };
+    (corpus.contracts[0] as { contract: { rows: unknown[] } }).contract.rows.push({
+      index: 0,
+      kind: 'terminal',
+      conditionVerbatim: null,
+      conditionRef: null,
+      outcome: { type: 'call', targetKey: 'Q-seqdao', targetSymbol: 'SequenceDao#op0' },
+    });
+    corpus.procCatalog = [
+      {
+        name: 'seq_next_val',
+        sourcePath: 'db/procs/seq.sql',
+        writes: ['seq_registry'],
+        reads: ['seq_registry'],
+        procCalls: [],
+        bodyMd5: 'x',
+        source: 'repo' as const,
+      },
+      // Empty-closure entry (generic function name): must NOT be pulled in
+      // by a coincidental identifier match.
+      {
+        name: 'param',
+        sourcePath: 'db/procs/misc.sql',
+        writes: [],
+        reads: [],
+        procCalls: [],
+        bodyMd5: 'y',
+        source: 'repo' as const,
+      },
+    ];
+    const result = deriveCorpusEffectCandidates({
+      corpus,
+      runId: 'run-1',
+      runCandidates: [endpointCandidate('mkView', 'POST', '/api/mkview')],
+    });
+    const edges = result.candidates.map((c) => {
+      const data = c.data as Record<string, unknown>;
+      return `${data.access_mode}:${String(data.dataEntityName).toLowerCase()}`;
+    });
+    expect(edges).toContain('write:seq_registry');
+    expect(edges).toContain('read:seq_registry');
+    // The bare-name reference also clears the orphan annotation.
+    expect(result.procsUnreferenced).not.toContain('seq_next_val');
+  });
+
+  it('Kiro issue 3B: internal candidates without className/methodName surface in internalUnmatched', () => {
+    const corpus = corpusOf([]);
+    const internal = {
+      id: 'i-1',
+      runId: 'run-1',
+      candidateType: 'endpoints',
+      name: 'BATCH_MAIN com.x.LoaderMain',
+      confidence: 0.9,
+      status: 'proposed',
+      sourceClusterIds: [],
+      data: { httpMethod: 'BATCH_MAIN', fullPath: 'com.x.LoaderMain', className: 'LoaderMain' },
+    } as unknown as DiscoveryCandidate;
+    const result = deriveCorpusEffectCandidates({
+      corpus,
+      runId: 'run-1',
+      runCandidates: [internal],
+    });
+    expect(result.internalUnmatched).toContain(
+      'BATCH_MAIN com.x.LoaderMain [no className/methodName]',
+    );
+  });
+
   it('Kiro dedup-seed fix: corpus-proven edges are emitted even when a mined candidate covers the same edge', () => {
     const corpus = corpusOf([
       behaviourTable({

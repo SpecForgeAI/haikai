@@ -2730,7 +2730,15 @@ async function startServiceScopedRun(
               const simpleName = fqn.includes('.') ? fqn.slice(fqn.lastIndexOf('.') + 1) : fqn;
               const exists = allCandidates.some((c) => {
                 if (c.candidateType !== 'endpoints') return false;
-                const data = c.data as { className?: string; fullPath?: string } | undefined;
+                const data = c.data as
+                  | { className?: string; methodName?: string; fullPath?: string }
+                  | undefined;
+                // The emitter joins internal entrypoints on className#methodName
+                // (Kiro 2026-08-24): a class-only candidate suppressed the mint
+                // AND could not root the chain — nine batch-written tables
+                // looked read-only or untouched. Only a candidate that can
+                // actually ROOT counts as existing.
+                if (!data?.methodName) return false;
                 return (
                   String(data?.fullPath ?? '') === fqn ||
                   String(data?.className ?? '') === fqn ||

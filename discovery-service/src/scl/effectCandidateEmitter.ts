@@ -421,6 +421,24 @@ export function indexCorpus(corpus: SclCorpus): CorpusIndex {
           if (!opProcs.some((x) => x.toLowerCase() === proc.toLowerCase())) opProcs.push(proc);
           if (!procs.some((x) => x.toLowerCase() === proc.toLowerCase())) procs.push(proc);
         }
+        // Bare-name proc/function dispatch in DAO text (Kiro 2026-08-24:
+        // SimpleJdbcCall withFunctionName("getNextSequence") — config-held
+        // proc names with no exec/{call} syntax, so parseProcCallsFromSql
+        // sees nothing). The behaviour-table plane already runs this scan;
+        // boundary ops did not, so the sequence table looked untouched on
+        // every create endpoint. Empty-closure catalog entries (generic
+        // function names like greatest/least) are skipped — a bare-name
+        // match exists to pull TABLE closures, not to mark coincidental
+        // identifiers referenced.
+        for (const proc of procNamesReferenced(
+          operation.sqlVerbatim ?? '',
+          procTablesByName,
+        )) {
+          const closed = procTablesByName.get(proc.toLowerCase());
+          if (!closed || (closed.writes.length === 0 && closed.reads.length === 0)) continue;
+          if (!opProcs.some((x) => x.toLowerCase() === proc.toLowerCase())) opProcs.push(proc);
+          if (!procs.some((x) => x.toLowerCase() === proc.toLowerCase())) procs.push(proc);
+        }
         for (const table of parseWriteTablesFromSql(operation.sqlVerbatim)) {
           if (!opWrites.some((x) => x.toLowerCase() === table.toLowerCase())) opWrites.push(table);
           if (!writes.some((x) => x.toLowerCase() === table.toLowerCase())) writes.push(table);
@@ -1196,7 +1214,15 @@ export function deriveCorpusEffectCandidates(args: {
     // methodName; their chains reach the SAME boundary analysis.
     const className = typeof data?.className === 'string' ? data.className : '';
     const methodName = typeof data?.methodName === 'string' ? data.methodName : '';
-    if (!className || !methodName) continue;
+    if (!className || !methodName) {
+      // Kiro 2026-08-24 (part B — the branch that hid part A): an internal
+      // candidate that cannot join class#method must be VISIBLE, not
+      // silently dropped, or the run payload gives no clue.
+      if (internalUnmatched.length < 10) {
+        internalUnmatched.push(`${endpointCandidate.name} [no className/methodName]`);
+      }
+      continue;
+    }
     const keys = index.tableKeysByClassMethod.get(`${className}#${methodName}`) ?? [];
     if (keys.length === 0) {
       if (internalUnmatched.length < 10) internalUnmatched.push(`${className}#${methodName}`);
