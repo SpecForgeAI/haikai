@@ -395,6 +395,9 @@ export interface ReviewModelNode {
 export interface ReviewModelAggregations {
   /** Total candidate node count (excludes findings). */
   total_candidates?: number;
+  /** Nodes PLUS relationship-row candidates (effect rows etc.) — the
+   *  selectable-row total; the bulk preview's "x of N" prefers this. */
+  total_candidates_all_types?: number;
   /**
    * Total finding count across the whole run. Read by the Spec 2 cascade
    * resolver mirror to populate the preview's "x of N findings" context.

@@ -187,6 +187,8 @@ export function computeAggregations(
   edges: readonly ReviewModelEdge[],
   findings: readonly ReviewFindingNode[],
   blastRadius: readonly BlastRadiusEntry[],
+  /** Relationship-row candidate count (graph edges, still selectable rows). */
+  relationshipRowCount = 0,
 ): ReviewModelAggregations {
   const by_candidate_type: Record<string, number> = {};
   const by_review_status: Record<string, number> = {};
@@ -253,6 +255,7 @@ export function computeAggregations(
 
   return {
     total_candidates: nodes.length,
+    total_candidates_all_types: nodes.length + relationshipRowCount,
     total_findings: findings.length,
     by_candidate_type,
     by_review_status,

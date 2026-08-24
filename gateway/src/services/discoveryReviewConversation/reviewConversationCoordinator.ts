@@ -591,7 +591,10 @@ async function openConfirmationGate(
       seedCandidates: writeCandidateIds.length,
       cascadedCandidates: 0,
       totalFindings: 0,
-      runTotalCandidates: ctx.model.aggregations?.total_candidates ?? null,
+      runTotalCandidates:
+        ctx.model.aggregations?.total_candidates_all_types ??
+        ctx.model.aggregations?.total_candidates ??
+        null,
       runTotalFindings: ctx.model.aggregations?.total_findings ?? null,
     };
     await deps.appendTurn(ctx.projectId, ctx.runId, previewTurn);
@@ -661,7 +664,10 @@ async function openConfirmationGate(
       seedCandidates: 0,
       cascadedCandidates: 0,
       totalFindings: writeFindingIds.length,
-      runTotalCandidates: ctx.model.aggregations?.total_candidates ?? null,
+      runTotalCandidates:
+        ctx.model.aggregations?.total_candidates_all_types ??
+        ctx.model.aggregations?.total_candidates ??
+        null,
       runTotalFindings: ctx.model.aggregations?.total_findings ?? null,
     };
     await deps.appendTurn(ctx.projectId, ctx.runId, previewTurn);

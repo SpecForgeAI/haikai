@@ -456,7 +456,7 @@ export function buildReviewModel(runs: readonly ScanRunInput[]): ReviewModel {
   const blastRadius = computeBlastRadii(nodes, edges);
 
   // --- Aggregations (Group 2) ---------------------------------------------
-  const aggregations = computeAggregations(nodes, edges, findings, blastRadius);
+  const aggregations = computeAggregations(nodes, edges, findings, blastRadius, relationshipCandidates.length);
 
   return {
     scan_selection: runs.map((r) => ({ run_id: r.run_id, scan_kind: r.scan_kind })),
