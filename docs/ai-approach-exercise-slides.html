@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Choosing AI Delivery Approaches — A Better Starting Point</title>
+<style>
+  :root {
+    --bg1: #1a0b2e;
+    --bg2: #2d1250;
+    --card: rgba(255,255,255,0.045);
+    --card-border: rgba(255,255,255,0.10);
+    --accent: #f5a623;          /* orange section label */
+    --green: #4ade80;           /* harness */
+    --purple: #c084fc;          /* spec-driven */
+    --blue: #60a5fa;            /* loop */
+    --gold: #fbbf24;            /* factory / agentic pipeline */
+    --pink: #f472b6;            /* vibe coding */
+    --teal: #2dd4bf;            /* copilot / inline assist */
+    --cyan: #22d3ee;            /* background task agents */
+    --orange: #fb923c;          /* ambient / policy agents */
+    --silver: #cbd5e1;          /* judge panels (technique) */
+    --lime: #a3e635;            /* deterministic processing */
+    --red: #f87171;
+    --text: #f4f1fa;
+    --muted: #b9aed3;
+    --font: "Segoe UI", "Trebuchet MS", -apple-system, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0d0618; font-family: var(--font); color: var(--text); }
+
+  .slide {
+    width: 1600px; height: 900px;
+    margin: 40px auto;
+    background: radial-gradient(120% 140% at 15% 0%, var(--bg2) 0%, var(--bg1) 55%, #12071f 100%);
+    border-radius: 6px;
+    padding: 52px 70px;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+    page-break-after: always;
+  }
+  .kicker {
+    color: var(--accent);
+    font-size: 17px; font-weight: 700;
+    letter-spacing: 3.5px; text-transform: uppercase;
+    margin-bottom: 14px;
+  }
+  h1 { font-size: 52px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 8px; }
+  .sub { color: var(--muted); font-size: 21px; margin-bottom: 30px; max-width: 1250px; line-height: 1.4; }
+  .footnote {
+    position: absolute; bottom: 34px; left: 70px; right: 70px;
+    color: var(--muted); font-size: 17px;
+    border-top: 1px solid rgba(255,255,255,0.10);
+    padding-top: 14px; line-height: 1.45;
+  }
+  .footnote b { color: var(--text); }
+
+  /* ---------- Slide 1 : six questions ---------- */
+  .qgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; height: 560px; }
+  .qcard {
+    background: var(--card); border: 1px solid var(--card-border); border-radius: 16px;
+    padding: 20px 28px; display: flex; flex-direction: column; gap: 9px; min-height: 0;
+  }
+  .qnum {
+    width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
+    font-size: 22px; font-weight: 800; color: #1a0b2e; background: var(--accent); margin-bottom: 4px;
+  }
+  .qcard h3 { font-size: 25px; font-weight: 800; }
+  .qcard .q { font-size: 18px; color: var(--text); line-height: 1.4; font-style: italic; }
+  .qcard .decides { margin-top: auto; font-size: 16.5px; color: var(--muted); line-height: 1.4; border-top: 1px dashed rgba(255,255,255,0.15); padding-top: 12px; }
+  .qcard .decides b { color: var(--accent); font-style: normal; }
+
+  /* ---------- Slide 2 : nesting + wider family ---------- */
+  .nest-wrap { display: flex; flex-direction: column; height: 580px; gap: 12px; }
+  .nest-main { flex: 1; display: flex; gap: 24px; min-height: 0; }
+  .nest-col { flex: 1.25; display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+  .nest { flex: 1; position: relative; min-height: 0; }
+  .ring { position: absolute; border-radius: 18px; border: 2px solid; padding: 14px 22px; }
+  .ring .ring-title { font-size: 21px; font-weight: 800; letter-spacing: 0.3px; }
+  .ring .ring-sub { font-size: 15px; color: var(--muted); margin-top: 2px; }
+  .ring-factory { inset: 0; border-color: var(--gold); background: rgba(251,191,36,0.05); }
+  .ring-factory .ring-title { color: var(--gold); }
+  .ring-spec { inset: 74px 24px 20px 24px; border-color: var(--purple); background: rgba(192,132,252,0.06); }
+  .ring-spec .ring-title { color: var(--purple); }
+  .ring-loop { inset: 150px 48px 42px 48px; border-color: var(--blue); background: rgba(96,165,250,0.07); display: flex; flex-direction: column; justify-content: center; gap: 10px; }
+  .ring-loop .ring-title { color: var(--blue); }
+  .loop-cycle { display: flex; gap: 10px; align-items: center; justify-content: center; flex-wrap: wrap; }
+  .loop-step { background: rgba(96,165,250,0.15); border: 1px solid rgba(96,165,250,0.4); border-radius: 10px; padding: 9px 15px; font-size: 15.5px; font-weight: 600; }
+  .loop-arrow { color: var(--blue); font-size: 19px; font-weight: 800; }
+  .ring-loop .ring-caption { text-align: center; }
+
+  .fam { flex: 0.85; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+  .fam-label { font-size: 13px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); padding-left: 4px; flex: none; }
+  .fam-card {
+    background: var(--card); border: 1px solid var(--card-border); border-radius: 12px;
+    border-left: 5px solid; padding: 7px 15px; flex: 1; min-height: 0;
+    display: flex; flex-direction: column; justify-content: center; gap: 1px;
+  }
+  .fam-card h4 { font-size: 17px; font-weight: 800; }
+  .fam-card p { font-size: 13.5px; color: var(--muted); line-height: 1.26; }
+  .f-vibe    { border-left-color: var(--pink); }   .f-vibe h4    { color: var(--pink); }
+  .f-copilot { border-left-color: var(--teal); }   .f-copilot h4 { color: var(--teal); }
+  .f-bg      { border-left-color: var(--cyan); }   .f-bg h4      { color: var(--cyan); }
+  .f-ambient { border-left-color: var(--orange); } .f-ambient h4 { color: var(--orange); }
+  .f-judge   { border-left-color: var(--silver); } .f-judge h4   { color: var(--silver); }
+  .f-det     { border-left-color: var(--lime); }   .f-det h4     { color: var(--lime); }
+
+  .harness-base {
+    height: 78px; flex: none;
+    border: 2px solid var(--green); border-radius: 16px; background: rgba(74,222,128,0.06);
+    display: flex; flex-direction: column; align-items: flex-start; justify-content: center; padding: 10px 24px; gap: 3px;
+  }
+  .harness-base .ring-title { color: var(--green); font-size: 21px; font-weight: 800; }
+  .harness-base .ring-sub { font-size: 15.5px; color: var(--muted); }
+
+  /* ---------- Slide 3 : lifecycle ---------- */
+  .life-wrap { height: 600px; display: flex; flex-direction: column; justify-content: center; gap: 0; }
+  .life-row { display: flex; align-items: stretch; }
+  .seg {
+    flex: 1; border-radius: 14px; padding: 18px 16px 14px; margin: 0 6px;
+    background: var(--card); border: 1px solid var(--card-border); border-top: 5px solid;
+    display: flex; flex-direction: column; gap: 6px; min-height: 190px;
+  }
+  .seg h3 { font-size: 21px; font-weight: 800; }
+  .seg .approach { font-size: 16px; font-weight: 700; }
+  .seg .why { font-size: 14.5px; color: var(--muted); line-height: 1.35; }
+  .seg .human { margin-top: auto; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); border-top: 1px dashed rgba(255,255,255,0.15); padding-top: 8px; }
+  .s-discover { border-top-color: var(--green); }  .s-discover .approach { color: var(--green); }
+  .s-proto    { border-top-color: var(--pink); }   .s-proto .approach    { color: var(--pink); }
+  .s-spec     { border-top-color: var(--purple); } .s-spec .approach     { color: var(--purple); }
+  .s-build    { border-top-color: var(--gold); }   .s-build .approach    { color: var(--gold); }
+  .s-verify   { border-top-color: var(--blue); }   .s-verify .approach   { color: var(--blue); }
+  .s-operate  { border-top-color: var(--orange); } .s-operate .approach  { color: var(--orange); }
+  .boundary-row { display: flex; margin-top: 14px; }
+  .boundary {
+    flex: 1; margin: 0 6px; text-align: center; font-size: 15px; color: var(--muted); line-height: 1.35; position: relative; padding-top: 26px;
+  }
+  .boundary::before {
+    content: "⛨"; position: absolute; top: -2px; left: 50%; transform: translateX(-50%);
+    color: var(--accent); font-size: 20px;
+  }
+  .boundary b { color: var(--text); display: block; font-size: 15.5px; }
+  .boundary .dies { color: var(--red); font-weight: 700; }
+  .life-arrowbar { height: 10px; margin: 18px 6px 8px; border-radius: 6px;
+    background: linear-gradient(90deg, var(--green), var(--pink), var(--purple), var(--gold), var(--blue), var(--orange)); opacity: 0.65; }
+
+  /* ---------- Slide 4 : worked examples ---------- */
+  .ex-wrap { display: flex; gap: 20px; height: 675px; margin-top: 28px; }
+  .ex-card {
+    flex: 1; background: var(--card); border: 1px solid var(--card-border); border-radius: 16px;
+    padding: 18px 20px; display: flex; flex-direction: column; gap: 8px; min-width: 0;
+  }
+  .ex-tag { font-size: 12px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--accent); }
+  .ex-card h3 { font-size: 22px; font-weight: 800; line-height: 1.15; }
+  .ex-desc { font-size: 14px; color: var(--muted); line-height: 1.35; padding-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.10); }
+  .exq { display: flex; gap: 10px; align-items: flex-start; }
+  .exq-n {
+    width: 22px; height: 22px; flex: none; border-radius: 7px; background: var(--accent); color: #1a0b2e;
+    font-weight: 800; font-size: 13px; display: flex; align-items: center; justify-content: center; margin-top: 1px;
+  }
+  .exq div { font-size: 13.5px; color: var(--muted); line-height: 1.3; }
+  .exq b { color: var(--text); }
+  .ex-setup {
+    margin-top: 6px; border-top: 1px solid rgba(255,255,255,0.10); padding-top: 12px;
+    flex: 1; display: flex; flex-direction: column; justify-content: space-evenly; gap: 8px;
+  }
+  .ex-setup .ex-tag { color: var(--accent); }
+  .stage-row { display: flex; gap: 12px; align-items: flex-start; }
+  .stage-name {
+    flex: none; width: 96px; font-size: 12px; font-weight: 800; letter-spacing: 1.2px;
+    text-transform: uppercase; color: var(--text); padding-top: 3px;
+  }
+  .stage-name.gate { color: var(--accent); }
+  .stage-row .stxt { font-size: 13.5px; color: var(--muted); line-height: 1.4; }
+  .chip {
+    display: inline-block; border-radius: 7px; padding: 0px 7px; font-weight: 700; font-size: 12.5px;
+    border: 1px solid; line-height: 1.5; white-space: nowrap;
+  }
+  .c-harness { color: var(--green);  border-color: rgba(74,222,128,0.45);  background: rgba(74,222,128,0.08); }
+  .c-vibe    { color: var(--pink);   border-color: rgba(244,114,182,0.45); background: rgba(244,114,182,0.08); }
+  .c-sdd     { color: var(--purple); border-color: rgba(192,132,252,0.45); background: rgba(192,132,252,0.08); }
+  .c-factory { color: var(--gold);   border-color: rgba(251,191,36,0.45);  background: rgba(251,191,36,0.08); }
+  .c-loop    { color: var(--blue);   border-color: rgba(96,165,250,0.45);  background: rgba(96,165,250,0.08); }
+  .c-bg      { color: var(--cyan);   border-color: rgba(34,211,238,0.45);  background: rgba(34,211,238,0.08); }
+  .c-det     { color: var(--lime);   border-color: rgba(163,230,53,0.45);  background: rgba(163,230,53,0.08); }
+  .c-judge   { color: var(--silver); border-color: rgba(203,213,225,0.45); background: rgba(203,213,225,0.08); }
+
+  @media print {
+    body { background: white; }
+    .slide { margin: 0; box-shadow: none; border-radius: 0; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ================= SLIDE 1 : THE INPUTS ================= -->
+<section class="slide">
+  <div class="kicker">The Inputs</div>
+  <h1 style="font-size:44px">Input Questions — Asked Per Workstream, Not Per Project</h1>
+  <p class="sub">A real program ("modernize the risk estate") is several workstreams with different answers. Score each stream separately; expect different postures side by side.</p>
+
+  <div class="qgrid">
+    <div class="qcard">
+      <div class="qnum">1</div>
+      <h3>Oracle strength</h3>
+      <p class="q">Can a machine verify the output today — tests, baselines, build signals, a running reference system? If not, can one be built, at what cost?</p>
+      <p class="decides">Decides → <b>the autonomy ceiling</b></p>
+    </div>
+    <div class="qcard">
+      <div class="qnum">2</div>
+      <h3>Repetition &amp; volume</h3>
+      <p class="q">How many similar units of work — one-off, hundreds, or an indefinite backlog?</p>
+      <p class="decides">Decides → <b>whether factory / automation setup amortizes</b></p>
+    </div>
+    <div class="qcard">
+      <div class="qnum">3</div>
+      <h3>Spec-ability of intent</h3>
+      <p class="q">Is what's wanted knowable upfront (a regulation, an existing system's behavior) — or must it emerge through iteration and user feedback?</p>
+      <p class="decides">Decides → <b>spec-driven vs exploratory posture</b></p>
+    </div>
+    <div class="qcard">
+      <div class="qnum">4</div>
+      <h3>Blast radius &amp; reversibility</h3>
+      <p class="q">Production criticality, regulatory exposure, rollback cost, evidence requirements?</p>
+      <p class="decides">Decides → <b>where the human gates go</b> (not which approach)</p>
+    </div>
+    <div class="qcard">
+      <div class="qnum">5</div>
+      <h3>Lifecycle scope &amp; boundary</h3>
+      <p class="q">Which segment of the lifecycle is this? What artifact must cross into the next segment, at what quality bar?</p>
+      <p class="decides">Decides → <b>the handoff contract</b> (e.g. prototype dies, learning crosses)</p>
+    </div>
+    <div class="qcard">
+      <div class="qnum">6</div>
+      <h3>Organizational readiness</h3>
+      <p class="q">Harness &amp; tooling maturity, engineer fluency, and can governance accept machine-generated evidence?</p>
+      <p class="decides">Decides → <b>the practical ceiling</b> — often the binding constraint in a bank</p>
+    </div>
+  </div>
+
+</section>
+
+<!-- ================= SLIDE 2 : APPROACHES NEST ================= -->
+<section class="slide">
+  <div class="kicker">The Approaches</div>
+  <h1>Many Approaches Nest — They Don't Compete</h1>
+  <p class="sub">The core delivery approaches can nest, whilst scoped companion approaches can do specific jobs alongside.</p>
+
+  <div class="nest-wrap">
+    <div class="nest-main">
+      <div class="nest-col">
+      <div class="nest">
+        <div class="ring ring-factory">
+          <div class="ring-title">FACTORY / AGENTIC PIPELINE — the outer loop</div>
+          <div class="ring-sub">Durable orchestration over a whole backlog · dispatch, track, deploy · humans handle exceptions &amp; outcomes</div>
+        </div>
+        <div class="ring ring-spec">
+          <div class="ring-title">SPEC-DRIVEN — per unit of work</div>
+          <div class="ring-sub">Each unit carried by a verified spec · phase-gate reviews · spec is the contract</div>
+        </div>
+        <div class="ring ring-loop">
+          <div class="loop-cycle">
+            <div class="loop-step">implement</div><div class="loop-arrow">→</div>
+            <div class="loop-step">verify vs oracle</div><div class="loop-arrow">→</div>
+            <div class="loop-step">red? iterate</div><div class="loop-arrow">↻</div>
+            <div class="loop-step">green? done</div>
+          </div>
+          <div class="ring-caption">
+            <div class="ring-title">LOOP — inside each unit</div>
+            <div class="ring-sub">Agent iterates until the oracle is green — no human inside the loop</div>
+          </div>
+        </div>
+      </div>
+      <div class="harness-base">
+        <div class="ring-title">HARNESS — the foundation under a number of approaches</div>
+        <div class="ring-sub">Tools · skills · context · guardrails · permissions</div>
+      </div>
+      </div>
+      <div class="fam">
+        <div class="fam-label">Companion Approaches</div>
+        <div class="fam-card f-vibe">
+          <h4>Vibe Coding</h4>
+          <p>Conversational prototyping — no spec, no gates. Legitimate when the artifact is disposable: its output is learning, not code.</p>
+        </div>
+        <div class="fam-card f-copilot">
+          <h4>Copilot / Inline Assist</h4>
+          <p>Autocomplete &amp; in-IDE suggestion. No delegation — where most engineers start, and the on-ramp to a harness.</p>
+        </div>
+        <div class="fam-card f-bg">
+          <h4>Background Task Agents</h4>
+          <p>Fire-and-forget bounded tasks — a ticket, a review, a refactor — returning a PR. A loop per ticket, without a pipeline.</p>
+        </div>
+        <div class="fam-card f-ambient">
+          <h4>Ambient / Policy Agents</h4>
+          <p>Standing agents watching a repo or estate — triage, drift alerts, proposals. Continuous work, not project-shaped.</p>
+        </div>
+        <div class="fam-card f-judge">
+          <h4>Judge Panels &amp; Critics</h4>
+          <p>Generator–critic–judge ensembles and adversarial verification. A quality technique, not an approach — slots inside any approach.</p>
+        </div>
+        <div class="fam-card f-det">
+          <h4>Deterministic Processing</h4>
+          <p>Plain non-AI code — scripts, rules, parsers, checks. When the logic is knowable, write it once and trust it every time — slots inside any workflow.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= SLIDE 3 : LIFECYCLE ================= -->
+<section class="slide">
+  <div class="kicker">The Lifecycle</div>
+  <h1>Map the Lifecycle, Contract the Boundaries</h1>
+  <p class="sub">Techniques are chosen per segment. Artifacts are contracts between segments. Humans guard the boundaries — that's where intent gets translated, and translation is where irreversible errors happen.</p>
+
+  <div class="life-wrap">
+    <div class="life-row">
+      <div class="seg s-discover">
+        <h3>Discover</h3>
+        <div class="approach">Harness / conversational</div>
+        <p class="why">No oracle exists; novelty is total. Human drives, AI explores &amp; drafts.</p>
+        <p class="human">Human: decision-maker</p>
+      </div>
+      <div class="seg s-proto">
+        <h3>Prototype</h3>
+        <div class="approach">Vibe coding — scoped as disposable</div>
+        <p class="why">An instrument for generating validated requirements. Output is learning, not code.</p>
+        <p class="human">Human: user-feedback collector</p>
+      </div>
+      <div class="seg s-spec">
+        <h3>Specify / Design</h3>
+        <div class="approach">Spec-Driven</div>
+        <p class="why">Intent crystallizes into reviewable artifacts; disagreement resolves in favor of the spec.</p>
+        <p class="human">Human: spec author &amp; reviewer</p>
+      </div>
+      <div class="seg s-build">
+        <h3>Build</h3>
+        <div class="approach">Factory (at volume) / SDD unit</div>
+        <p class="why">Agents implement from verified specs; pipeline dispatches &amp; tracks.</p>
+        <p class="human">Human: exception handler</p>
+      </div>
+      <div class="seg s-verify">
+        <h3>Verify</h3>
+        <div class="approach">Loop vs oracles</div>
+        <p class="why">Iterate to green against tests, baselines, parity checks. Evidence recorded.</p>
+        <p class="human">Human: none inside the loop</p>
+      </div>
+      <div class="seg s-operate">
+        <h3>Release &amp; Operate</h3>
+        <div class="approach">Ambient agents + loops</div>
+        <p class="why">Gated release on evidence; standing agents watch, triage, propose.</p>
+        <p class="human">Human: outcome &amp; evidence reviewer</p>
+      </div>
+    </div>
+    <div class="life-arrowbar"></div>
+    <div class="boundary-row">
+      <div class="boundary"><b>crossing artifact ↓</b>&nbsp;</div>
+      <div class="boundary"><b>Framed problem</b> + decision record</div>
+      <div class="boundary"><b>Validated learning</b><span class="dies">the prototype's code dies here</span></div>
+      <div class="boundary"><b>Verified spec</b> + oracle references</div>
+      <div class="boundary"><b>Candidate build</b> + full test evidence</div>
+      <div class="boundary"><b>Evidence pack</b> — verdicts, diffs, approvals</div>
+    </div>
+  </div>
+
+</section>
+
+<!-- ================= SLIDE 4 : WORKED EXAMPLES ================= -->
+<section class="slide">
+  <div class="kicker">Worked Examples</div>
+  <h1>The Output Is a Delivery Design</h1>
+
+  <div class="ex-wrap">
+
+    <div class="ex-card">
+      <div class="ex-tag">Example A</div>
+      <h3>Regulatory Reporting Platform</h3>
+      <p class="ex-desc">Complex UI over a complex estate; periodic submissions to the regulator.</p>
+      <div class="exq"><span class="exq-n">1</span><div><b>Oracle</b> — mixed: calcs testable, UI needs human eyes</div></div>
+      <div class="exq"><span class="exq-n">2</span><div><b>Repetition</b> — low-mod: shared patterns, bespoke reports</div></div>
+      <div class="exq"><span class="exq-n">3</span><div><b>Spec-ability</b> — high: the regulation is the spec</div></div>
+      <div class="exq"><span class="exq-n">4</span><div><b>Blast radius</b> — severe: misreporting = breach</div></div>
+      <div class="exq"><span class="exq-n">5</span><div><b>Scope</b> — full PDLC: discovery → operate</div></div>
+      <div class="exq"><span class="exq-n">6</span><div><b>Readiness</b> — sign-off culture, reviewable evidence</div></div>
+      <div class="ex-setup">
+        <div class="ex-tag">Possible Setup</div>
+        <div class="stage-row"><div class="stage-name">Discover</div><div class="stxt"><span class="chip c-harness">Harness</span> explore the estate &amp; the regulation</div></div>
+        <div class="stage-row"><div class="stage-name">Prototype</div><div class="stxt"><span class="chip c-vibe">Vibe</span> disposable UI prototypes with end users</div></div>
+        <div class="stage-row"><div class="stage-name">Build</div><div class="stxt"><span class="chip c-sdd">Spec-Driven</span> phase-gated (possibly <span class="chip c-factory">Factory</span> across reports) · <span class="chip c-det">Deterministic</span> calc core</div></div>
+        <div class="stage-row"><div class="stage-name">Verify</div><div class="stxt"><span class="chip c-judge">Judges</span> critique report outputs + human review</div></div>
+        <div class="stage-row"><div class="stage-name gate">Human gate</div><div class="stxt">every submission human-approved</div></div>
+      </div>
+    </div>
+
+    <div class="ex-card">
+      <div class="ex-tag">Example B</div>
+      <h3>Legacy Settlement Engine Migration</h3>
+      <p class="ex-desc">Sybase + Java 8 → modern stack; ~200 endpoints, ~80 tables; behavior fully defined by the running system.</p>
+      <div class="exq"><span class="exq-n">1</span><div><b>Oracle</b> — strong: running system, parity replay</div></div>
+      <div class="exq"><span class="exq-n">2</span><div><b>Repetition</b> — high: hundreds of same-shape units</div></div>
+      <div class="exq"><span class="exq-n">3</span><div><b>Spec-ability</b> — high: legacy defines the behavior</div></div>
+      <div class="exq"><span class="exq-n">4</span><div><b>Blast radius</b> — high: parity + staged cutover de-risk</div></div>
+      <div class="exq"><span class="exq-n">5</span><div><b>Scope</b> — build-verify heavy: capture → reconcile</div></div>
+      <div class="exq"><span class="exq-n">6</span><div><b>Readiness</b> — needs capture investment first</div></div>
+      <div class="ex-setup">
+        <div class="ex-tag">Possible Setup</div>
+        <div class="stage-row"><div class="stage-name">Discover</div><div class="stxt"><span class="chip c-harness">Harness</span> map the estate; capture &amp; pin baselines</div></div>
+        <div class="stage-row"><div class="stage-name">Build</div><div class="stxt"><span class="chip c-factory">Factory</span> dispatches <span class="chip c-sdd">Spec-Driven</span> units, each with an inner <span class="chip c-loop">Loop</span> vs baseline</div></div>
+        <div class="stage-row"><div class="stage-name">Verify</div><div class="stxt"><span class="chip c-det">Deterministic</span> parity &amp; reconcile — independent of the factory</div></div>
+        <div class="stage-row"><div class="stage-name">Operate</div><div class="stxt"><span class="chip c-bg">Background</span> agents sweep the long tail</div></div>
+        <div class="stage-row"><div class="stage-name gate">Human gate</div><div class="stxt">break dispositions &amp; staged cutover</div></div>
+      </div>
+    </div>
+
+    <div class="ex-card">
+      <div class="ex-tag">Example C</div>
+      <h3>Greenfield Digital Pilot</h3>
+      <p class="ex-desc">New product (SME onboarding app); what "right" looks like must emerge from user feedback.</p>
+      <div class="exq"><span class="exq-n">1</span><div><b>Oracle</b> — weak: correct = users adopt it</div></div>
+      <div class="exq"><span class="exq-n">2</span><div><b>Repetition</b> — low: one evolving product</div></div>
+      <div class="exq"><span class="exq-n">3</span><div><b>Spec-ability</b> — weak: intent emerges by iteration</div></div>
+      <div class="exq"><span class="exq-n">4</span><div><b>Blast radius</b> — low while a pilot; contained cohort</div></div>
+      <div class="exq"><span class="exq-n">5</span><div><b>Scope</b> — early PDLC: discovery &amp; prototype</div></div>
+      <div class="exq"><span class="exq-n">6</span><div><b>Readiness</b> — small team, light governance load</div></div>
+      <div class="ex-setup">
+        <div class="ex-tag">Possible Setup</div>
+        <div class="stage-row"><div class="stage-name">Discover</div><div class="stxt"><span class="chip c-harness">Harness</span> human-led problem framing</div></div>
+        <div class="stage-row"><div class="stage-name">Prototype</div><div class="stxt"><span class="chip c-vibe">Vibe</span> throwaway builds with real users</div></div>
+        <div class="stage-row"><div class="stage-name">Build</div><div class="stxt"><span class="chip c-harness">Harness</span> human-led build of the keeper</div></div>
+        <div class="stage-row"><div class="stage-name">Verify</div><div class="stxt"><span class="chip c-judge">Judges</span> critique designs; tests crystallize → <span class="chip c-loop">Loop</span></div></div>
+        <div class="stage-row"><div class="stage-name gate">Human gate</div><div class="stxt">pivot / persist each feedback round</div></div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+</body>
+</html>
