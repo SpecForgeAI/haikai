@@ -433,6 +433,28 @@ export function extractBehaviour(
     return { sqlVerbatim: joined, ref: { path: first.path, line: first.line } };
   };
 
+  /** Boundary `Fqn#method` targets a method body delegates to: a call on a
+   *  FIELD whose declared type resolves to another boundary class (the
+   *  DAO->DAO idiom). The interface FQN is recorded when the field is typed
+   *  to the interface — its boundary contract mines SQL from implementors,
+   *  so delegate resolution still lands on real tables. */
+  const mineDelegationsFromMethod = (owner: JavaClassInfo, m: JavaMethodInfo): string[] => {
+    if (!m.bodyNode) return [];
+    const out: string[] = [];
+    for (const inv of collectNodesOfType(m.bodyNode, 'method_invocation')) {
+      const obj = inv.childForFieldName('object');
+      const nameNode = inv.childForFieldName('name');
+      if (!obj || !nameNode || obj.type !== 'identifier') continue;
+      const field = owner.fields.find((f) => f.name === obj.text);
+      if (!field) continue;
+      const resolved = resolveProjectType(field.type, owner, index);
+      if (!resolved || resolved.fqn === owner.fqn || !isBoundaryClass(resolved)) continue;
+      const target = `${resolved.fqn}#${nameNode.text}`;
+      if (!out.includes(target)) out.push(target);
+    }
+    return out;
+  };
+
   const buildBoundary = (cls: JavaClassInfo): SclBoundaryContract => {
     // Bodyless ops (interface methods / abstract methods) mine their SQL
     // from the IMPLEMENTING classes' matching methods (2026-08-21: the
@@ -445,6 +467,7 @@ export function extractBehaviour(
     for (const m of cls.methods) {
       if (!isPublicMethod(m)) continue;
       let mined = mineSqlFromMethod(cls, m);
+      let delegations = mineDelegationsFromMethod(cls, m);
       if (!mined && !m.bodyNode) {
         for (const impl of implementors) {
           const found = findMethodInHierarchy(impl, m.name, m.paramTypes.length, index);
@@ -454,6 +477,11 @@ export function extractBehaviour(
               ? { sqlVerbatim: `${mined.sqlVerbatim} ${implMined.sqlVerbatim}`, ref: mined.ref }
               : implMined;
           }
+          if (found) {
+            for (const target of mineDelegationsFromMethod(found.owner, found.method)) {
+              if (!delegations.includes(target)) delegations = [...delegations, target];
+            }
+          }
         }
       }
       operations.push({
@@ -461,6 +489,7 @@ export function extractBehaviour(
         sqlVerbatim: mined?.sqlVerbatim ?? null,
         ref: mined?.ref ?? null,
         resultShape: resolveResultShape(m, cls),
+        ...(delegations.length > 0 ? { delegatesTo: delegations } : {}),
       });
     }
     // Enum boundaries: each SQL-bearing constant is an operation named

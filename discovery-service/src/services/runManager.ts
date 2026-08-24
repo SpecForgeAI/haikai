@@ -2724,6 +2724,28 @@ async function startServiceScopedRun(
             // when the batch detector's heuristics missed it — rescue-mint
             // a BATCH_MAIN endpoint candidate so its chain roots.
             let mintedRoots = 0;
+            // Kiro round 4 (issue C hardening): a blocking candidate must be
+            // able to actually JOIN the corpus (className#methodName has a
+            // behaviour table) — requiring methodName presence alone still
+            // let a hallucinated name block the mint AND root nothing.
+            const joinableClassMethods = new Set<string>();
+            for (const corpusEntry of structural.corpus.contracts ?? []) {
+              const inner = (corpusEntry as { contract?: { kind?: string; symbol?: string } })
+                .contract;
+              if (!inner || inner.kind !== 'behaviour_table') continue;
+              const symbol = String(inner.symbol ?? '');
+              const hashAt = symbol.indexOf('#');
+              if (hashAt <= 0) continue;
+              const clsPart = symbol.slice(0, hashAt);
+              const afterHash = symbol.slice(hashAt + 1);
+              const parenAt = afterHash.indexOf('(');
+              const methodPart = parenAt >= 0 ? afterHash.slice(0, parenAt) : afterHash;
+              joinableClassMethods.add(`${clsPart}#${methodPart}`);
+              const simplePart = clsPart.includes('.')
+                ? clsPart.slice(clsPart.lastIndexOf('.') + 1)
+                : clsPart;
+              joinableClassMethods.add(`${simplePart}#${methodPart}`);
+            }
             for (const fqn of new Set(
               resolved.map((j) => j.resolvedMainFqn).filter((x): x is string => !!x),
             )) {
@@ -2739,6 +2761,13 @@ async function startServiceScopedRun(
                 // looked read-only or untouched. Only a candidate that can
                 // actually ROOT counts as existing.
                 if (!data?.methodName) return false;
+                // A methodName that does not resolve in the corpus cannot
+                // root either — a hallucinated name must not block the mint.
+                if (
+                  !joinableClassMethods.has(`${String(data?.className ?? '')}#${data.methodName}`)
+                ) {
+                  return false;
+                }
                 return (
                   String(data?.fullPath ?? '') === fqn ||
                   String(data?.className ?? '') === fqn ||

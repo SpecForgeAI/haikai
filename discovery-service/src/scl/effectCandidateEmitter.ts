@@ -356,6 +356,8 @@ export function indexCorpus(corpus: SclCorpus): CorpusIndex {
   const classFqnsInCorpus = new Set<string>();
   const tableKeysByClassMethod = new Map<string, string[]>();
   const httpRoots: CorpusIndex['httpRoots'] = [];
+  const boundaryKeyBySymbol = new Map<string, string>();
+  const pendingDelegations: Array<{ key: string; opName: string; target: string }> = [];
   const push = (map: Map<string, string[]>, key: string, value: string) => {
     const list = map.get(key) ?? [];
     if (!list.includes(value)) list.push(value);
@@ -472,6 +474,21 @@ export function indexCorpus(corpus: SclCorpus): CorpusIndex {
           }
         }
         if (operation.name) push(boundariesByOpName, operation.name, contract.key);
+        // DAO->DAO delegation (Kiro 2026-08-24 issue A): walkCallGraph
+        // treats a boundary as TERMINAL, so FilterDao#addFilter ->
+        // SequenceDao#getNext was severed and the sequence table looked
+        // untouched from every create endpoint. The slice records the
+        // delegation; resolution happens after the contract loop (the
+        // delegate's tables may not be indexed yet).
+        for (const target of operation.delegatesTo ?? []) {
+          if (operation.name) {
+            pendingDelegations.push({
+              key: contract.key,
+              opName: operation.name.toLowerCase(),
+              target,
+            });
+          }
+        }
       }
       // Proc-body expansion (2026-08-23): the op SQL names the proc; the
       // harvested body names the tables (transitively closed).
@@ -490,10 +507,87 @@ export function indexCorpus(corpus: SclCorpus): CorpusIndex {
       boundaryOpTablesByKey.set(contract.key, opTables);
       boundaryStatsByKey.set(contract.key, { ops, withSql, opNames, procs });
       boundarySymbolByKey.set(contract.key, boundary.symbol);
+      boundaryKeyBySymbol.set(boundary.symbol, contract.key);
       const boundaryHash = boundary.symbol.indexOf('#');
       classFqnsInCorpus.add(boundaryHash >= 0 ? boundary.symbol.slice(0, boundaryHash) : boundary.symbol);
     }
   }
+  // Resolve DAO->DAO delegations (transitive, cycle-safe, depth-capped like
+  // closeProcCatalog): the delegate op's tables (or its class union when the
+  // delegate op has no SQL of its own) merge into the delegating op's per-op
+  // entry AND the delegating boundary's class-level union.
+  const delegationsByKeyOp = new Map<string, string[]>();
+  for (const d of pendingDelegations) {
+    const listKey = `${d.key}|${d.opName}`;
+    const list = delegationsByKeyOp.get(listKey) ?? [];
+    if (!list.includes(d.target)) list.push(d.target);
+    delegationsByKeyOp.set(listKey, list);
+  }
+  const mergeInto = (into: string[], from: string[]): void => {
+    for (const table of from) {
+      if (!into.some((x) => x.toLowerCase() === table.toLowerCase())) into.push(table);
+    }
+  };
+  const resolveDelegateTables = (
+    key: string,
+    opName: string,
+    visited: Set<string>,
+    depth: number,
+  ): { writes: string[]; reads: string[] } => {
+    const memoKey = `${key}|${opName}`;
+    if (depth > 10 || visited.has(memoKey)) return { writes: [], reads: [] };
+    visited.add(memoKey);
+    const writes: string[] = [];
+    const reads: string[] = [];
+    const own = boundaryOpTablesByKey.get(key)?.get(opName);
+    if (own) {
+      mergeInto(writes, own.writes);
+      mergeInto(reads, own.reads);
+    }
+    const targets = delegationsByKeyOp.get(memoKey) ?? [];
+    for (const target of targets) {
+      const targetHash = target.indexOf('#');
+      if (targetHash < 0) continue;
+      const delegateKey = boundaryKeyBySymbol.get(target.slice(0, targetHash));
+      if (!delegateKey) continue;
+      const delegateOp = target.slice(targetHash + 1).toLowerCase();
+      const resolved = resolveDelegateTables(delegateKey, delegateOp, visited, depth + 1);
+      if (
+        resolved.writes.length === 0 &&
+        resolved.reads.length === 0 &&
+        !boundaryOpTablesByKey.get(delegateKey)?.has(delegateOp)
+      ) {
+        // Delegate op carries no SQL and no further delegation -> the
+        // delegate's CLASS union is the honest fallback (same semantics
+        // as a reach with no op identity).
+        mergeInto(writes, boundaryWritesByKey.get(delegateKey) ?? []);
+        mergeInto(reads, boundaryReadsByKey.get(delegateKey) ?? []);
+      } else {
+        mergeInto(writes, resolved.writes);
+        mergeInto(reads, resolved.reads);
+      }
+    }
+    return { writes, reads };
+  };
+  for (const d of pendingDelegations) {
+    const merged = resolveDelegateTables(d.key, d.opName, new Set<string>(), 0);
+    if (merged.writes.length === 0 && merged.reads.length === 0) continue;
+    const opTablesForKey =
+      boundaryOpTablesByKey.get(d.key) ??
+      new Map<string, { writes: string[]; reads: string[] }>();
+    const entry = opTablesForKey.get(d.opName) ?? { writes: [], reads: [] };
+    mergeInto(entry.writes, merged.writes);
+    mergeInto(entry.reads, merged.reads);
+    opTablesForKey.set(d.opName, entry);
+    boundaryOpTablesByKey.set(d.key, opTablesForKey);
+    const classWrites = boundaryWritesByKey.get(d.key) ?? [];
+    const classReads = boundaryReadsByKey.get(d.key) ?? [];
+    mergeInto(classWrites, merged.writes);
+    mergeInto(classReads, merged.reads);
+    boundaryWritesByKey.set(d.key, classWrites);
+    boundaryReadsByKey.set(d.key, classReads);
+  }
+
   return {
     tablesByKey,
     boundaryWritesByKey,
@@ -570,6 +664,19 @@ const KNOWN_CLASS_DISPATCH_CAP = capFromEnv('HAIKAI_DISPATCH_CAP_KNOWN', 120);
 /** Per-root transitive-walk node bound (cycle safety, not rationing). */
 const CHAIN_WALK_CAP = capFromEnv('HAIKAI_CHAIN_WALK_CAP', 2000);
 
+/** java.lang.Object-inherited names. Name+arity dispatch on these is
+ *  meaningless — every class implements them, so ONE unresolved
+ *  `x.toString()` unions the whole corpus into the walk (Kiro 2026-08-24:
+ *  a hierarchy POST reached BatchedDBLoaderImpl#toString() and inherited
+ *  its deleteLoadTable closure, crediting 30 API endpoints with writes to
+ *  every load_* staging table — the cap raise 12->40 is what ENABLED it).
+ *  Known-receiver classes are still expandable (real polymorphism); only
+ *  the `?`-receiver corpus-wide union is refused. */
+const OBJECT_METHOD_NAMES = new Set([
+  'tostring', 'equals', 'hashcode', 'clone', 'finalize',
+  'getclass', 'notify', 'notifyall', 'wait',
+]);
+
 /**
  * Resolve a null-target call symbol (`Cls#method(A,B)`) by name+arity across
  * the corpus — the corpus-side mirror of the assembler's deterministic
@@ -586,6 +693,10 @@ function expandDispatch(
   if (hash < 0 || paren < 0) return null;
   const clsFqn = targetSymbol.slice(0, hash);
   const name = targetSymbol.slice(hash + 1, paren);
+  // A KNOWN receiver class is still expandable (real polymorphism); the
+  // unknown-receiver case would be a corpus-wide union with no type
+  // evidence — refuse Object-inherited names outright.
+  if (clsFqn === '?' && OBJECT_METHOD_NAMES.has(name.toLowerCase())) return null;
   const argsText = targetSymbol.slice(paren + 1, targetSymbol.lastIndexOf(')'));
   const arity = argsText.trim() === '' ? 0 : argsText.split(',').length;
 
@@ -643,7 +754,8 @@ const INERT_UNKNOWN_RECEIVER_NAMES = new Set([
   'tostring', 'append', 'equals', 'hashcode', 'valueof', 'compareto',
   'charat', 'substring', 'indexof', 'trim', 'length', 'isempty', 'format',
   'close', 'flush', 'intern', 'concat', 'split', 'replace', 'tolowercase',
-  'touppercase',
+  'touppercase', 'clone', 'finalize', 'getclass', 'notify', 'notifyall',
+  'wait',
 ]);
 
 export function isInertUnknownReceiverCall(targetSymbol: string): boolean {

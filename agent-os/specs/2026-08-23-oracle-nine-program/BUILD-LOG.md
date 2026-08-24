@@ -200,6 +200,30 @@ vs FQN); (e) fresh project = fresh model, no carried edges. Fixes:
     className/methodName]` instead of silently dropping. Merge-engine
     suites re-run green per Kiro's ordering note.
 
+11. **Kiro round-4 fixes (3)** — (B, done first per Kiro) Object-method
+    denylist in expandDispatch: unresolved `?#toString()` unioned 15
+    toString/0 tables incl. the batch loader — 30 API endpoints credited
+    with every load_* write + ~10 phantom tables inflating
+    readAnywhereTables; the 12->40 cap raise ENABLED it (12 refused by
+    luck). `?`-receiver dispatch refuses Object-inherited names
+    (tostring/equals/hashcode/clone/finalize/getclass/notify/notifyall/
+    wait); known receivers untouched; gateway backfill mirrored; inert
+    noise set extended. (A) DAO->DAO delegation: walkCallGraph treats
+    boundaries as terminal, so FilterDao#addFilter -> sequenceDao.getNext
+    was severed — hir_sequence W=0 R=0 from all 45 roots despite the
+    round-3 bare-name detection working. SclBoundaryOperation.delegatesTo
+    captured at slice time (field-typed receiver resolving to another
+    boundary class, incl. the interface-impl mining path); indexCorpus
+    resolves transitively (cycle-safe, depth 10) merging delegate op
+    tables (or delegate class union) into the delegating op entry AND
+    class union. (C hardening) mint guard now requires the blocking
+    candidate's className#methodName to actually JOIN the corpus
+    (behaviour-table symbol set built from structural.corpus) — presence
+    alone let a hallucinated methodName block the mint and root nothing.
+    C's other branch (candidate present + entity absent = commit-path
+    drop) needs the run's own records: Blocked chip / committed-model
+    check per Kiro.
+
 Pickup: discovery-service restart only. OPEN: transfer-proc invocation shape
 (estate grep), Blocked-101 breakdown, FindingEmitter persist errors (~476).
 
