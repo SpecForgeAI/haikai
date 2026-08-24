@@ -266,14 +266,21 @@ export interface DispatchExpansionIndex {
 }
 
 /** Aligned with the scan emitter (2026-08-21 Item 4; tiered 2026-08-23). */
-const DISPATCH_EXPANSION_CAP = 12;
+function capFromEnv(name: string, fallback: number): number {
+  const raw = Number(process.env[name]);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : fallback;
+}
+
+// 2026-08-24 cap policy (mirrors discovery's effectCandidateEmitter): caps
+// bound pathological name-collision unions only — generous, env-tunable.
+const DISPATCH_EXPANSION_CAP = capFromEnv('HAIKAI_DISPATCH_CAP_UNKNOWN', 40);
 /** KNOWN-receiver-class dispatch (a real interface/abstract with many
  *  implementations — the legacy criteria/visitor pattern) gets headroom:
  *  the live estate's `Criteria#match(T)` has 19 implementations and the
  *  flat cap of 12 severed EVERY hierarchy chain behind it (2026-08-23).
  *  The strict cap stays for `?`-receivers, where name-only matching can
  *  genuinely union strangers. */
-const KNOWN_CLASS_DISPATCH_CAP = 40;
+const KNOWN_CLASS_DISPATCH_CAP = capFromEnv('HAIKAI_DISPATCH_CAP_KNOWN', 120);
 
 export function buildDispatchIndex(contracts: SclContractDto[]): DispatchExpansionIndex {
   const tablesByNameArity = new Map<string, string[]>();
@@ -373,7 +380,8 @@ export function unresolvedReason(
       (expansion.boundariesByOpName.get(name) ?? []).length;
   const cap = clsFqn === '?' ? DISPATCH_EXPANSION_CAP : KNOWN_CLASS_DISPATCH_CAP;
   if (total > cap) {
-    return `${total} name-matched candidates exceed the expansion cap ${cap}`;
+    const knob = clsFqn === '?' ? 'HAIKAI_DISPATCH_CAP_UNKNOWN' : 'HAIKAI_DISPATCH_CAP_KNOWN';
+    return `${total} name-matched candidates exceed the expansion cap ${cap} (raise ${knob} to widen)`;
   }
   if (clsFqn === '?') {
     return 'receiver type could not be determined at scan time (chained/ternary/array receiver)';

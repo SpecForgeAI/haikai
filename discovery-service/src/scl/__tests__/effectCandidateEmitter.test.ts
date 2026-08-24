@@ -714,15 +714,29 @@ describe('verb-agnostic effect chains (2026-08-22)', () => {
     ).toEqual(['deal_book']);
     expect(result.chainBreaks).toHaveLength(0);
 
-    // The SAME fan-out behind an unknown receiver stays refused (loud).
+    // 2026-08-24 cap policy: a 19-impl fan-out expands even behind an
+    // UNKNOWN receiver (default cap 40) — ordinary fan-out is never
+    // rationed. The refusal path still exists above the knob-tunable cap,
+    // and the message names the knob.
     const blindResult = deriveCorpusEffectCandidates({
       corpus: makeCorpus('?#match(?)'),
       runId: 'run-1',
       runCandidates: [endpointCandidate('listHier', 'GET', '/api/hier')],
     });
-    expect(blindResult.candidates).toHaveLength(0);
-    expect(blindResult.chainBreaks).toHaveLength(1);
-    expect(blindResult.chainBreaks[0].broken_calls[0]).toContain('exceed the expansion cap 12');
+    expect(
+      blindResult.candidates.map((c) => (c.data as Record<string, unknown>).dataEntityName),
+    ).toEqual(['deal_book']);
+    expect(blindResult.chainBreaks).toHaveLength(0);
+
+    const refusal = unresolvedReason('?#match(?)', {
+      tablesByNameArity: new Map([['match/1', Array.from({ length: 41 }, (_, i) => `T-${i}`)]]),
+      tablesByName: new Map(),
+      boundariesByOpName: new Map(),
+      classFqnsInCorpus: new Set(),
+      tablesByClassNameArity: new Map(),
+    } as never);
+    expect(refusal).toContain('exceed the expansion cap 40');
+    expect(refusal).toContain('HAIKAI_DISPATCH_CAP_UNKNOWN');
   });
 
   it('reads derived through a cache-bridge row carry via_legacy_cache (decision evidence)', () => {
