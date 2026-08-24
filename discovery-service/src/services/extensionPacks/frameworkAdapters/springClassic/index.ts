@@ -959,6 +959,11 @@ function processController(
     {
       basePath,
       controllerType,
+      // @RestController IS a REST API (Kiro 2026-08-24, same gap as the JAX-RS
+      // detector). A plain @Controller is deliberately left unset: it may serve
+      // MVC views rather than a REST contract, and guessing there would put a
+      // wrong value in the model instead of an honest QUALITY_GAP prompt.
+      ...(controllerType === 'RestController' ? { interface_type: 'REST_API' } : {}),
       className: cls.name,
       packageName: file.packageOrNamespace,
     },
