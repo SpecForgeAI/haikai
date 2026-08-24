@@ -157,8 +157,16 @@ type LibraryScanRow = {
 type PhaseEntry = {
   key: string;
   summary: string;
+  /** Pretty-printed payload for the EXPANDED view. */
+  pretty: string;
+  /** True when the payload is long enough to warrant collapse (the phase
+   *  JSON has grown large enough to dominate the page's vertical scroll). */
+  collapsible: boolean;
   libraryScans?: LibraryScanRow[];
 };
+
+/** Collapsed-preview length for a phase payload. */
+const PHASE_PREVIEW_CHARS = 180;
 
 const TAB_QUERY_PARAM = 'tab';
 
@@ -253,6 +261,18 @@ export const DiscoveryRunDetailPage: React.FC = () => {
   const [selectedRun, setSelectedRun] = useState<DiscoveryRunDto | null>(null);
   const [detailLoading, setDetailLoading] = useState<boolean>(false);
   const [candidateCount, setCandidateCount] = useState<number | null>(null);
+  // Phase-payload JSON collapse (2026-08-24): the database/code step
+  // payloads have grown large enough to dominate the page scroll -- each
+  // phase renders a one-line preview by default, expandable on demand.
+  const [expandedPhases, setExpandedPhases] = useState<Set<string>>(new Set());
+  const togglePhaseExpanded = useCallback((key: string) => {
+    setExpandedPhases((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
   const [candidates, setCandidates] = useState<DiscoveryCandidateDto[]>([]);
   const [candidatesLoading, setCandidatesLoading] = useState<boolean>(false);
   const [candidatesError, setCandidatesError] = useState<string | null>(null);
@@ -768,10 +788,75 @@ export const DiscoveryRunDetailPage: React.FC = () => {
   // -----------------------------------------------------------------------
   // Derived render values.
   // -----------------------------------------------------------------------
+  /** Collapsed one-line preview + toggle, or the full pretty JSON. Short
+   *  payloads render inline with no toggle. */
+  const renderPhasePayload = (entry: PhaseEntry): React.ReactNode => {
+    if (!entry.collapsible) {
+      return <span className={styles.phaseValue}>{entry.summary}</span>;
+    }
+    const expanded = expandedPhases.has(entry.key);
+    return (
+      <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 4, minWidth: 0, flex: 1 }}>
+        <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center', minWidth: 0 }}>
+          <button
+            type="button"
+            onClick={() => togglePhaseExpanded(entry.key)}
+            data-testid={`phase-json-toggle-${entry.key}`}
+            style={{
+              border: '1px solid #c5cae9',
+              background: '#f5f6fb',
+              borderRadius: 4,
+              padding: '1px 8px',
+              cursor: 'pointer',
+              fontSize: 12,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {expanded ? 'Collapse' : `Expand (${entry.summary.length.toLocaleString()} chars)`}
+          </button>
+          {!expanded && (
+            <span
+              className={styles.phaseValue}
+              data-testid={`phase-json-preview-${entry.key}`}
+              style={{
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                minWidth: 0,
+              }}
+            >
+              {entry.summary.slice(0, PHASE_PREVIEW_CHARS)}
+            </span>
+          )}
+        </span>
+        {expanded && (
+          <pre
+            data-testid={`phase-json-full-${entry.key}`}
+            style={{
+              margin: 0,
+              padding: 8,
+              background: '#f7f7f9',
+              border: '1px solid #e0e0e6',
+              borderRadius: 4,
+              fontSize: 12,
+              maxHeight: 420,
+              overflow: 'auto',
+              whiteSpace: 'pre-wrap',
+              overflowWrap: 'anywhere',
+            }}
+          >
+            {entry.pretty}
+          </pre>
+        )}
+      </span>
+    );
+  };
+
   const phaseEntries: PhaseEntry[] = [];
   if (selectedRun?.steps_payload) {
     for (const [key, value] of Object.entries(selectedRun.steps_payload)) {
       const summary = typeof value === 'string' ? value : JSON.stringify(value);
+      const pretty = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
       let libraryScans: LibraryScanRow[] | undefined;
       if (
         value !== null &&
@@ -782,7 +867,13 @@ export const DiscoveryRunDetailPage: React.FC = () => {
           'library-scans'
         ] as LibraryScanRow[];
       }
-      phaseEntries.push({ key, summary, libraryScans });
+      phaseEntries.push({
+        key,
+        summary,
+        pretty,
+        collapsible: summary.length > PHASE_PREVIEW_CHARS,
+        libraryScans,
+      });
     }
   }
 
@@ -1335,9 +1426,7 @@ export const DiscoveryRunDetailPage: React.FC = () => {
                               }}
                             >
                               <span className={styles.phaseKey}>{key}:</span>
-                              <span className={styles.phaseValue}>
-                                {summary}
-                              </span>
+                              {renderPhasePayload(entry)}
                               <span
                                 className={`${styles.statusBadge} ${styles.statusPending}`}
                                 data-testid="library-scans-pending-counter"
@@ -1416,7 +1505,7 @@ export const DiscoveryRunDetailPage: React.FC = () => {
                       return (
                         <li key={key} className={styles.phaseItem}>
                           <span className={styles.phaseKey}>{key}:</span>
-                          <span className={styles.phaseValue}>{summary}</span>
+                          {renderPhasePayload(entry)}
                         </li>
                       );
                     })}
