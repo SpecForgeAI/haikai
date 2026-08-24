@@ -2943,18 +2943,33 @@ async function startServiceScopedRun(
       if (structural.corpus) {
         try {
           const emissionStart = Date.now();
+          // Hoisted ahead of derivation (Kiro 2026-08-24): the committed
+          // physical-table vocabulary now guards the DETERMINISTIC phase too,
+          // not just the LLM proposals. Without it, `mineSqlFromMethod`'s
+          // literal-join phantoms (`db`, `the`, cache-index field names,
+          // ...) became edges that could only ever be BLOCKED at save-back with
+          // nothing an operator could set. A null/empty vocabulary leaves the
+          // guard OFF, so a DB-scan-less project behaves exactly as before.
+          const vocabulary = await fetchCommittedTableVocabulary(projectId, architectureId);
           const derivedPhase = deriveCorpusEffectCandidates({
             corpus: structural.corpus,
             runId,
             runCandidates: allCandidates,
+            tableVocabulary: vocabulary,
           });
+          if (derivedPhase.droppedUnknownTables.length > 0) {
+            console.log(
+              `[RunManager:service-scoped] Effect vocabulary guard: dropped ` +
+                `${derivedPhase.droppedUnknownTables.length} unknown table token(s) — ` +
+                `${derivedPhase.droppedUnknownTables.slice(0, 12).join(', ')}`,
+            );
+          }
           let proposalPhase: import('../scl/effectCandidateEmitter').ProposeResult = {
             candidates: [],
             unproposed: [],
             llmCalls: 0,
           };
           if (derivedPhase.uncovered.length > 0) {
-            const vocabulary = await fetchCommittedTableVocabulary(projectId, architectureId);
             if (vocabulary && vocabulary.length > 0) {
               proposalPhase = await proposeEffectCandidatesViaLlm({
                 runId,
@@ -3016,6 +3031,10 @@ async function startServiceScopedRun(
             emittedTotal: emitted.length,
             saved: savedCount,
             saveFailures,
+            // Vocabulary-guard receipt: phantom/out-of-model table tokens
+            // refused at source rather than surfacing as unfixable BLOCKED
+            // candidates at save-back.
+            droppedUnknownTables: derivedPhase.droppedUnknownTables,
             readMapped: derivedPhase.readMapped,
             internalWalked: derivedPhase.internalWalked.length,
             provenRead: derivedPhase.provenRead.length,

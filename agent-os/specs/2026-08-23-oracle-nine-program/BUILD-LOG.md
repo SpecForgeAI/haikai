@@ -272,6 +272,23 @@ vs FQN); (e) fresh project = fresh model, no carried edges. Fixes:
     idempotent, order-independent, null-mode nullish equality). mcp full
     sweep 78/537 green. Restart: mcp-server.
 
+15. **Kiro on-machine fixes replicated (round 8): vocabulary guard +
+    interface_type** — (1) the committed physical-table vocabulary now
+    guards the DETERMINISTIC effect phase too (the LLM phase always was):
+    mineSqlFromMethod's literal join manufactures phantom table tokens
+    that could only ever be BLOCKED at save-back (~40 of 86 blocked
+    candidates, nothing an operator could set). deriveCorpusEffectCandidates
+    gains tableVocabulary (null = guard OFF, legacy/backfill path);
+    emitWrite/emitRead + readAnywhereTables gated; droppedUnknownTables
+    receipt (cap 100) on the result + run payload + a dropped-tokens log;
+    runManager hoists the vocabulary fetch above derivation (moved, not
+    duplicated — LLM phase reuses it). (2) interface_type: JAX-RS resource
+    + @RestController emit REST_API (only the SOAP emitter ever set the
+    field — every REST interface committed null = hand-filled
+    QUALITY_GAP); plain @Controller deliberately left unset (may serve MVC
+    views — honest gap beats a guessed value). New suites at Kiro's
+    counts: vocabularyGuard (4), springClassicInterfaceType (3).
+
 Pickup: discovery-service restart only. OPEN: transfer-proc invocation shape
 (estate grep), Blocked-101 breakdown, FindingEmitter persist errors (~476).
 

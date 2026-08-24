@@ -358,6 +358,11 @@ export function detectJaxRsResource(
         // `interfaces` drop-list filter does NOT mistake it for config.
         controllerType: 'JaxRsResource',
         interfaceSubtype: 'jaxrs-resource',
+        // A JAX-RS resource IS a REST API (Kiro 2026-08-24). Only the SOAP
+        // emitter ever set `interface_type`, so every JAX-RS resource class
+        // committed with the field null and surfaced as a save-back
+        // QUALITY_GAP the operator had to fill in by hand.
+        interface_type: 'REST_API',
         className: cls.name,
         packageName: file.packageOrNamespace,
       },

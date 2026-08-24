@@ -931,6 +931,12 @@ export interface DeriveResult {
    *  boundary ops + terminal verbatims + proc bodies. Blocks the write-only
    *  bucket for tables that are read somewhere the rooting cannot see. */
   readAnywhereTables: string[];
+  /** Table tokens the vocabulary guard refused — parser phantoms from
+   *  `mineSqlFromMethod`'s literal join, plus any genuinely out-of-model table
+   *  (Sybase `sysobjects`, `temp_*` working tables). LOUD, not silent: these
+   *  used to ride through and surface as unfixable BLOCKED candidates at
+   *  save-back. Capped 100, empty when no vocabulary was supplied. */
+  droppedUnknownTables: string[];
 }
 
 function normName(value: unknown): string {
@@ -1137,6 +1143,14 @@ function collectFromRootKeys(
 export function deriveCorpusEffectCandidates(args: {
   corpus: SclCorpus;
   runId: string;
+  /** Committed physical-table names (Kiro 2026-08-24). The LLM proposal phase
+   *  has always been vocabulary-guarded; the DETERMINISTIC phase was not, so
+   *  parser phantoms rode through as real edges and could only ever be BLOCKED
+   *  at save-back ("could not resolve data_entity side"). Supplying the
+   *  vocabulary drops them at source and records them on `droppedUnknownTables`.
+   *  Omit / pass null to keep the old unguarded behaviour (the gateway backfill
+   *  recovery path and unit fixtures have no model to read). */
+  tableVocabulary?: string[] | null;
   runCandidates: DiscoveryCandidate[];
 }): DeriveResult {
   const index = indexCorpus(args.corpus);
@@ -1158,6 +1172,30 @@ export function deriveCorpusEffectCandidates(args: {
     const mode = normName(data?.access_mode) || 'write';
     if (mode === 'write') minedWriteCovered.add(name);
   }
+
+  // Vocabulary guard (Kiro 2026-08-24). `mineSqlFromMethod` space-joins EVERY
+  // string literal in a method before the table regexes run, so a non-SQL
+  // literal sitting next to a SQL one yields a phantom table token (`db`,
+  // `the`, bare fragment words, cache-index field names, staging-prefix
+  // stubs on this estate). Those cannot resolve at save-back, so they
+  // surfaced as ~40 of 86 BLOCKED candidates with nothing an operator could
+  // set. Dropping them here is loss-free: an edge naming a table the model
+  // does not carry could never have committed. Absent vocabulary -> guard
+  // OFF (unguarded legacy path).
+  const knownTables =
+    args.tableVocabulary && args.tableVocabulary.length > 0
+      ? new Set(args.tableVocabulary.map((t) => t.trim().toLowerCase()).filter((t) => t.length > 0))
+      : null;
+  const droppedUnknown = new Set<string>();
+  const isKnownTable = (table: string): boolean => {
+    if (!knownTables) return true;
+    if (knownTables.has(normName(table))) return true;
+    // Normalised: the edge path sees tokens as parsed (mixed case) while
+    // the readAnywhere path sees them already lowercased, so recording verbatim
+    // would list the same phantom twice.
+    droppedUnknown.add(normName(table));
+    return false;
+  };
 
   const candidates: DiscoveryCandidate[] = [];
   const uncovered: UncoveredWriteEndpoint[] = [];
@@ -1219,6 +1257,7 @@ export function deriveCorpusEffectCandidates(args: {
   });
 
   const emitWrite = (endpointName: string, table: string, detail: Record<string, unknown>) => {
+    if (!isKnownTable(table)) return;
     const edge = `${normName(endpointName)}|${normName(table)}|write`;
     if (existingEdges.has(edge)) return;
     existingEdges.add(edge);
@@ -1239,6 +1278,7 @@ export function deriveCorpusEffectCandidates(args: {
     derivation: string,
     detail: Record<string, unknown>,
   ) => {
+    if (!isKnownTable(table)) return;
     const edge = `${normName(endpointName)}|${normName(table)}|read`;
     if (existingEdges.has(edge)) return;
     existingEdges.add(edge);
@@ -1435,7 +1475,11 @@ export function deriveCorpusEffectCandidates(args: {
     procCatalogCount: index.procCatalogCount,
     procsUnreferenced,
     orphanProcTouchers: cappedOrphanTouchers,
-    readAnywhereTables: [...readAnywhere].sort(),
+    // Same vocabulary guard as the edges: an unknown token here is a parser
+    // phantom, and this list gates the foundations WRITE-ONLY bucket — leaving
+    // phantoms in over-fed the refusal set.
+    readAnywhereTables: [...readAnywhere].filter((t) => isKnownTable(t)).sort(),
+    droppedUnknownTables: [...droppedUnknown].sort().slice(0, 100),
   };
 }
 
