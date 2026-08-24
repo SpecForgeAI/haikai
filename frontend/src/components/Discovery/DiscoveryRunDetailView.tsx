@@ -148,6 +148,10 @@ function isRunDegraded(run: DiscoveryRunDto | null): boolean {
 // ============================================================================
 
 export interface DiscoveryRunDetailViewProps {
+  /** Bumped by the parent's Refresh button: remounts the self-fetching
+   *  tab panels (Findings / Structural Model) so the ACTIVE tab's contents
+   *  refresh too — not just the run detail. */
+  tabContentRefreshKey?: number;
   projectId: string;
   /**
    * Active architecture id from the URL. Used to scope the Findings tab
@@ -252,6 +256,7 @@ export interface DiscoveryRunDetailViewProps {
 // ============================================================================
 
 export const DiscoveryRunDetailView: React.FC<DiscoveryRunDetailViewProps> = ({
+  tabContentRefreshKey,
   projectId,
   architectureId,
   selectedRun,
@@ -401,6 +406,7 @@ export const DiscoveryRunDetailView: React.FC<DiscoveryRunDetailViewProps> = ({
     }
     return (
       <FindingsTab
+        key={`findings-${tabContentRefreshKey ?? 0}`}
         projectId={projectId}
         architectureId={runArchitectureId}
         runId={runId}
@@ -415,6 +421,7 @@ export const DiscoveryRunDetailView: React.FC<DiscoveryRunDetailViewProps> = ({
     runArchitectureId,
     onOpenLinkedTarget,
     initialFindingId,
+    tabContentRefreshKey,
   ]);
 
   return (
@@ -520,6 +527,7 @@ export const DiscoveryRunDetailView: React.FC<DiscoveryRunDetailViewProps> = ({
             architecture, not the discovery run), so it needs no selectedRun. */}
         {activeTab === 'structural-model' && (
           <StructuralModelTab
+            key={`scl-${tabContentRefreshKey ?? 0}`}
             projectId={projectId}
             architectureId={runArchitectureId}
           />

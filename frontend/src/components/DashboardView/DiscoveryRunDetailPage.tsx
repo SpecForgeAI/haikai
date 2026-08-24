@@ -265,6 +265,13 @@ export const DiscoveryRunDetailPage: React.FC = () => {
   // payloads have grown large enough to dominate the page scroll -- each
   // phase renders a one-line preview by default, expandable on demand.
   const [expandedPhases, setExpandedPhases] = useState<Set<string>>(new Set());
+  // Refresh must also refresh the ACTIVE TAB's contents (2026-08-24 bug:
+  // after a run completed, Refresh updated the run detail but the
+  // already-selected Candidates tab stayed stale until the user switched
+  // away and back). Candidates refetch directly; Findings/Structural Model
+  // self-fetch on mount, so bumping this nonce remounts the active panel —
+  // the exact mechanism the away-and-back workaround used.
+  const [tabRefreshNonce, setTabRefreshNonce] = useState(0);
   const togglePhaseExpanded = useCallback((key: string) => {
     setExpandedPhases((prev) => {
       const next = new Set(prev);
@@ -537,12 +544,20 @@ export const DiscoveryRunDetailPage: React.FC = () => {
       if (runArchitectureId) {
         void refreshSelectedRunDetail(runId, runArchitectureId);
       }
+      // Active-tab content refresh: candidates are page-held state — refetch
+      // them directly; the other tabs remount via the nonce below.
+      if (activeTab === 'candidates') {
+        void fetchCandidatesForRun(runId);
+      }
     }
+    setTabRefreshNonce((n) => n + 1);
   }, [
     fetchRunList,
     runId,
     selectedRun?.architecture_id,
     activeArchitectureId,
+    activeTab,
+    fetchCandidatesForRun,
     refreshSelectedRunDetail,
   ]);
 
@@ -1403,7 +1418,7 @@ export const DiscoveryRunDetailPage: React.FC = () => {
                   </div>
                   <ul className={styles.phaseList} data-testid="phase-list">
                     {phaseEntries.map((entry) => {
-                      const { key, summary, libraryScans } = entry;
+                      const { key, libraryScans } = entry;
                       if (libraryScans && libraryScans.length > 0) {
                         const pending = libraryScans.filter(
                           (r) => r.status === 'pending' || r.status === 'running',
@@ -1530,6 +1545,7 @@ export const DiscoveryRunDetailPage: React.FC = () => {
                 onCandidatesChange={setCandidates}
                 activeTab={activeTab}
                 onTabChange={handleTabChange}
+                tabContentRefreshKey={tabRefreshNonce}
                 initialFindingId={initialFindingId}
                 initialReviewRoomOpen={initialReviewRoomOpen}
                 candidatesTabHeader={candidatesTabHeader}
