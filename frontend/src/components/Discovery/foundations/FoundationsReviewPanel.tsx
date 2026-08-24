@@ -48,6 +48,8 @@ export interface FoundationsReviewPanelProps {
   /** table(lower) -> caller-less proc touchers from the code run's
    *  emission summary — annotates the never-touched card (code mode). */
   orphanProcTouchers?: Record<string, string[]>;
+  /** Corpus-wide unrooted read facts — refuses the write-only bucket. */
+  readAnywhereTables?: string[];
 }
 
 const cardStyle: React.CSSProperties = {
@@ -66,6 +68,7 @@ export const FoundationsReviewPanel: React.FC<FoundationsReviewPanelProps> = ({
   onApplied,
   modelRefreshKey,
   orphanProcTouchers,
+  readAnywhereTables,
 }) => {
   const [decisions, setDecisions] = useState<FoundationDecisionDto[]>([]);
   const [decisionsLoaded, setDecisionsLoaded] = useState(false);
@@ -145,7 +148,7 @@ export const FoundationsReviewPanel: React.FC<FoundationsReviewPanelProps> = ({
           evidence_hash: d.evidence_hash,
           stale: d.stale,
         })),
-        { orphanProcTouchers },
+        { orphanProcTouchers, readAnywhereTables },
       );
     }
     if (facts.length === 0) return [];
@@ -161,7 +164,7 @@ export const FoundationsReviewPanel: React.FC<FoundationsReviewPanelProps> = ({
         stale: d.stale,
       })),
     );
-  }, [facts, decisions, decisionsLoaded, mode, rawModel, orphanProcTouchers]);
+  }, [facts, decisions, decisionsLoaded, mode, rawModel, orphanProcTouchers, readAnywhereTables]);
 
   useEffect(() => {
     const stale: string[] = [];

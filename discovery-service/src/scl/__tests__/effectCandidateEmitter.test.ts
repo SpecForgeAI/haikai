@@ -792,6 +792,72 @@ describe('verb-agnostic effect chains (2026-08-22)', () => {
     expect(result.orphanProcTouchers).toEqual({});
   });
 
+  it('Kiro bugs 1+2: read+write coexist; tables attribute per reached OPERATION', () => {
+    const corpus = corpusOf([
+      behaviourTable({
+        key: 'T-both',
+        symbol: 'FilterService#save',
+        annotations: ['@GET', '@Path("flt")'],
+        callTargets: [],
+      }),
+      behaviourTable({
+        key: 'T-readonly',
+        symbol: 'FilterService#list',
+        annotations: ['@GET', '@Path("flt2")'],
+        callTargets: [],
+      }),
+      boundary({
+        key: 'Q-dao',
+        symbol: 'FilterDao',
+        sql: ['update screen_filter set x = 1', 'select name from screen_filter'],
+      }),
+    ]);
+    (corpus.contracts[0] as { contract: { rows: unknown[] } }).contract.rows.push(
+      {
+        index: 0,
+        kind: 'terminal',
+        conditionVerbatim: null,
+        conditionRef: null,
+        outcome: { type: 'call', targetKey: 'Q-dao', targetSymbol: 'FilterDao#op0' },
+      },
+      {
+        index: 1,
+        kind: 'terminal',
+        conditionVerbatim: null,
+        conditionRef: null,
+        outcome: { type: 'call', targetKey: 'Q-dao', targetSymbol: 'FilterDao#op1' },
+      },
+    );
+    (corpus.contracts[1] as { contract: { rows: unknown[] } }).contract.rows.push({
+      index: 0,
+      kind: 'terminal',
+      conditionVerbatim: null,
+      conditionRef: null,
+      outcome: { type: 'call', targetKey: 'Q-dao', targetSymbol: 'FilterDao#op1' },
+    });
+    const result = deriveCorpusEffectCandidates({
+      corpus,
+      runId: 'run-1',
+      runCandidates: [
+        endpointCandidate('saveFlt', 'GET', '/api/flt'),
+        endpointCandidate('listFlt', 'GET', '/api/flt2'),
+      ],
+    });
+    const edges = result.candidates.map((c) => {
+      const data = c.data as Record<string, unknown>;
+      return `${data.endpointName}|${data.access_mode}:${String(data.dataEntityName).toLowerCase()}`;
+    });
+    // Bug 1: the endpoint reaching BOTH ops gets BOTH edges on the table.
+    expect(edges).toContain('saveFlt|write:screen_filter');
+    expect(edges).toContain('saveFlt|read:screen_filter');
+    // Bug 2: the endpoint reaching ONLY the read op gets NO write edge —
+    // the DAO-class union must not leak op0's write onto it.
+    expect(edges).toContain('listFlt|read:screen_filter');
+    expect(edges).not.toContain('listFlt|write:screen_filter');
+    // Backstop: unrooted corpus-wide read facts are surfaced.
+    expect(result.readAnywhereTables).toContain('screen_filter');
+  });
+
   it('reads derived through a cache-bridge row carry via_legacy_cache (decision evidence)', () => {
     const corpus = corpusOf([
       behaviourTable({

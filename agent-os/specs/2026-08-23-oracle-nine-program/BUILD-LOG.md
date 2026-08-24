@@ -151,6 +151,21 @@ vs FQN); (e) fresh project = fresh model, no carried edges. Fixes:
    Kiro verdicts on the other 10 match the tool's dark-list categories
    EXACTLY (manual-proc / dead attr / DDL lookups / external tool).
 
+8. **Kiro 19-endpoint audit fixes (5 bugs)** — (1) read edges no longer
+   suppressed when the endpoint also writes the table (read-write tables
+   were guaranteed audit-sink misclassifications — parity would have
+   SKIPPED the authorization list + sequence table); (2) boundary tables
+   attribute PER REACHED OPERATION (walkCallGraph carries boundaryOps;
+   per-op sets incl. own proc closure; class union = fallback only);
+   (3) FE read-write mode counts as BOTH read and write evidence;
+   (4) jil-resolved mains with no endpoint candidate are rescue-minted as
+   BATCH_MAIN roots (schedulerSummary.mintedRoots); (5) orphan annotation
+   caps per-table proc list (10) not table count (alphabetical 100-cut had
+   dropped the ven_* explanations). PLUS the defensive backstop:
+   corpus-wide UNROOTED readAnywhereTables in the payload — the FE
+   write-only bucket REFUSES tables read anywhere in parsed SQL, refusal
+   counted in the card detail.
+
 Pickup: discovery-service restart only. OPEN: transfer-proc invocation shape
 (estate grep), Blocked-101 breakdown, FindingEmitter persist errors (~476).
 
