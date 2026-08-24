@@ -573,9 +573,11 @@ export function resolveBulkActionSet(
     cascaded_candidates: cascadedCount,
     total_findings: resolvedFindings.length,
     run_total_candidates:
-      typeof aggregations.total_candidates === 'number'
-        ? aggregations.total_candidates
-        : null,
+      typeof aggregations.total_candidates_all_types === 'number'
+        ? aggregations.total_candidates_all_types
+        : typeof aggregations.total_candidates === 'number'
+          ? aggregations.total_candidates
+          : null,
     run_total_findings:
       typeof aggregations.total_findings === 'number'
         ? aggregations.total_findings

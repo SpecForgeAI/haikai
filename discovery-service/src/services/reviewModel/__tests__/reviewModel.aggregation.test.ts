@@ -95,10 +95,37 @@ describe('Group 2 — aggregation dimensions', () => {
     ]);
   }
 
+  test('total_candidates_all_types counts nodes PLUS relationship rows (2026-08-24 modal fix)', () => {
+    const svc = candidate({ id: 'svc', candidateType: 'service', name: 'Svc' });
+    const ep = candidate({ id: 'ep', candidateType: 'endpoints', name: 'GET /x' });
+    const effect1 = candidate({
+      id: 'fx1',
+      candidateType: 'endpoint_data_effects',
+      name: 'GET /x -> deal_book (read)',
+      data: { endpointName: 'GET /x', dataEntityName: 'deal_book', access_mode: 'read' },
+    });
+    const effect2 = candidate({
+      id: 'fx2',
+      candidateType: 'endpoint_data_effects',
+      name: 'GET /x -> org_registry (write)',
+      data: { endpointName: 'GET /x', dataEntityName: 'org_registry', access_mode: 'write' },
+    });
+    const model = buildReviewModel([
+      { run_id: 'run-code', scan_kind: 'code', candidates: [svc, ep, effect1, effect2], findings: [] },
+    ]);
+    // Effect rows are edges, never nodes — the node total excludes them...
+    expect(model.aggregations.total_candidates).toBe(2);
+    // ...but they ARE selectable candidates, so the all-types total counts
+    // them (the "1407 of 820" contradiction came from mixing these two).
+    expect(model.aggregations.total_candidates_all_types).toBe(4);
+  });
+
   test('counts by every dimension match the hand-computed fixture', () => {
     const agg = buildFixture().aggregations;
 
     expect(agg.total_candidates).toBe(3);
+    // No relationship rows in this fixture -> all-types equals node count.
+    expect(agg.total_candidates_all_types).toBe(3);
     expect(agg.total_findings).toBe(2);
 
     expect(agg.by_candidate_type).toEqual({ service: 1, endpoints: 2 });

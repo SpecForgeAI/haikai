@@ -205,6 +205,9 @@ export interface ReviewFindingNode {
 export interface ReviewModelAggregations {
   /** Total candidate node count (excludes findings). */
   total_candidates?: number;
+  /** Nodes PLUS relationship-row candidates — the selectable-row total the
+   *  bulk preview's "x of N" uses (node-only total undercounts). */
+  total_candidates_all_types?: number;
   /** Total finding count. */
   total_findings?: number;
   /** Committed candidates across the whole run. */

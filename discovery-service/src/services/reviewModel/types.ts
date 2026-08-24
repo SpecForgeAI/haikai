@@ -310,6 +310,13 @@ export interface NodeMetric {
 export interface ReviewModelAggregations {
   /** Total candidate node count (excludes findings). */
   total_candidates: number;
+  /** Total candidate count of ALL selectable types — nodes PLUS
+   *  relationship-row candidates (endpoint_data_effects etc., which the
+   *  graph models as edges). The bulk-action preview's "x of N" must use
+   *  THIS (2026-08-24: a select-all of 1407 candidates rendered as
+   *  "1407 of 820" because the node-only total excluded 586 effect
+   *  rows — numerator and denominator counted different populations). */
+  total_candidates_all_types: number;
   /** Total finding count. */
   total_findings: number;
 
