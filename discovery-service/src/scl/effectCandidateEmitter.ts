@@ -136,18 +136,57 @@ const WRITE_SQL_PATTERNS: RegExp[] = [
   /\btruncate\s+table\s+([A-Za-z0-9_."\[\]$#]+)/gi,
 ];
 
+/** Sybase aliased delete: `delete <alias> from <table> <alias>, ...`. The
+ *  plain `delete from X` form stays with WRITE_SQL_PATTERNS. */
+const ALIASED_DELETE_RE = /\bdelete\s+([A-Za-z0-9_."\[\]$#]+)\s+from\b/gi;
+
+/**
+ * alias(lower) -> table for every `FROM <table> [as] <alias>` pair in the
+ * string (comma lists included). Lets the write parser resolve the Sybase
+ * ALIASED UPDATE/DELETE forms (`update tr set ... from org_registry tr`)
+ * to the REAL table instead of recording the alias as a phantom table
+ * (2026-08-24 shakedown: phantom alias writes rode proc catalogs into
+ * effect candidates and were then BLOCKED at save as unknown entities).
+ */
+function fromAliasMap(sql: string): Map<string, string> {
+  const map = new Map<string, string>();
+  walkFromClauses(sql, ({ table, alias }) => {
+    if (!alias) return;
+    const cleanTable = bareTableToken(table);
+    if (!cleanTable) return;
+    const key = alias.toLowerCase();
+    if (!map.has(key)) map.set(key, cleanTable);
+  });
+  return map;
+}
+
 /** Distinct written-table tokens from one verbatim SQL string. */
 export function parseWriteTablesFromSql(sql: string | null | undefined): string[] {
   if (!sql) return [];
+  const aliases = fromAliasMap(sql);
   const found: string[] = [];
+  const push = (raw: string) => {
+    const token = bareTableToken(raw);
+    if (!token || token.startsWith('#') || token.startsWith('@')) return;
+    // An update/delete target that is actually a FROM-list ALIAS resolves to
+    // its real table; unknown tokens pass through unchanged.
+    const resolved = aliases.get(token.toLowerCase()) ?? token;
+    if (!found.some((t) => t.toLowerCase() === resolved.toLowerCase())) found.push(resolved);
+  };
   for (const pattern of WRITE_SQL_PATTERNS) {
     pattern.lastIndex = 0;
     let match: RegExpExecArray | null;
     while ((match = pattern.exec(sql)) !== null) {
-      const token = bareTableToken(match[1]);
-      if (!token || token.startsWith('#') || token.startsWith('@')) continue;
-      if (!found.some((t) => t.toLowerCase() === token.toLowerCase())) found.push(token);
+      push(match[1]);
     }
+  }
+  ALIASED_DELETE_RE.lastIndex = 0;
+  let deleteMatch: RegExpExecArray | null;
+  while ((deleteMatch = ALIASED_DELETE_RE.exec(sql)) !== null) {
+    // `delete from X` matches this shape with the token "from" -- that plain
+    // form is already handled above.
+    if (deleteMatch[1].toLowerCase() === 'from') continue;
+    push(deleteMatch[1]);
   }
   return found;
 }
@@ -181,6 +220,49 @@ const FROM_ALIAS_TOKEN_RE = /^[A-Za-z_][A-Za-z0-9_]*/;
  * it stops at the first token that is not `<table> [alias] [,]`, so
  * subselects, hints, and clause keywords never get captured as tables.
  */
+/** Walk every FROM clause comma list, reporting each `<table> [as]
+ *  [alias]` pair (alias null when absent). `deleteFrom` marks the
+ *  `DELETE FROM x` occurrence so read extraction can skip it. */
+function walkFromClauses(
+  sql: string,
+  visit: (entry: { table: string; alias: string | null; deleteFrom: boolean }) => void,
+): void {
+  FROM_KEYWORD_RE.lastIndex = 0;
+  let fromMatch: RegExpExecArray | null;
+  while ((fromMatch = FROM_KEYWORD_RE.exec(sql)) !== null) {
+    const before = sql.slice(Math.max(0, fromMatch.index - 12), fromMatch.index);
+    const deleteFrom = /delete\s*$/i.test(before);
+    let pos = fromMatch.index + fromMatch[0].length;
+    // Walk `<table> [as] [alias] , <table> ...` until the list ends.
+    for (;;) {
+      const tableMatch = FROM_TABLE_TOKEN_RE.exec(sql.slice(pos));
+      if (!tableMatch) break;
+      const rawTable = tableMatch[0];
+      if (FROM_LIST_STOP_WORDS.has(rawTable.toLowerCase())) break;
+      pos += rawTable.length;
+      pos += (/^\s*/.exec(sql.slice(pos)) as RegExpExecArray)[0].length;
+      // Optional `as` keyword, then optional alias identifier.
+      let alias: string | null = null;
+      for (let aliasTurn = 0; aliasTurn < 2; aliasTurn += 1) {
+        const aliasMatch = FROM_ALIAS_TOKEN_RE.exec(sql.slice(pos));
+        if (!aliasMatch) break;
+        const word = aliasMatch[0].toLowerCase();
+        if (word !== 'as' && FROM_LIST_STOP_WORDS.has(word)) break;
+        pos += aliasMatch[0].length;
+        pos += (/^\s*/.exec(sql.slice(pos)) as RegExpExecArray)[0].length;
+        if (word !== 'as') {
+          alias = aliasMatch[0];
+          break;
+        }
+      }
+      visit({ table: rawTable, alias, deleteFrom });
+      if (sql[pos] !== ',') break;
+      pos += 1;
+      pos += (/^\s*/.exec(sql.slice(pos)) as RegExpExecArray)[0].length;
+    }
+  }
+}
+
 export function parseReadTablesFromSql(sql: string | null | undefined): string[] {
   if (!sql) return [];
   const found: string[] = [];
@@ -190,37 +272,11 @@ export function parseReadTablesFromSql(sql: string | null | undefined): string[]
     if (!found.some((t) => t.toLowerCase() === token.toLowerCase())) found.push(token);
   };
 
-  FROM_KEYWORD_RE.lastIndex = 0;
-  let fromMatch: RegExpExecArray | null;
-  while ((fromMatch = FROM_KEYWORD_RE.exec(sql)) !== null) {
+  walkFromClauses(sql, ({ table, deleteFrom }) => {
     // `DELETE FROM x` is a write, not a read.
-    const before = sql.slice(Math.max(0, fromMatch.index - 12), fromMatch.index);
-    if (/delete\s*$/i.test(before)) continue;
-    let pos = fromMatch.index + fromMatch[0].length;
-    // Walk `<table> [as] [alias] , <table> ...` until the list ends.
-    for (;;) {
-      const tableMatch = FROM_TABLE_TOKEN_RE.exec(sql.slice(pos));
-      if (!tableMatch) break;
-      const rawTable = tableMatch[0];
-      if (FROM_LIST_STOP_WORDS.has(rawTable.toLowerCase())) break;
-      push(rawTable);
-      pos += rawTable.length;
-      pos += (/^\s*/.exec(sql.slice(pos)) as RegExpExecArray)[0].length;
-      // Optional `as` keyword, then optional alias identifier.
-      for (let aliasTurn = 0; aliasTurn < 2; aliasTurn += 1) {
-        const aliasMatch = FROM_ALIAS_TOKEN_RE.exec(sql.slice(pos));
-        if (!aliasMatch) break;
-        const word = aliasMatch[0].toLowerCase();
-        if (word !== 'as' && FROM_LIST_STOP_WORDS.has(word)) break;
-        pos += aliasMatch[0].length;
-        pos += (/^\s*/.exec(sql.slice(pos)) as RegExpExecArray)[0].length;
-        if (word !== 'as') break;
-      }
-      if (sql[pos] !== ',') break;
-      pos += 1;
-      pos += (/^\s*/.exec(sql.slice(pos)) as RegExpExecArray)[0].length;
-    }
-  }
+    if (deleteFrom) return;
+    push(table);
+  });
 
   JOIN_READ_RE.lastIndex = 0;
   let joinMatch: RegExpExecArray | null;
@@ -502,6 +558,27 @@ export function unresolvedReason(targetSymbol: string, index: CorpusIndex): stri
     : 'target class has NO corpus presence (never sliced/reached)';
 }
 
+/** JDK-semantic method names that can never bear SQL: an UNRESOLVED call to
+ *  one of these on an UNKNOWN (`?`) receiver is StringBuilder/Object plumbing
+ *  (chained append/toString in logging helpers), not a lost effect chain.
+ *  Recording them spammed EVERY endpoint's broken_calls with identical noise
+ *  (2026-08-24 shakedown) and buried the load-bearing breaks. Known-receiver
+ *  calls are NEVER suppressed -- only the `?#name(...)` form.  */
+const INERT_UNKNOWN_RECEIVER_NAMES = new Set([
+  'tostring', 'append', 'equals', 'hashcode', 'valueof', 'compareto',
+  'charat', 'substring', 'indexof', 'trim', 'length', 'isempty', 'format',
+  'close', 'flush', 'intern', 'concat', 'split', 'replace', 'tolowercase',
+  'touppercase',
+]);
+
+export function isInertUnknownReceiverCall(targetSymbol: string): boolean {
+  const hash = targetSymbol.indexOf('#');
+  if (hash < 0 || targetSymbol.slice(0, hash) !== '?') return false;
+  const paren = targetSymbol.indexOf('(', hash);
+  if (paren < 0) return false;
+  return INERT_UNKNOWN_RECEIVER_NAMES.has(targetSymbol.slice(hash + 1, paren).toLowerCase());
+}
+
 /** Transitive call walk from a root table to boundary keys: resolved targets
  * are followed directly; null targets go through dispatch expansion; only
  * calls NEITHER path resolves are recorded as broken (bounded, cycle-safe). */
@@ -535,7 +612,10 @@ export function walkCallGraph(
           }
           for (const t of expansion.tables) if (!visited.has(t)) queue.push(t);
           for (const b of expansion.boundaries) boundaries.add(b);
-        } else if (brokenCalls.length < 10) {
+        } else if (
+          brokenCalls.length < 10 &&
+          !isInertUnknownReceiverCall(row.outcome.targetSymbol)
+        ) {
           brokenCalls.push(
             `${table?.symbol ?? key}: call to ${row.outcome.targetSymbol} unresolved ` +
               `(${unresolvedReason(row.outcome.targetSymbol, index)})`,
