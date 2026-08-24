@@ -1,5 +1,6 @@
 package com.example.architecturemodel.service.apibehaviour;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import com.example.architecturemodel.exception.ResourceNotFoundException;
 import com.example.architecturemodel.model.dto.apibehaviour.ApiBehaviourComparisonWaiverDto;
 import com.example.architecturemodel.model.dto.apibehaviour.CreateApiBehaviourComparisonWaiverRequest;
@@ -24,6 +25,14 @@ import java.util.UUID;
  */
 @Service
 @RequiredArgsConstructor
+// No-db mode (app.features.include-database=false) runs without JPA
+// repositories; every repository-backed bean carries this guard (2026-08-24
+// sweep — unguarded beans broke the no-db ApplicationContext).
+@ConditionalOnProperty(
+    name = "app.features.include-database",
+    havingValue = "true",
+    matchIfMissing = true
+)
 public class ApiBehaviourComparisonWaiverService {
 
     private static final Set<String> ALLOWED_DIMENSIONS = Set.of(

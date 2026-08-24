@@ -62,6 +62,17 @@ vi.mock('../api/organisationsApi', async () => {
   };
 });
 
+// Workspace init (Spec 2026-06-12) runs after create and the modal only
+// closes when init SUCCEEDS — unmocked it hits raw fetch in jsdom and the
+// modal correctly stays open in Retry-Setup (2026-08-25 sweep).
+vi.mock('../api/implementationProjectsApi', async () => {
+  const actual = await vi.importActual('../api/implementationProjectsApi');
+  return {
+    ...actual,
+    initProjectWorkspace: vi.fn().mockResolvedValue({ success: true, repos: [] }),
+  };
+});
+
 vi.mock('../api/architecturesApi', async () => {
   const actual = await vi.importActual('../api/architecturesApi');
   return {

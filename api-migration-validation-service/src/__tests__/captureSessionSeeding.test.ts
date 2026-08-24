@@ -152,13 +152,15 @@ describe('defaultScenarioSet', () => {
         },
       ],
     });
+    // `dimensionKind: 'seed'` rides every seed-expanded scenario (dimensional
+    // closure retry, 2026-07-25) so the gate can retry per-dimension.
     expect(defaultScenarioSet(makeOp('POST', '/owners'), ctx)).toEqual([
-      { name: 'happy_path', type: 'happy_path', expectedStatus: 'success' },
-      { name: 'error_404', type: 'error', expectedStatus: 'not_found' },
+      { name: 'happy_path', type: 'happy_path', expectedStatus: 'success', dimensionKind: 'seed' },
+      { name: 'error_404', type: 'error', expectedStatus: 'not_found', dimensionKind: 'seed' },
       // Spec 2026-06-23: auth-negative scenarios route to their OWN `auth`
       // bucket (no longer folded into client_error), so a "200 = no auth
       // enforced" response is captured + flagged, not hidden.
-      { name: 'auth_missing_token', type: 'auth_variant', expectedStatus: 'auth' },
+      { name: 'auth_missing_token', type: 'auth_variant', expectedStatus: 'auth', dimensionKind: 'seed' },
     ]);
   });
 

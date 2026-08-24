@@ -1,5 +1,6 @@
 package com.example.architecturemodel.trace;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
@@ -23,6 +24,14 @@ import java.util.Map;
  * the header must never affect boot.</p>
  */
 @Component
+// No-db mode (app.features.include-database=false) has no JdbcTemplate;
+// the boot header's schema fingerprint is DB-derived, so the bean sits
+// behind the same guard as every repository-backed bean (2026-08-24 sweep).
+@ConditionalOnProperty(
+    name = "app.features.include-database",
+    havingValue = "true",
+    matchIfMissing = true
+)
 public class TraceBootHeader implements CommandLineRunner {
 
     private static final HaikaiTrace.Tracer TRACE = HaikaiTrace.forService("ams");

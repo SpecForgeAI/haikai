@@ -289,6 +289,41 @@ vs FQN); (e) fresh project = fresh model, no carried edges. Fixes:
     views — honest gap beats a guessed value). New suites at Kiro's
     counts: vocabularyGuard (4), springClassicInterfaceType (3).
 
+16. **Overnight full-suite stabilization (2026-08-25, all seven modules)** —
+    every module's complete test suite swept, triaged (isolated re-runs
+    separate parallel-load flakes from real breaks), and fixed:
+    - discovery (281 suites/2048): modelScopeGuard ratchet — runManager
+      baselined (candidateType discriminator only, item-2 enrichment);
+      startDatabaseRunCandidatePersistence — Oracle Nine envelope fields
+      read defensively (?? []) so enrichment can never kill persistence +
+      fixture carries the modern envelope.
+    - gateway (483/3782): engineNameGuard BURN-DOWN (not raised!) —
+      engine-typed credential parsing extracted to
+      dbMigrationPack/dbCredentialBlock.ts, migrationExecution.ts now 0
+      tokens (was 7/allowed 5; CSD-07 added 2); llmClient fixture cast
+      (Config grew); azure 429 pin → 500 (429 cool-down-retries by design
+      since 2026-07-22); manifest 'Maven 3.9'→'Maven' (version-decoupling
+      2026-06-27).
+    - mcp (78/537): green untouched. AMVS (120/779): quiet-window seams
+      injected into the bracket harness (item 5's 120s two-sweep gap timed
+      out 4 tests); config 30s→180s pin (rate-limit program); authRejected
+      + dimensionKind additive-field pins.
+    - AMS (2423, BUILD SUCCESS): no-db-mode guards added to
+      DataMigrationReport/DataParityReport/DbSurfaceInventory/
+      FoundationDecision controllers + 4 repo-backed services +
+      TraceBootHeader (real product gaps — no-db ApplicationContext was
+      broken); 'dismissed' joins the finding-status pins (D4 2026-06-14);
+      CRLF normalisation in trigger-SQL + terraform-golden comparisons
+      (Windows checkout/filtering artifact).
+    - frontend (1123 files/10982): project-menu pin gains 'edit'
+      (2026-07-27); create-modal test mocks initProjectWorkspace (init
+      phase 2026-06-12 keeps the modal open on failure BY DESIGN);
+      dashboard grade-filter tests re-pinned on hierarchy node-title
+      testids (migrate-select panel repeats titles). sidecar (93): green.
+    Known parallel-load flakes (pass isolated + in clean full runs):
+    discovery responseContractScanner/crossCuttingHardeningGaps, frontend
+    AppConfigContext + occasional worker OOM under full-suite load.
+
 Pickup: discovery-service restart only. OPEN: transfer-proc invocation shape
 (estate grep), Blocked-101 breakdown, FindingEmitter persist errors (~476).
 

@@ -267,6 +267,10 @@ class TerraformExportGoldenFileTest {
      */
     private static String normaliseTimestamp(String content) {
         if (content == null) return null;
+        // Also normalise line endings: git checks the goldens out CRLF on
+        // Windows while the generator emits LF — byte-equality must compare
+        // content, not platform checkout endings (2026-08-24 sweep).
+        content = content.replace("\r\n", "\n");
         return content.replaceAll(
             "(?m)^# Generated: \\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
             "# Generated: <NORMALISED>"

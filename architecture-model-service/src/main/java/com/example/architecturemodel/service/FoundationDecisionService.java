@@ -1,5 +1,6 @@
 package com.example.architecturemodel.service;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import com.example.architecturemodel.model.dto.FoundationDecisionDto;
 import com.example.architecturemodel.model.entity.FoundationDecisionEntity;
 import com.example.architecturemodel.repository.FoundationDecisionRepository;
@@ -28,6 +29,14 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 @Slf4j
+// No-db mode (app.features.include-database=false) runs without JPA
+// repositories; every repository-backed bean carries this guard (2026-08-24
+// sweep — unguarded beans broke the no-db ApplicationContext).
+@ConditionalOnProperty(
+    name = "app.features.include-database",
+    havingValue = "true",
+    matchIfMissing = true
+)
 public class FoundationDecisionService {
 
     private final FoundationDecisionRepository repository;

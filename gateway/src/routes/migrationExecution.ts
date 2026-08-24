@@ -100,6 +100,12 @@ import type {
   TargetDbSecret,
   TargetServeSpec,
 } from '../services/migrationTargetCredentialsStore';
+// Engine-name-guard burn-down (2026-08-24): engine-typed credential parsing
+// lives in pack territory; this route stays engine-token-free.
+import {
+  dbBlockShapeError,
+  parseDbCredentialBlock,
+} from '../services/dbMigrationPack/dbCredentialBlock';
 import { deriveServeSpecDefaults } from '../services/migrationServeSpecDefaults';
 import { defaultFetchPackView } from '../services/migrationDbPackPlanner';
 import { runOperatorIncrementalSync } from '../services/migrationDataRunnerDispatch';
@@ -793,23 +799,7 @@ migrationExecutionRouter.post(
       return res.status(400).json({ error: 'target { base_url, api } is required' });
     }
     const toDb = (block: ManualDbBlock | null | undefined) =>
-      block &&
-      (block.dbType === 'postgres' || block.dbType === 'sybase') &&
-      block.host &&
-      block.database &&
-      block.username &&
-      block.password &&
-      typeof block.port === 'number'
-        ? {
-            dbType: block.dbType as 'postgres' | 'sybase',
-            host: block.host,
-            port: block.port,
-            database: block.database,
-            schema: block.schema ?? null,
-            username: block.username,
-            password: block.password,
-          }
-        : null;
+      parseDbCredentialBlock(block ?? null);
     try {
       const result = await runLogReplayReconcile({
         projectId,
@@ -1058,40 +1048,9 @@ function parseDbBlock(
   label: string
 ): { db?: TargetDbSecret; error?: string } {
   if (raw === undefined || raw === null) return {};
-  const d = raw as {
-    dbType?: string;
-    host?: string;
-    port?: number;
-    database?: string;
-    schema?: string | null;
-    username?: string;
-    password?: string;
-  };
-  const engineOk = d.dbType === 'postgres' || d.dbType === 'sybase';
-  if (
-    !engineOk ||
-    !d.host ||
-    typeof d.port !== 'number' ||
-    !d.database ||
-    !d.username ||
-    typeof d.password !== 'string' ||
-    d.password.length === 0
-  ) {
-    return {
-      error: `${label} block must include { dbType: postgres|sybase, host, port, database, username, password }`,
-    };
-  }
-  return {
-    db: {
-      dbType: d.dbType as 'postgres' | 'sybase',
-      host: d.host,
-      port: d.port,
-      database: d.database,
-      schema: d.schema ?? null,
-      username: d.username,
-      password: d.password,
-    },
-  };
+  const db = parseDbCredentialBlock(raw);
+  if (!db) return { error: dbBlockShapeError(label) };
+  return { db };
 }
 
 const VALID_AUTH_TYPES = [
@@ -1372,30 +1331,11 @@ migrationExecutionRouter.post(
     }
     let db: TargetDbSecret | undefined;
     if (body.db !== undefined && body.db !== null) {
-      const d = body.db;
-      if (
-        (d.dbType !== 'postgres' && d.dbType !== 'sybase') ||
-        !d.host ||
-        typeof d.port !== 'number' ||
-        !d.database ||
-        !d.username ||
-        typeof d.password !== 'string' ||
-        d.password.length === 0
-      ) {
-        return res.status(400).json({
-          error:
-            'db block must include { dbType: postgres|sybase, host, port, database, username, password }',
-        });
+      const parsed = parseDbCredentialBlock(body.db);
+      if (!parsed) {
+        return res.status(400).json({ error: dbBlockShapeError('db') });
       }
-      db = {
-        dbType: d.dbType,
-        host: d.host,
-        port: d.port,
-        database: d.database,
-        schema: d.schema ?? null,
-        username: d.username,
-        password: d.password,
-      };
+      db = parsed;
     }
     // Never log the secret material — only that a watch was registered.
     currentSystemCredentialsStore.set({

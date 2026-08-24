@@ -28,16 +28,19 @@ class DiscoveryFindingStatusTransitionTest {
     @Test
     @DisplayName("ALLOWED_STATUSES is the candidate-parity disposition set + the pre-review state")
     void allowedStatusesAreCandidateParity() {
+        // 'dismissed' joined the vocabulary with D4 (Carry-over Completeness
+        // Gate, 2026-06-14): unlike rejected ("not real"), a dismissed
+        // behaviour-bearing finding is real-but-consciously-not-carried.
         assertThat(DiscoveryFindingService.snapshotAllowedStatuses())
             .containsExactlyInAnyOrder(
-                "pending_review", "approved", "rejected", "deferred");
+                "pending_review", "approved", "rejected", "deferred", "dismissed");
     }
 
     @Test
     @DisplayName("ALLOWED_REVIEWER_STATUSES excludes pending_review (a reviewer action lands on one of the three dispositions)")
     void reviewerStatusesAreApproveRejectDefer() {
         assertThat(DiscoveryFindingService.ALLOWED_REVIEWER_STATUSES)
-            .containsExactlyInAnyOrder("approved", "rejected", "deferred");
+            .containsExactlyInAnyOrder("approved", "rejected", "deferred", "dismissed");
     }
 
     @Test
