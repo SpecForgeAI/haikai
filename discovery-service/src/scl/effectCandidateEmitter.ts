@@ -484,17 +484,24 @@ export interface CallWalkResult {
   cacheBridgeCrossed: boolean;
 }
 
-/** Too many name-matched implementations = genuinely ambiguous dispatch.
- *  12 aligns with the gateway mirror (2026-08-21 Item 4 — the extractor
- *  and assembler are uncapped; they carry real type info). */
-const DISPATCH_EXPANSION_CAP = 12;
+/** Read a positive-integer cap override from the environment. */
+function capFromEnv(name: string, fallback: number): number {
+  const raw = Number(process.env[name]);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : fallback;
+}
+
+/** Dispatch-expansion bounds (2026-08-24 cap policy: caps exist ONLY to stop
+ *  pathological name-collision unions, never to ration ordinary fan-out —
+ *  small arbitrary caps silently severed real chains twice on the live
+ *  estate. Generous defaults, env-tunable, and every refusal message names
+ *  the knob so on-machine tuning needs no code read.) */
+const DISPATCH_EXPANSION_CAP = capFromEnv('HAIKAI_DISPATCH_CAP_UNKNOWN', 40);
 /** KNOWN-receiver-class dispatch (a real interface/abstract with many
- *  implementations — the legacy criteria/visitor pattern) gets headroom:
- *  the live estate's `Criteria#match(T)` has 19 implementations and the
- *  flat cap of 12 severed EVERY hierarchy chain behind it (2026-08-23).
- *  The strict cap stays for `?`-receivers, where name-only matching can
- *  genuinely union strangers. */
-const KNOWN_CLASS_DISPATCH_CAP = 40;
+ *  implementations — the legacy criteria/visitor pattern) gets the most
+ *  headroom: these candidates carry real type evidence. */
+const KNOWN_CLASS_DISPATCH_CAP = capFromEnv('HAIKAI_DISPATCH_CAP_KNOWN', 120);
+/** Per-root transitive-walk node bound (cycle safety, not rationing). */
+const CHAIN_WALK_CAP = capFromEnv('HAIKAI_CHAIN_WALK_CAP', 2000);
 
 /**
  * Resolve a null-target call symbol (`Cls#method(A,B)`) by name+arity across
@@ -548,7 +555,8 @@ export function unresolvedReason(targetSymbol: string, index: CorpusIndex): stri
     (index.tablesByName.get(name) ?? []).length + (index.boundariesByOpName.get(name) ?? []).length;
   const cap = clsFqn === '?' ? DISPATCH_EXPANSION_CAP : KNOWN_CLASS_DISPATCH_CAP;
   if (total > cap) {
-    return `${total} name-matched candidates exceed the expansion cap ${cap}`;
+    const knob = clsFqn === '?' ? 'HAIKAI_DISPATCH_CAP_UNKNOWN' : 'HAIKAI_DISPATCH_CAP_KNOWN';
+    return `${total} name-matched candidates exceed the expansion cap ${cap} (raise ${knob} to widen)`;
   }
   if (clsFqn === '?') {
     return 'receiver type could not be determined at scan time (chained/ternary/array receiver)';
@@ -585,7 +593,7 @@ export function isInertUnknownReceiverCall(targetSymbol: string): boolean {
 export function walkCallGraph(
   rootKey: string,
   index: CorpusIndex,
-  cap = 500,
+  cap = CHAIN_WALK_CAP,
 ): CallWalkResult {
   const boundaries = new Set<string>();
   const brokenCalls: string[] = [];
@@ -1107,7 +1115,7 @@ export function deriveCorpusEffectCandidates(args: {
   const procsUnreferenced = [...index.procTablesByName.keys()]
     .filter((name) => !referencedProcs.has(name))
     .sort()
-    .slice(0, 15);
+    .slice(0, 60);
   const orphanProcTouchers: Record<string, string[]> = {};
   for (const [procName, tables] of index.procTablesByName) {
     if (referencedProcs.has(procName)) continue;

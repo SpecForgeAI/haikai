@@ -123,6 +123,13 @@ vs FQN); (e) fresh project = fresh model, no carried edges. Fixes:
 4. **internalWalkedNames** in effectCandidates payload (which internal
    chains walked — batch-plane rooting diagnosis needs names not counts).
 
+5. **Cap policy (user ruling: no small arbitrary caps blocking flow)** —
+   dispatch caps now generous + env-tunable, refusal messages name the
+   knob: unknown-receiver 12->40 (HAIKAI_DISPATCH_CAP_UNKNOWN),
+   known-class 40->120 (HAIKAI_DISPATCH_CAP_KNOWN), chain-walk 500->2000
+   (HAIKAI_CHAIN_WALK_CAP), procsUnreferenced display 15->60; gateway
+   effectMapBackfill mirror updated identically.
+
 Pickup: discovery-service restart only. OPEN: transfer-proc invocation shape
 (estate grep), Blocked-101 breakdown, FindingEmitter persist errors (~476).
 
