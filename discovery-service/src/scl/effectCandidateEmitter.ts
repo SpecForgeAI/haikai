@@ -803,6 +803,12 @@ function collectFromRootKeys(
   writeTables: string[];
   readTables: string[];
   brokenCalls: string[];
+  /** Catalog procs referenced by WALKED terminal verbatims (bare-name
+   *  prepareCall strings, config-sql dispatch maps). The caller marks these
+   *  REFERENCED — before 2026-08-24 only boundary-plane procs counted, so a
+   *  map-dispatched proc expanded correctly yet still showed as an orphan in
+   *  procsUnreferenced/orphanProcTouchers (misleading WHY annotations). */
+  procsExpanded: string[];
   boundariesReached: string[];
   boundariesFullyVisible: boolean;
   procSeen: boolean;
@@ -811,6 +817,7 @@ function collectFromRootKeys(
   const writeTables: string[] = [];
   const readTables: string[] = [];
   const brokenCalls: string[] = [];
+  const procsExpanded: string[] = [];
   const boundariesReached: string[] = [];
   let boundariesFullyVisible = true;
   let procSeen = false;
@@ -836,6 +843,7 @@ function collectFromRootKeys(
         for (const proc of procNamesReferenced(verbatim, index.procTablesByName)) {
           const closed = index.procTablesByName.get(proc);
           if (!closed) continue;
+          if (!procsExpanded.includes(proc)) procsExpanded.push(proc);
           for (const w of closed.writes) pushTable(writeTables, w);
           for (const r of closed.reads) pushTable(readTables, r);
         }
@@ -874,7 +882,7 @@ function collectFromRootKeys(
       }
     }
   }
-  return { writeTables, readTables, brokenCalls, boundariesReached, boundariesFullyVisible, procSeen, cacheBridgeCrossed };
+  return { writeTables, readTables, brokenCalls, procsExpanded, boundariesReached, boundariesFullyVisible, procSeen, cacheBridgeCrossed };
 }
 
 /**
@@ -1009,6 +1017,7 @@ export function deriveCorpusEffectCandidates(args: {
       const maxLength = matched.reduce((max, r) => Math.max(max, r.fragment.length), 0);
       const roots = matched.filter((r) => r.fragment.length === maxLength);
       const collected = collectFromRootKeys(roots.map((r) => r.key), index);
+      for (const proc of collected.procsExpanded) markReferenced(proc);
       const detail = {
         roots: roots.map((r) => r.symbol).slice(0, 3),
         ...(collected.cacheBridgeCrossed ? { via_legacy_cache: true } : {}),
@@ -1090,6 +1099,7 @@ export function deriveCorpusEffectCandidates(args: {
     }
     if (internalWalked.length < 20) internalWalked.push(endpointCandidate.name);
     const collected = collectFromRootKeys(keys, index);
+    for (const proc of collected.procsExpanded) markReferenced(proc);
     const detail = {
       roots: keys.slice(0, 3),
       internal_entry: `${className}#${methodName}`,

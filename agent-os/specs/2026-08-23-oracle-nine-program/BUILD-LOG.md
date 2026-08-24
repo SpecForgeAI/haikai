@@ -130,6 +130,17 @@ vs FQN); (e) fresh project = fresh model, no carried edges. Fixes:
    (HAIKAI_CHAIN_WALK_CAP), procsUnreferenced display 15->60; gateway
    effectMapBackfill mirror updated identically.
 
+6. **Bare proc-name dispatch + referenced bookkeeping** — estate grep
+   proved the transfer chain shape: field-initializer dispatch map
+   ("hierarchy" -> "updateHierarchy_hir '<date>', 'Y'") into a generic
+   prepareCall. The config-sql row + walked-terminal catalog scan ALREADY
+   expands bare-name invocation strings (pinned end-to-end); the bug was
+   bookkeeping — only boundary-plane procs counted as REFERENCED, so
+   map-dispatched procs expanded yet still reported as orphans
+   (procsUnreferenced + never-touched WHY annotations lied).
+   collectFromRootKeys now returns procsExpanded; both call sites mark
+   them referenced.
+
 Pickup: discovery-service restart only. OPEN: transfer-proc invocation shape
 (estate grep), Blocked-101 breakdown, FindingEmitter persist errors (~476).
 
