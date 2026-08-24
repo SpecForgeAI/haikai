@@ -224,6 +224,24 @@ vs FQN); (e) fresh project = fresh model, no carried edges. Fixes:
     drop) needs the run's own records: Blocked chip / committed-model
     check per Kiro.
 
+12. **Kiro on-machine fix replicated (round 5)** — Kiro authored the fix
+    directly on the work machine (it holds the estate codebase); replicated
+    here verbatim in semantics, estate tokens genericized in comments per
+    the standing scrub rule. Fix 1 (behaviourExtractor, 3 hunks): private/
+    same-class helper folding — sameClassCallees (implicit/`this` receiver
+    only; named receivers are collaborators) + expandSameClass (transitive,
+    cycle-safe, depth 5) + foldHelpers folds each helper's mined SQL and
+    DAO->DAO delegations into the PUBLIC op; interface ops fold helpers
+    from the impl. Root cause: a create op mined sql=null because its
+    INSERT lived in a private insert-row helper, and every sequence-DAO
+    delegation site was a private helper. Fix 2 (effectCandidateEmitter,
+    collectFromRootKeys): per-op class-union fallback — an UNANALYSED
+    reached op falls back to the class union for THAT op only; the old
+    anyOpKnown form let one resolved sibling discard the fallback for every
+    unresolved op (the fix-one-break-another feedback loop). MONOTONIC:
+    more information can only narrow, never erase. Two new suites at
+    Kiro's counts: perOpFallback (3), privateHelpers (4).
+
 Pickup: discovery-service restart only. OPEN: transfer-proc invocation shape
 (estate grep), Blocked-101 breakdown, FindingEmitter persist errors (~476).
 

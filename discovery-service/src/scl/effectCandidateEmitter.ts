@@ -1063,27 +1063,39 @@ function collectFromRootKeys(
       // known; the class-level union is only the fallback.
       const reachedOps = walk.boundaryOps.get(boundaryKey);
       const opTableSets = index.boundaryOpTablesByKey.get(boundaryKey);
-      let boundaryReads = index.boundaryReadsByKey.get(boundaryKey) ?? [];
-      let boundaryWrites = index.boundaryWritesByKey.get(boundaryKey) ?? [];
+      const classReads = index.boundaryReadsByKey.get(boundaryKey) ?? [];
+      const classWrites = index.boundaryWritesByKey.get(boundaryKey) ?? [];
+      let boundaryReads = classReads;
+      let boundaryWrites = classWrites;
       if (reachedOps && reachedOps.size > 0 && opTableSets && opTableSets.size > 0) {
         const opReads: string[] = [];
         const opWrites: string[] = [];
-        let anyOpKnown = false;
+        const add = (into: string[], from: string[]): void => {
+          for (const x of from) {
+            if (!into.some((y) => y.toLowerCase() === x.toLowerCase())) into.push(x);
+          }
+        };
         for (const op of reachedOps) {
           const setForOp = opTableSets.get(op);
-          if (!setForOp) continue;
-          anyOpKnown = true;
-          for (const r of setForOp.reads) {
-            if (!opReads.some((x) => x.toLowerCase() === r.toLowerCase())) opReads.push(r);
+          if (setForOp) {
+            add(opReads, setForOp.reads);
+            add(opWrites, setForOp.writes);
+            continue;
           }
-          for (const w of setForOp.writes) {
-            if (!opWrites.some((x) => x.toLowerCase() === w.toLowerCase())) opWrites.push(w);
-          }
+          // UNANALYSED op: its contribution is UNKNOWN, not empty. Fall back
+          // to the class union for THIS op only (Kiro 2026-08-24). The old
+          // `anyOpKnown` form let ONE resolved sibling discard the fallback
+          // for every unresolved op: a create endpoint reaching
+          // {create(unanalysed), list(analysed)} lost the create INSERT's
+          // table outright, and which tables survived flipped whenever the
+          // opTables population changed — the feedback loop behind the
+          // fix-one-break-another pattern. Per-op fallback makes the pass
+          // MONOTONIC: more information can only ever narrow, never erase.
+          add(opReads, classReads);
+          add(opWrites, classWrites);
         }
-        if (anyOpKnown) {
-          boundaryReads = opReads;
-          boundaryWrites = opWrites;
-        }
+        boundaryReads = opReads;
+        boundaryWrites = opWrites;
       }
       const blindOps =
         stats && stats.withSql === 0 && stats.opNames.length > 0
