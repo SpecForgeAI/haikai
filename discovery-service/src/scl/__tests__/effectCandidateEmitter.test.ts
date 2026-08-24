@@ -739,6 +739,59 @@ describe('verb-agnostic effect chains (2026-08-22)', () => {
     expect(refusal).toContain('HAIKAI_DISPATCH_CAP_UNKNOWN');
   });
 
+  it('bare proc-name dispatch strings expand AND mark the proc referenced (2026-08-24)', () => {
+    // Sybase prepareCall convention: the invocation string STARTS with the
+    // proc name — no exec, no {call} — held in a field-initializer dispatch
+    // map ("hierarchy" -> "updateTree_roll '<date>', 'Y'"). The config-sql
+    // terminal row carries it verbatim; the walked-terminal catalog scan
+    // must expand it AND the proc must NOT be reported as an orphan.
+    const corpus = corpusOf([
+      behaviourTable({
+        key: 'T-xfer',
+        symbol: 'TransferMain#run',
+        annotations: ['@GET', '@Path("transfer")'],
+        callTargets: [],
+      }),
+    ]) as ReturnType<typeof corpusOf> & { procCatalog: unknown[] };
+    (corpus.contracts[0] as { contract: { rows: unknown[] } }).contract.rows.push({
+      index: 0,
+      kind: 'terminal',
+      conditionVerbatim: 'config-held SQL (field initializer)',
+      conditionRef: null,
+      outcome: {
+        type: 'terminal',
+        verbatim: "hierarchy updateTree_roll '2026-01-01', 'Y'",
+        ref: { path: 'src/X.java', line: 24 },
+        outcomeLabel: 'config-sql',
+      },
+    });
+    corpus.procCatalog = [
+      {
+        name: 'updatetree_roll',
+        sourcePath: 'db/procs/005.updateTree_roll.sql',
+        writes: ['deal_book', 'org_registry'],
+        reads: ['load_deal_book'],
+        procCalls: [],
+        bodyMd5: 'x',
+        source: 'repo' as const,
+      },
+    ];
+    const result = deriveCorpusEffectCandidates({
+      corpus,
+      runId: 'run-1',
+      runCandidates: [endpointCandidate('xfer', 'GET', '/api/transfer')],
+    });
+    const edges = result.candidates.map((c) => {
+      const data = c.data as Record<string, unknown>;
+      return `${data.access_mode}:${String(data.dataEntityName).toLowerCase()}`;
+    });
+    expect(edges.sort()).toEqual(['read:load_deal_book', 'write:deal_book', 'write:org_registry']);
+    // The bookkeeping half: expansion counts as a REFERENCE — no orphan
+    // report, no misleading never-touched WHY annotation.
+    expect(result.procsUnreferenced).toEqual([]);
+    expect(result.orphanProcTouchers).toEqual({});
+  });
+
   it('reads derived through a cache-bridge row carry via_legacy_cache (decision evidence)', () => {
     const corpus = corpusOf([
       behaviourTable({
