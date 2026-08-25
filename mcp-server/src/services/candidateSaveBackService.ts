@@ -414,7 +414,7 @@ export function getTargetArrayKey(candidateType: string): string {
  *   duplication.
  * - `none`: no match found.
  */
-export type NameMatchKind = 'exact' | 'normalized' | 'none';
+export type NameMatchKind = 'exact' | 'case_fold' | 'normalized' | 'none';
 
 /**
  * Confidence assigned to an exact (byte-for-byte) name match.
@@ -427,6 +427,11 @@ export const NAME_MATCH_EXACT_CONFIDENCE = 1.0;
  * as a LOW-confidence outcome rather than silently auto-accepting.
  */
 export const NAME_MATCH_NORMALIZED_CONFIDENCE = 0.7;
+/** Case-fold-only equality (same bytes ignoring case): a case variant of
+ *  the SAME name, not a fuzzy collision — binds confidently (Kiro
+ *  2026-08-25: 12 relationship rows blocked on pure case differences
+ *  between JAXB-derived camelCase entities and PascalCase Java classes). */
+export const NAME_MATCH_CASE_FOLD_CONFIDENCE = 0.95;
 
 /**
  * Result of resolving a name against a list via {@link matchByNormalizedName}.
@@ -533,6 +538,21 @@ export function matchByNormalizedName<T>(
   const exact = items.find((it) => getName(it) === name);
   if (exact) {
     return { item: exact, confidence: NAME_MATCH_EXACT_CONFIDENCE, matchKind: 'exact' };
+  }
+
+  // Pass 1.5 (Kiro 2026-08-25): CASE-FOLD equality — identical characters
+  // ignoring case only (no separator/plural stripping). A case-only variant
+  // is the SAME name, not a potential collision; treating it like a
+  // normalized fuzzy match forced manual entry for every camelCase-vs-
+  // PascalCase pair the JAXB/XML naming split produces.
+  const nameFolded = name.trim().toLowerCase();
+  if (nameFolded.length > 0) {
+    const caseFold = items.find(
+      (it) => (getName(it) ?? '').trim().toLowerCase() === nameFolded,
+    );
+    if (caseFold) {
+      return { item: caseFold, confidence: NAME_MATCH_CASE_FOLD_CONFIDENCE, matchKind: 'case_fold' };
+    }
   }
 
   // Pass 2: normalized-name equality (the duplication fix).
@@ -3076,7 +3096,7 @@ export async function saveDiscoveryCandidatesToModel(
           (e: any) => typeof e?.name === 'string' && preExistingNames.has(e.name),
         );
         const dupMatch = matchByNormalizedName(preExistingRows, candidate.name);
-        if (dupMatch.matchKind === 'exact' && dupMatch.item) {
+        if ((dupMatch.matchKind === 'exact' || dupMatch.matchKind === 'case_fold') && dupMatch.item) {
           // Structural backfill (2026-08-01): the suppressed duplicate may
           // carry structural truth the existing row is missing (models
           // committed before the carriage fix) -- repair additively before
@@ -3232,7 +3252,7 @@ export async function saveDiscoveryCandidatesToModel(
           'request-response (request body)',
           candidate?.id,
         );
-        if (r.matchKind === 'exact' && r.pointId) {
+        if ((r.matchKind === 'exact' || r.matchKind === 'case_fold') && r.pointId) {
           endpointEntity.request_data_entity_point_id = r.pointId;
         } else if (r.collision) {
           // NORMALIZED (non-exact): do NOT silently bind. Emit the collision
@@ -3259,7 +3279,7 @@ export async function saveDiscoveryCandidatesToModel(
           'request-response (response body)',
           candidate?.id,
         );
-        if (r.matchKind === 'exact' && r.pointId) {
+        if ((r.matchKind === 'exact' || r.matchKind === 'case_fold') && r.pointId) {
           endpointEntity.response_data_entity_point_id = r.pointId;
         } else if (r.collision) {
           saveBackFindings.push(r.collision);
@@ -3348,7 +3368,17 @@ export async function saveDiscoveryCandidatesToModel(
           `"${sourceName}"->"${targetName}" resolved only by normalization -- left as a reviewable ` +
           `candidate (no relationship written; possible collision finding(s) raised)`,
         );
-        recordBlocked(candidate, `Relationship resolved only by normalization ("${sourceName}"->"${targetName}") -- left for review`, 'sourceEntity');
+        // Attribution (Kiro 2026-08-25): stamp the side that was ACTUALLY
+        // normalized so the fix panel offers the right field (a target-only
+        // mismatch previously surfaced as 'sourceEntity' and could not be
+        // filled at all; a both-sides row takes two passes).
+        recordBlocked(
+          candidate,
+          `Relationship resolved only by normalization ("${sourceName}"->"${targetName}") -- left for review`,
+          targetRes.matchKind === 'normalized' && sourceRes.matchKind !== 'normalized'
+            ? 'targetEntity'
+            : 'sourceEntity',
+        );
         entitiesSkipped++;
         continue;
       }
@@ -3785,9 +3815,13 @@ export async function saveDiscoveryCandidatesToModel(
           );
         }
         const relatedPointId =
-          relatedRes.matchKind === 'exact' ? relatedRes.pointId : null;
+          relatedRes.matchKind === 'exact' || relatedRes.matchKind === 'case_fold'
+            ? relatedRes.pointId
+            : null;
         const targetPointId =
-          targetRes.matchKind === 'exact' ? targetRes.pointId : null;
+          targetRes.matchKind === 'exact' || targetRes.matchKind === 'case_fold'
+            ? targetRes.pointId
+            : null;
         if (relatedPointId && targetPointId) {
           const relArrayKey = 'logical_data_entity_relationships';
           if (!Array.isArray(model.metaModel.relationships[relArrayKey])) {

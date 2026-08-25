@@ -892,7 +892,7 @@ public class TxConfig {
     ]);
   });
 
-  it('seeds controllerToDtos from service-interface method param/return types so emitInterfaceLogicalEntities covers (service-api, DTO) pairs', () => {
+  it('service-interface DTO seeding surfaces the DTOs but emits NO ILE links for the internal interface (Kiro 2026-08-25)', () => {
     const SRC = `
 package org.example.fire.service;
 public interface PatientService {
@@ -920,13 +920,17 @@ public class CreatePatientDto {
     ];
     const c = runSpringClassicAdapter(files, 'sc-iface-dto');
 
-    // Both DTOs surfaced as logical_data_entities (the existing emit pass).
+    // Both DTOs surfaced as logical_data_entities (the existing emit pass —
+    // the service-interface seeding still drives DTO discovery).
     const lde = c.filter((x) => x.candidateType === 'logical_data_entities').map((x) => x.name).sort();
     expect(lde).toEqual(['CreatePatientDto', 'PatientDto']);
 
-    // Service ↔ DTO links.
+    // NO service ↔ DTO links (Kiro 2026-08-25): PatientService is emitted as
+    // internal service-api wiring and DROPPED by the stage-2 post-process, so
+    // links referencing it dangled at save-back with no fillable value. A
+    // link from an interface outside the external meta-model has no meaning.
     const links = c.filter((x) => x.candidateType === 'interface_logical_entities').map((x) => x.name).sort();
-    expect(links).toEqual(['PatientService → CreatePatientDto', 'PatientService → PatientDto']);
+    expect(links).toEqual([]);
   });
 
   it('confidence stratification: paired-impl service-api > 0.9 > name-match > xml-alias-only', () => {

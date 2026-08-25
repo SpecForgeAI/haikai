@@ -934,6 +934,35 @@ export const DiscoveryRunDetailPage: React.FC = () => {
   // Reference-field typeahead suggestions for the C1 panel: names of committed
   // model entities (pick-from-existing only, v1) PLUS already-approved /
   // committed candidate names. Defensive against a partially-mocked context.
+  // Typed option sources (2026-08-25 — Grid fkTarget parity for the C1
+  // panel): committed entity names per collection + this run's approved/
+  // committed candidates; the panel derives each registered blocking
+  // field's EXACT valid choices from these.
+  const typedReferenceSources = useMemo(() => {
+    const modelEntitiesByCollection: Record<string, string[]> = {};
+    const entities = archCtx.state?.model?.metaModel?.entities as unknown as
+      | Record<string, Array<{ name?: string }>>
+      | undefined;
+    if (entities) {
+      for (const [collection, arr] of Object.entries(entities)) {
+        if (!Array.isArray(arr)) continue;
+        const names = arr
+          .map((e) => (e as { name?: string }).name)
+          .filter((n): n is string => typeof n === 'string' && n.length > 0);
+        if (names.length > 0) modelEntitiesByCollection[collection] = names;
+      }
+    }
+    const runCandidates = candidates
+      .filter(
+        (c) =>
+          (c.review_status === 'approved' || c.review_status === 'committed') &&
+          typeof c.name === 'string' &&
+          c.name.length > 0,
+      )
+      .map((c) => ({ id: c.id, name: c.name, candidate_type: c.candidate_type }));
+    return { modelEntitiesByCollection, runCandidates };
+  }, [archCtx.state?.model, candidates]);
+
   const referenceSuggestions = useMemo<string[]>(() => {
     const names = new Set<string>();
     const entities = archCtx.state?.model?.metaModel?.entities as unknown as
@@ -1571,6 +1600,7 @@ export const DiscoveryRunDetailPage: React.FC = () => {
         result={saveResult}
         candidates={candidates}
         referenceSuggestions={referenceSuggestions}
+        typedReferenceSources={typedReferenceSources}
         projectId={activeProject.id}
         architectureId={
           selectedRun?.architecture_id ?? activeArchitectureId ?? ''

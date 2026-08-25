@@ -2871,6 +2871,7 @@ async function startServiceScopedRun(
           structural.corpus.roots ?? [],
           runId,
           allCandidates,
+          serviceId,
         );
         if (minted.length > 0) {
           await archModelClient.bulkSaveCandidates(projectId, runId, minted);
@@ -3411,6 +3412,12 @@ export function mintOperationalHttpCandidates(
   roots: Array<{ kind?: string; symbol?: string; detail?: string }>,
   runId: string,
   existing: Array<{ name?: string | null }>,
+  /** The scoped service id (Kiro 2026-08-25): Step 8 stamps service_id on
+   *  every candidate, but this mint runs LATER inside the structural block
+   *  and persists directly — without the stamp the interface arrives at
+   *  save-back with no service parent FK and blocks (cascading its two
+   *  endpoint children into the Interface-Id group). */
+  serviceId?: string,
 ): DiscoveryCandidate[] {
   const webRoots = roots.filter(
     (r) => typeof r.detail === 'string' && r.detail.startsWith('web_xml:'),
@@ -3448,6 +3455,7 @@ export function mintOperationalHttpCandidates(
         path: urlPattern,
         className,
         methodName,
+        ...(serviceId ? { service_id: serviceId } : {}),
         endpoint_subtype: 'webxml_handler',
         operational_note:
           'web.xml-mapped operational endpoint (state-mutating handler) — auto-classified ' +
@@ -3469,6 +3477,7 @@ export function mintOperationalHttpCandidates(
     data: {
       interface_type: 'OPERATIONAL_HTTP',
       protocol: 'rest',
+      ...(serviceId ? { service_id: serviceId } : {}),
       _addedBy: 'webxml-handler-detector',
     },
     synthesizedAt,
