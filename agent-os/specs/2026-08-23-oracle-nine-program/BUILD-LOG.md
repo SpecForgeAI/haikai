@@ -405,6 +405,20 @@ vs FQN); (e) fresh project = fresh model, no carried edges. Fixes:
     (wizard dual-writes canonical allowlist keys); D2 with Kiro on the
     work machine. Restart: AMVS.
 
+21. **S0_SNAPSHOT_DIR anchored to the service root (Kiro replication,
+    2026-08-25)** — the default was cwd-relative `'./s0-snapshots'`, so the
+    snapshot root silently relocated whenever AMVS was launched from a
+    different folder (repo root, IDE run config, service wrapper); a
+    missing snapshot is indistinguishable from "no snapshot was ever
+    taken", inviting a fresh S0 over polluted state. Now
+    `path.resolve(__dirname, '..', 's0-snapshots')` — `__dirname` is
+    `src/` under tsx and `dist/` compiled, both landing on the service
+    root, so the existing snapshot tree stays discoverable with no env
+    var. `S0_SNAPSHOT_DIR` env override still wins (both S0 suites pin it
+    to tmp dirs: 18/18). Full AMVS sweep 120 suites / 782 green. Work
+    machine already patched by Kiro directly — this replicates to
+    canonical main; next clone carries it, no extra pickup action.
+
 Pickup: discovery-service restart only. OPEN: transfer-proc invocation shape
 (estate grep), Blocked-101 breakdown, FindingEmitter persist errors (~476).
 

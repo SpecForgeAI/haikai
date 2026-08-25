@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import path from 'path';
 
 // Load environment variables from .env file
 dotenv.config();
@@ -257,9 +258,18 @@ export const COMPENSATION_STATEMENT_TIMEOUT_SECONDS: number =
  * `<table>.jsonl` per snapshotted table. The snapshot doubles as the
  * migration dump artifact — the design rule is the data load comes FROM S0,
  * never from the live post-capture DB.
- * Default: './s0-snapshots'.
+ *
+ * The default is resolved against THIS FILE, not the process cwd (Kiro
+ * 2026-08-25): a cwd-relative './s0-snapshots' silently relocates the
+ * snapshot root whenever the service is launched from a different folder,
+ * and a missing snapshot is indistinguishable from "no snapshot was ever
+ * taken" — inviting a fresh S0 over polluted state. `__dirname` is `src/`
+ * under tsx and `dist/` compiled, so `..` lands on the service root either
+ * way.
+ * Default: `<service root>/s0-snapshots`.
  */
-export const S0_SNAPSHOT_DIR: string = process.env.S0_SNAPSHOT_DIR || './s0-snapshots';
+export const S0_SNAPSHOT_DIR: string =
+  process.env.S0_SNAPSHOT_DIR || path.resolve(__dirname, '..', 's0-snapshots');
 
 /**
  * Keyset page size for S0 snapshot / fingerprint reads. Clamped to the
