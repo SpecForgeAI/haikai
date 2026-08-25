@@ -152,6 +152,20 @@ interface Step3Config {
   allowlistText: string; // comma-separated table names
 }
 
+/**
+ * Interface types the capture wizard never offers as capture sources — the
+ * FRONTEND mirror of AMS's `INTERNAL_INTERFACE_TYPES`
+ * (ApiBehaviourInventoryReconciliationService.java). The two lists MUST
+ * agree: when a new internal/operational type is added there, add it here
+ * (2026-08-25: OPERATIONAL_HTTP was added to AMS by Oracle Nine item 6 and
+ * this filter was missed — operational web.xml servlets stayed selectable).
+ */
+export const NON_CAPTURABLE_INTERFACE_TYPES: ReadonlySet<string> = new Set([
+  'INTERNAL_PROCESSING',
+  'INTERNAL_PROCESS',
+  'OPERATIONAL_HTTP',
+]);
+
 const DEFAULT_STEP2: Step2Config = {
   envName: '',
   baseUrl: '',
@@ -533,17 +547,27 @@ export function StartCaptureSessionWizard({
   const interfaces: InterfaceModel[] = useMemo(
     () =>
       ((model?.metaModel?.entities?.interfaces ?? []) as InterfaceModel[])
-        // Internal Processing interfaces (Spec 2026-07-24) hold non-HTTP entry
-        // points (scheduled jobs / listeners / batch) — they can NEVER be
-        // captured over HTTP, so they are not selectable capture sources. The
-        // reconciliation auto-excludes their endpoints server-side too.
+        // Interfaces the capture wizard never offers (mirror of the AMS
+        // reconciliation's INTERNAL_INTERFACE_TYPES — see
+        // NON_CAPTURABLE_INTERFACE_TYPES below):
+        //   - Internal Processing (Spec 2026-07-24): non-HTTP entry points
+        //     (scheduled jobs / listeners / batch) — can NEVER be captured
+        //     over HTTP.
+        //   - OPERATIONAL_HTTP (Oracle Nine item 6, wired here 2026-08-25):
+        //     web.xml operational/admin servlets (cache rebuild, service
+        //     info). HTTP-reachable but out of capture scope BY DEFAULT —
+        //     firing a cache-rebuild mid-capture is exactly the side effect
+        //     capture must avoid.
+        // AMS reconciliation already excludes both server-side (endpoints go
+        // to the internalExcluded bucket, out of every denominator), so
+        // hiding them here matches — they never block /start either way.
         .filter((iface) => {
           const t = String(
             (iface as { interface_type?: unknown }).interface_type ?? '',
           )
             .trim()
             .toUpperCase();
-          return t !== 'INTERNAL_PROCESSING' && t !== 'INTERNAL_PROCESS';
+          return !NON_CAPTURABLE_INTERFACE_TYPES.has(t);
         }),
     [model],
   );
