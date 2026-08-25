@@ -228,6 +228,78 @@ describe('candidateSaveBackService - false-merge guard + below-gate (TG5)', () =
   });
 
   // ==========================================================================
+  // (2b) CASE-FOLD match (Kiro 2026-08-25): a case-only variant is the SAME
+  //      name, not a fuzzy collision -- binds confidently, no finding, no
+  //      block. (12 relationship rows blocked on pure case differences
+  //      between JAXB-derived camelCase entities and PascalCase classes.)
+  // ==========================================================================
+  it('(2b) a CASE-FOLD (hierarchyViewDetail vs HierarchyViewDetail) match binds confidently with no collision finding', async () => {
+    const model = makeModel({
+      logical: [
+        { id: 'lde-hvd', name: 'hierarchyViewDetail' },
+        { id: 'lde-org', name: 'organisation' },
+      ],
+    });
+    // Both sides differ ONLY by case from the committed names.
+    const rel = makeCandidate({
+      id: 'cand-rel-case',
+      candidate_type: 'logical_data_entity_relationships',
+      name: 'HierarchyViewDetail -> Organisation',
+      confidence: 0.9,
+      data: {
+        sourceEntity: 'HierarchyViewDetail',
+        targetEntity: 'Organisation',
+        relationshipType: 'association',
+      },
+    });
+    const { putModels } = wireAxios(model, [rel]);
+
+    const { saveDiscoveryCandidatesToModel } = require('../services/candidateSaveBackService');
+    const result = await saveDiscoveryCandidatesToModel('proj-001', 'arch-001', 'run-001');
+
+    const saved = lastModel(putModels);
+    const rels = saved.metaModel.relationships.logical_data_entity_relationships;
+    expect(rels).toHaveLength(1);
+    expect(rels[0].fromDataEntityPointId).toBe('dep_log_lde-hvd');
+    expect(rels[0].toDataEntityPointId).toBe('dep_log_lde-org');
+    const collisions = (result.findingsEmitted as any[]).filter(
+      (f) => f.detailJson?.gapType === 'possible_entity_collision',
+    );
+    expect(collisions).toHaveLength(0);
+  });
+
+  // ==========================================================================
+  // (2c) Attribution (Kiro 2026-08-25): a residual NORMALIZED block names the
+  //      side that actually mismatched -- a target-only fuzz stamps
+  //      missingField 'targetEntity', never 'sourceEntity'.
+  // ==========================================================================
+  it('(2c) a target-only NORMALIZED block stamps missingField targetEntity', async () => {
+    const model = makeModel({
+      logical: [
+        { id: 'lde-customer', name: 'Customer' },
+        { id: 'lde-order', name: 'Order' },
+      ],
+    });
+    const rel = makeCandidate({
+      id: 'cand-rel-target-norm',
+      candidate_type: 'logical_data_entity_relationships',
+      name: 'Customer -> Orders',
+      confidence: 0.9,
+      data: { sourceEntity: 'Customer', targetEntity: 'Orders', relationshipType: 'association' },
+    });
+    wireAxios(model, [rel]);
+
+    const { saveDiscoveryCandidatesToModel } = require('../services/candidateSaveBackService');
+    const result = await saveDiscoveryCandidatesToModel('proj-001', 'arch-001', 'run-001');
+
+    const blocked = (result.reasons as any[]).filter(
+      (r) => r.reason === 'blocked' && r.candidateId === 'cand-rel-target-norm',
+    );
+    expect(blocked).toHaveLength(1);
+    expect(blocked[0].missingField).toBe('targetEntity');
+  });
+
+  // ==========================================================================
   // (4) A below-0.75 candidate is PERSISTED as an explicit reviewable item.
   // ==========================================================================
   it('(4) a below-0.75 candidate is recorded as a below_auto_accept reviewable item (not minted, not dropped)', async () => {

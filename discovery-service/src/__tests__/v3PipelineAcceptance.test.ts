@@ -135,7 +135,12 @@ const SPRING_CLASSIC_ADDED_BY_FAMILY = new Set<string>([
  * variation in the new emissions; tighten back to ±2% once the figure
  * has stabilised across a few runs.
  */
-const OPENMRS_V2_BASELINE = 3460;
+// 2026-08-25: re-based 3460 -> 3132 after the dangling-ILE fix — links from
+// internally-filtered service-api interfaces (dropped by stage-2
+// post-process) are no longer emitted, so the ~330 links that could only
+// ever arrive at save-back dangling are never born. Deliberate reduction,
+// not a regression.
+const OPENMRS_V2_BASELINE = 3132;
 const OPENMRS_TOLERANCE = 0.03;
 
 /**

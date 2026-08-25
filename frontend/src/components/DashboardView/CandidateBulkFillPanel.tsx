@@ -49,7 +49,10 @@ import {
   buildPatch,
   qualifiedBusinessLogicName,
   ENUM_FIELD_OPTIONS,
+  typedOptionsForField,
   type BulkFillGroup,
+  type TypedOption,
+  type TypedReferenceSources,
 } from './candidateBulkFillSupport';
 import styles from './DiscoveryRunDetailView.module.css';
 
@@ -64,8 +67,16 @@ export interface CandidateBulkFillPanelProps {
   /**
    * Reference-field typeahead suggestions: names of committed model entities +
    * already-approved candidates the panel can resolve FK/reference fields to.
+   * FALLBACK pool for reference fields with no typed target registered.
    */
   referenceSuggestions: string[];
+  /**
+   * Typed option sources (2026-08-25 — Grid fkTarget parity): per-collection
+   * committed entity names + this run's approved candidates, from which each
+   * registered blocking field derives its EXACT valid choices. Optional so
+   * existing callers/tests keep the flat-pool behaviour.
+   */
+  typedReferenceSources?: TypedReferenceSources;
   projectId: string;
   architectureId: string;
   runId: string;
@@ -91,6 +102,7 @@ export const CandidateBulkFillPanel: React.FC<CandidateBulkFillPanelProps> = ({
   result,
   candidates,
   referenceSuggestions,
+  typedReferenceSources,
   projectId,
   architectureId,
   runId,
@@ -327,7 +339,12 @@ export const CandidateBulkFillPanel: React.FC<CandidateBulkFillPanelProps> = ({
           </div>
         )}
 
-        {groups.map((group) => (
+        {groups.map((group) => {
+          const typedOptions =
+            group.widget === 'typed_select'
+              ? typedOptionsForField(group.field, typedReferenceSources)
+              : null;
+          return (
           <fieldset
             key={group.key}
             data-testid={`candidate-bulk-fill-group-${group.key}`}
@@ -368,6 +385,40 @@ export const CandidateBulkFillPanel: React.FC<CandidateBulkFillPanelProps> = ({
                       </option>
                     ))}
                   </select>
+                ) : group.widget === 'typed_select' && typedOptions && typedOptions.length > 0 ? (
+                  // Grid fkTarget parity (2026-08-25): registered reference
+                  // fields resolve against EXISTING records only, so the
+                  // control is a pick-from-valid-targets select — free text
+                  // could only ever produce another blocked row.
+                  <select
+                    data-testid={`candidate-bulk-fill-typed-select-${group.key}`}
+                    value={groupValues[group.key] ?? ''}
+                    onChange={(e) => setGroupValue(group.key, e.target.value)}
+                    disabled={inFlight}
+                    style={{ flex: 1, padding: '4px 6px' }}
+                  >
+                    <option value="">(choose {group.field})</option>
+                    {typedOptions.map((opt: TypedOption) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                ) : group.widget === 'typed_select' ? (
+                  <div style={{ flex: 1 }}>
+                    <FreeTextTypeaheadSingleToken
+                      value={groupValues[group.key] ?? ''}
+                      suggestions={referenceSuggestions}
+                      onChange={(v) => setGroupValue(group.key, v)}
+                    />
+                    <div
+                      style={{ fontSize: 11, color: '#b26a00', marginTop: 2 }}
+                      data-testid={`candidate-bulk-fill-no-targets-${group.key}`}
+                    >
+                      No valid targets exist yet in the model or this run for {group.field} — the
+                      save preview will confirm whether a typed value resolves.
+                    </div>
+                  </div>
                 ) : (
                   <div
                     style={{ flex: 1 }}
@@ -421,19 +472,54 @@ export const CandidateBulkFillPanel: React.FC<CandidateBulkFillPanelProps> = ({
                       <label style={{ fontSize: 11, color: '#90a4ae', minWidth: 90 }}>
                         {group.isCollisionFallback ? 'Class override' : 'Override'}
                       </label>
-                      <input
-                        type="text"
-                        value={rs.override}
-                        disabled={inFlight || rs.skipped}
-                        placeholder={
-                          group.isCollisionFallback
-                            ? entry.class || '(class name)'
-                            : '(use group value)'
-                        }
-                        onChange={(e) => setRow(entry.candidateId, { override: e.target.value })}
-                        data-testid={`candidate-bulk-fill-override-${entry.candidateId}`}
-                        style={{ flex: 1, padding: '3px 6px' }}
-                      />
+                      {!group.isCollisionFallback &&
+                      group.widget === 'typed_select' &&
+                      typedOptions &&
+                      typedOptions.length > 0 ? (
+                        <select
+                          value={rs.override}
+                          disabled={inFlight || rs.skipped}
+                          onChange={(e) => setRow(entry.candidateId, { override: e.target.value })}
+                          data-testid={`candidate-bulk-fill-override-${entry.candidateId}`}
+                          style={{ flex: 1, padding: '3px 6px' }}
+                        >
+                          <option value="">(use group value)</option>
+                          {typedOptions.map((opt: TypedOption) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      ) : !group.isCollisionFallback && group.widget === 'dropdown' ? (
+                        <select
+                          value={rs.override}
+                          disabled={inFlight || rs.skipped}
+                          onChange={(e) => setRow(entry.candidateId, { override: e.target.value })}
+                          data-testid={`candidate-bulk-fill-override-${entry.candidateId}`}
+                          style={{ flex: 1, padding: '3px 6px' }}
+                        >
+                          <option value="">(use group value)</option>
+                          {(ENUM_FIELD_OPTIONS[group.field] ?? []).map((opt) => (
+                            <option key={opt} value={opt}>
+                              {opt}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type="text"
+                          value={rs.override}
+                          disabled={inFlight || rs.skipped}
+                          placeholder={
+                            group.isCollisionFallback
+                              ? entry.class || '(class name)'
+                              : '(use group value)'
+                          }
+                          onChange={(e) => setRow(entry.candidateId, { override: e.target.value })}
+                          data-testid={`candidate-bulk-fill-override-${entry.candidateId}`}
+                          style={{ flex: 1, padding: '3px 6px' }}
+                        />
+                      )}
                     </div>
                     <div
                       style={{ fontSize: 11, color: resolved ? '#2e7d32' : '#c62828', marginTop: 4 }}
@@ -450,7 +536,8 @@ export const CandidateBulkFillPanel: React.FC<CandidateBulkFillPanelProps> = ({
               })}
             </ul>
           </fieldset>
-        ))}
+          );
+        })}
 
         {preview && (
           <div

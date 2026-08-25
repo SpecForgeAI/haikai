@@ -331,7 +331,9 @@ describe('candidateSaveBackService - SOAP message-shape save-back (Spec 4, TG6)'
     });
     const javaView = soapEntityCandidate({
       id: 'cand-account-java',
-      name: 'account', // normalized -> reviewable possible-duplicate (same entity, no mint)
+      name: 'account', // case-fold -> auto-suppressed (Kiro 2026-08-25: a
+      // case-only variant is the SAME name, bound confidently — previously
+      // this raised a reviewable possible-duplicate for a non-collision)
     });
     const { putModels } = wireAxios(model, [xsdView, javaView]);
 
@@ -344,10 +346,11 @@ describe('candidateSaveBackService - SOAP message-shape save-back (Spec 4, TG6)'
     const accounts = saved.metaModel.entities.logical_data_entities;
     expect(accounts).toHaveLength(1);
     expect(accounts[0].id).toBe('lde-account');
-    // One reconciles exactly (suppressed), the other normalizes (possible dup).
-    expect(result.entitiesSuppressed).toBe(1);
-    expect(result.possibleDuplicates).toHaveLength(1);
-    expect(result.possibleDuplicates[0].existingEntityId).toBe('lde-account');
+    // BOTH views suppress: exact for the XSD view, case-fold for the Java
+    // view (the genuinely-normalized possible-duplicate path stays pinned in
+    // candidateSaveBackFalseMergeGuard).
+    expect(result.entitiesSuppressed).toBe(2);
+    expect(result.possibleDuplicates).toHaveLength(0);
   });
 
   // ==========================================================================

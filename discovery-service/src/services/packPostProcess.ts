@@ -36,7 +36,7 @@ import { normalizeName } from './prompts/dedup';
  * Each value corresponds to a distinct emission site in the springClassic
  * adapter (see `extensionPacks/frameworkAdapters/springClassic/index.ts`).
  */
-const INTERNAL_SPRING_CONFIG_KINDS = new Set<string>([
+export const INTERNAL_SPRING_CONFIG_KINDS = new Set<string>([
   'configuration',   // @Configuration class
   'xml-context',     // applicationContext.xml metadata
   'xml-bean',        // <bean id="..."> from XML

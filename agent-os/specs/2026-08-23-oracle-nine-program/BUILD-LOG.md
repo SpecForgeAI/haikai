@@ -324,6 +324,34 @@ vs FQN); (e) fresh project = fresh model, no carried edges. Fixes:
     discovery responseContractScanner/crossCuttingHardeningGaps, frontend
     AppConfigContext + occasional worker OOM under full-suite load.
 
+17. **Blocked-panel typed options + Kiro round-5 fixes (2026-08-25)** —
+    (UX) Grid fkTarget parity in the Fix-missing-fields panel:
+    REFERENCE_FIELD_TARGETS registry maps each blocking field to its exact
+    resolver collections (interfaceClassName->interfaces,
+    source/targetEntity->logical+physical, endpoint->endpoints,
+    sourceService->services+interfaces, parent->run candidates id-valued);
+    group control AND per-row Override render a pick-from-valid-targets
+    select (free text could only produce another blocked row — these arms
+    resolve existing-only); zero-target fields fall back to free text with
+    an honest hint; enum rows also get select overrides; page assembles
+    typedReferenceSources (model collections + approved run candidates).
+    (Fix 1) mintOperationalHttpCandidates stamps the scoped service_id on
+    the web.xml interface + endpoints (mint runs after Step 8's stamping,
+    persisted directly — interface blocked on the service FK, cascading
+    both endpoints). (Fix 2 — "Better" per golden standard) case_fold tier
+    in matchByNormalizedName (0.95): a case-only variant binds confidently
+    everywhere (dup-suppression, request/response binding, enrich,
+    relationship guard passes); guards still block genuine normalization,
+    and the residual block stamps the side that ACTUALLY mismatched
+    (targetEntity vs sourceEntity). (Fix 3 — emitter-primary per Kiro)
+    interface_logical_entities links are never emitted for interfaces the
+    stage-2 post-process drops as internal (service-api etc.) — the 19
+    dangling "Interface Class Name" blocks are never born; external REST
+    links untouched; reconcile-guard alternative deliberately NOT taken
+    (incremental over-drop caveat). Re-pins: springClassic smoke ILE
+    expectation, OpenMRS baseline 3460->3132 (the dangling class), SOAP
+    WSDL-vs-Java both-suppress. Net per Kiro: 34 blocked -> 0.
+
 Pickup: discovery-service restart only. OPEN: transfer-proc invocation shape
 (estate grep), Blocked-101 breakdown, FindingEmitter persist errors (~476).
 

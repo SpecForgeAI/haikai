@@ -299,18 +299,25 @@ describe('web.xml handler roots (Oracle Nine item 6)', () => {
       ],
       'run-1',
       [{ name: 'POST /serviceInfo' }], // already inventoried -> deduped
+      'svc-1',
     );
     expect(minted[0]).toMatchObject({
       candidateType: 'interfaces',
       name: 'Operational endpoints (web.xml)',
     });
     expect((minted[0].data as Record<string, unknown>).interface_type).toBe('OPERATIONAL_HTTP');
+    // Kiro 2026-08-25: the mint runs AFTER Step 8's service_id stamping, so
+    // it must stamp the scoped service itself -- without it the interface
+    // blocked at save-back on the service parent FK (cascading both
+    // endpoint children).
+    expect((minted[0].data as Record<string, unknown>).service_id).toBe('svc-1');
     const endpoints = minted.slice(1);
     expect(endpoints).toHaveLength(1);
     expect(endpoints[0]).toMatchObject({ candidateType: 'endpoints', name: 'POST /refreshCache' });
     expect((endpoints[0].data as Record<string, unknown>).className).toBe(
       'com.x.CacheRefreshHandler',
     );
+    expect((endpoints[0].data as Record<string, unknown>).service_id).toBe('svc-1');
     expect(endpoints[0].parentCandidateId).toBe(minted[0].id);
   });
 

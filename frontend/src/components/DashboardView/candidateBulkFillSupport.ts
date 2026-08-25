@@ -24,7 +24,7 @@ import type { BulkCandidateEditPatch, SaveBackReasonEntry } from '../../api/disc
 // Widget kinds
 // ============================================================================
 
-export type BulkFillWidgetKind = 'typeahead' | 'dropdown' | 'freetext';
+export type BulkFillWidgetKind = 'dropdown' | 'typed_select' | 'typeahead' | 'freetext';
 
 /**
  * Known enum fields and their option sets (starter set, extensible). When a
@@ -82,9 +82,130 @@ export function isEnumField(field: string): boolean {
   return field in ENUM_FIELD_OPTIONS;
 }
 
+/**
+ * Typed reference-field targets (2026-08-25) — the panel's mirror of the
+ * Grid's per-column `fkTarget`. Each blocking field the save-back can only
+ * resolve against EXISTING records maps to the exact collections its
+ * resolver searches, so the control offers precisely the valid choices
+ * (the Grid convenience: an Interface's service field is a dropdown of the
+ * services already added — not a mixed pool of every name in the model).
+ *
+ * `modelCollections` = metaModel.entities arrays; `candidateTypes` = this
+ * run's approved/committed candidates (legal targets: Fix & Save commits
+ * them in the same pass). The `parent` sentinel offers run candidates with
+ * ID values (the one id-valued field).
+ */
+export interface TypedReferenceTarget {
+  modelCollections: string[];
+  candidateTypes: string[];
+}
+
+export const REFERENCE_FIELD_TARGETS: Record<string, TypedReferenceTarget> = {
+  interfaceClassName: { modelCollections: ['interfaces'], candidateTypes: ['interfaces'] },
+  interfaceName: { modelCollections: ['interfaces'], candidateTypes: ['interfaces'] },
+  interface_id: { modelCollections: ['interfaces'], candidateTypes: ['interfaces'] },
+  service_id: { modelCollections: ['services'], candidateTypes: ['services', 'service'] },
+  sourceService: {
+    modelCollections: ['services', 'interfaces'],
+    candidateTypes: ['services', 'service', 'interfaces'],
+  },
+  sourceEntity: {
+    modelCollections: ['logical_data_entities', 'physical_data_entities'],
+    candidateTypes: ['logical_data_entities', 'physical_data_entities'],
+  },
+  targetEntity: {
+    modelCollections: ['logical_data_entities', 'physical_data_entities'],
+    candidateTypes: ['logical_data_entities', 'physical_data_entities'],
+  },
+  sourceEntityName: {
+    modelCollections: ['logical_data_entities', 'physical_data_entities'],
+    candidateTypes: ['logical_data_entities', 'physical_data_entities'],
+  },
+  targetEntityName: {
+    modelCollections: ['logical_data_entities', 'physical_data_entities'],
+    candidateTypes: ['logical_data_entities', 'physical_data_entities'],
+  },
+  source_entity_name: {
+    modelCollections: ['logical_data_entities', 'physical_data_entities'],
+    candidateTypes: ['logical_data_entities', 'physical_data_entities'],
+  },
+  target_entity_name: {
+    modelCollections: ['logical_data_entities', 'physical_data_entities'],
+    candidateTypes: ['logical_data_entities', 'physical_data_entities'],
+  },
+  logicalEntityName: {
+    modelCollections: ['logical_data_entities'],
+    candidateTypes: ['logical_data_entities'],
+  },
+  logical_entity_name: {
+    modelCollections: ['logical_data_entities'],
+    candidateTypes: ['logical_data_entities'],
+  },
+  physical_entity_name: {
+    modelCollections: ['physical_data_entities'],
+    candidateTypes: ['physical_data_entities'],
+  },
+  physicalEntityName: {
+    modelCollections: ['physical_data_entities'],
+    candidateTypes: ['physical_data_entities'],
+  },
+  endpoint: { modelCollections: ['endpoints'], candidateTypes: ['endpoints'] },
+  endpointName: { modelCollections: ['endpoints'], candidateTypes: ['endpoints'] },
+};
+
+/** Fields whose value is a CANDIDATE ID from this run (label = name). */
+export const PARENT_REFERENCE_FIELDS: ReadonlySet<string> = new Set([
+  'parent',
+  'parent_candidate_id',
+]);
+
+export interface TypedOption {
+  label: string;
+  value: string;
+}
+
+export interface TypedReferenceSources {
+  /** metaModel.entities collection -> committed entity names. */
+  modelEntitiesByCollection: Record<string, string[]>;
+  /** This run's candidates (approved/committed only — legal save targets). */
+  runCandidates: Array<{ id: string; name: string; candidate_type: string }>;
+}
+
+/**
+ * The exact options for one group's field, or null when the field has no
+ * typed target (fall back to the flat-pool typeahead). Empty array = typed
+ * field with NOTHING to offer (the caller shows the honest hint + free text).
+ */
+export function typedOptionsForField(
+  field: string,
+  sources: TypedReferenceSources | undefined,
+): TypedOption[] | null {
+  if (!sources) return null;
+  if (PARENT_REFERENCE_FIELDS.has(field)) {
+    return sources.runCandidates
+      .map((c) => ({ label: `${c.name} (${c.candidate_type})`, value: c.id }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }
+  const target = REFERENCE_FIELD_TARGETS[field];
+  if (!target) return null;
+  const names = new Set<string>();
+  for (const collection of target.modelCollections) {
+    for (const n of sources.modelEntitiesByCollection[collection] ?? []) {
+      if (n.length > 0) names.add(n);
+    }
+  }
+  for (const c of sources.runCandidates) {
+    if (target.candidateTypes.includes(c.candidate_type) && c.name.length > 0) {
+      names.add(c.name);
+    }
+  }
+  return [...names].sort((a, b) => a.localeCompare(b)).map((n) => ({ label: n, value: n }));
+}
+
 /** Decide the per-group value control for a missing field. */
 export function widgetKindForField(field: string): BulkFillWidgetKind {
   if (isEnumField(field)) return 'dropdown';
+  if (field in REFERENCE_FIELD_TARGETS || PARENT_REFERENCE_FIELDS.has(field)) return 'typed_select';
   if (isReferenceField(field)) return 'typeahead';
   return 'freetext';
 }

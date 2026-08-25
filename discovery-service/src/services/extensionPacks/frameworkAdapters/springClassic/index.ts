@@ -32,6 +32,7 @@
  */
 import { v4 as uuidv4 } from 'uuid';
 import type { DiscoveryCandidate } from '../../../../types/candidate';
+import { INTERNAL_SPRING_CONFIG_KINDS } from '../../../packPostProcess';
 import type {
   SourceFileIR,
   ClassIR,
@@ -2399,7 +2400,25 @@ function emitInterfaceLogicalEntities(
     }
   }
 
+  // Kiro 2026-08-25 (dangling ILE links): stage-2 post-process DROPS every
+  // `interfaces` candidate whose springConfigKind is internal (service-api
+  // etc. — internal DAOs are not external meta-model interfaces), but the
+  // interface_logical_entities links referencing them were still emitted
+  // here, so they arrived at save-back pointing at an interface that no
+  // longer exists ("Interface Class Name" blocked, no fillable value). A
+  // link from an interface outside the external meta-model has no meaning —
+  // skip it at the source.
+  const internallyFilteredInterfaces = new Set<string>();
+  for (const c of out.candidates) {
+    if (c.candidateType !== 'interfaces') continue;
+    const kind = (c.data as { springConfigKind?: unknown } | undefined)?.springConfigKind;
+    if (typeof kind === 'string' && INTERNAL_SPRING_CONFIG_KINDS.has(kind)) {
+      internallyFilteredInterfaces.add(c.name);
+    }
+  }
+
   for (const [controllerName, dtos] of out.controllerToDtos.entries()) {
+    if (internallyFilteredInterfaces.has(controllerName)) continue;
     const filePath = controllerFilePath.get(controllerName) ?? '';
     for (const rawDto of dtos) {
       const dtoName = rawDto.replace(/\[\]$/, '').trim();
