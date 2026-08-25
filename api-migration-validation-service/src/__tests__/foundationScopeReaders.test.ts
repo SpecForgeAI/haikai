@@ -266,4 +266,29 @@ describe('quiet-window guardrail + audit sink (Oracle Nine item 5)', () => {
     });
     expect([...(metadata.auditSinkTables ?? [])]).toEqual(['audit_trail_info']);
   });
+
+  it('sequence-generator tables ride the index and the quiet/end-of-job tolerance (Kiro C1, 2026-08-25)', () => {
+    // Oracle Nine item 2 materializes the foundations sequence-generator
+    // decision onto constraints_metadata; the tolerance classes read it —
+    // the sequence table has a PK, so the keyless rule never covered it
+    // and every create falsely halted the end-of-job fingerprint.
+    const metadata = buildCompensationMetadataIndex({
+      metaModel: {
+        entities: {
+          physical_data_entities: [
+            {
+              id: 'e1',
+              name: 'seq_registry',
+              constraints_metadata: {
+                sequence_generator: { strategy: 'native_sequences', name_column: 'SeqName' },
+              },
+            },
+            { id: 'e2', name: 'deal_book' },
+          ],
+          physical_data_attributes: [],
+        },
+      },
+    });
+    expect([...(metadata.sequenceGeneratorTables ?? [])]).toEqual(['seq_registry']);
+  });
 });

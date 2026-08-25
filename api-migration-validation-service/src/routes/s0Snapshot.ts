@@ -27,7 +27,7 @@ import {
   SybaseCompensationWriteAdapter,
   CompensationWriteAdapter,
 } from '../services/compensation/WriteAdapter';
-import { verifyS0Fingerprint } from '../services/s0/fingerprint';
+import { defaultVerifyTolerated, verifyS0Fingerprint } from '../services/s0/fingerprint';
 import { latestSnapshotId, readManifest, snapshotDirFor } from '../services/s0/manifest';
 import { runS0Restore } from '../services/s0/restoreRunner';
 import { runS0Snapshot } from '../services/s0/snapshotRunner';
@@ -210,11 +210,15 @@ export function buildS0SnapshotRouter(): Router {
     }
     const adapter = createDbAdapter(ctx.config);
     try {
+      // Kiro C2 (2026-08-25): same tolerated default as the restore
+      // self-verify — un-dumped tables + volatile/audit-sink/sequence
+      // classes report as tolerated_mismatches, never hard failures.
       const report = await verifyS0Fingerprint(
         adapter,
         metadata,
         resolved.manifest,
         ctx.config.schema ?? null,
+        defaultVerifyTolerated(metadata, resolved.manifest),
       );
       trace.detail('s0.verify.done', {
         snapshotId: resolved.snapshotId,

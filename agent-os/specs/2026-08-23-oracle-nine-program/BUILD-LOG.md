@@ -379,6 +379,32 @@ vs FQN); (e) fresh project = fresh model, no carried edges. Fixes:
     deviation from Kiro's build: the serializer PIN Kiro offered is added
     (house standard). Restart: frontend.
 
+20. **Kiro C1 + C2: S0 tolerance discipline (2026-08-25)** — C1: the
+    compensation metadata index gains sequenceGeneratorTables (read from
+    constraints_metadata.sequence_generator — the Oracle Nine item-2
+    foundations decision; decision-driven, no name heuristics, better than
+    the suggested shape-detection). Sequence tables join the tolerated set
+    of BOTH the end-of-job fingerprint and the quiet-window check: a
+    counter bump is unavoidable on every create and only the S0 restore
+    resets it (same rationale as audit sinks; it has a PK so the keyless
+    rule never covered it — the false checksum_mismatch halt dies). C2:
+    new defaultVerifyTolerated(metadata, manifest) = un-dumped manifest
+    entries (file:null count-only/no-PK) ∪ volatile ∪ auditSink ∪
+    sequenceGenerator; the restore runner's final self-verify AND the
+    standalone /verify route now pass it (previously neither passed ANY
+    tolerated set → a restore that reset everything restorable reported
+    failed). Divergence on un-restorable tables surfaces as
+    tolerated_mismatches — visible, honest, non-failing. Applied as the
+    route default (no request-body option; simpler + the wire already
+    carries tolerated_mismatches). Pins: sequence index read, tolerated
+    composition (dumped never tolerated), restore-self-verify RESTORED
+    with audit divergence tolerated. A1-A3/B1 from the same Kiro review
+    were already on main (rounds 47fcfa3b/bca7f9ff — the review predates
+    the work-machine clone refresh); C3 deferred to next-run confirmation
+    (rounds 4-5 likely closed it); D1 hardening already satisfied
+    (wizard dual-writes canonical allowlist keys); D2 with Kiro on the
+    work machine. Restart: AMVS.
+
 Pickup: discovery-service restart only. OPEN: transfer-proc invocation shape
 (estate grep), Blocked-101 breakdown, FindingEmitter persist errors (~476).
 

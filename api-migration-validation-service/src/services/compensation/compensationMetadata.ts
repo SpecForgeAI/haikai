@@ -57,6 +57,14 @@ export interface CompensationMetadataIndex {
    *  (item 5): S0-tolerated, never compensated, excluded from strict
    *  parity — append-only operational residue, not business state. */
   auditSinkTables?: Set<string>;
+  /** Tables the foundations sequence-generator card identified as the
+   *  application's number fountain (Oracle Nine item 2 materializes
+   *  `constraints_metadata.sequence_generator`). A monotonic counter bumps
+   *  as a side effect of every create and only the S0 restore resets it —
+   *  exactly the tolerated category (Kiro C1, 2026-08-25: the sequence
+   *  table has a PK, so the keyless rule never covered it and the
+   *  end-of-job fingerprint false-halted on an unavoidable bump). */
+  sequenceGeneratorTables?: Set<string>;
 }
 
 /** Test seam: build the index from an already-fetched raw model object. */
@@ -118,14 +126,21 @@ export function buildCompensationMetadataIndex(model: unknown): CompensationMeta
     if (meta.scope === 'volatile') volatileTables.add(lower);
   }
   const auditSinkTables = new Set<string>();
+  const sequenceGeneratorTables = new Set<string>();
   for (const entity of entities) {
     const table = String(entity?.name ?? '');
     if (!table) continue;
-    if ((entity.constraints_metadata as { audit_sink?: unknown } | undefined)?.audit_sink) {
+    const constraints = entity.constraints_metadata as
+      | { audit_sink?: unknown; sequence_generator?: unknown }
+      | undefined;
+    if (constraints?.audit_sink) {
       auditSinkTables.add(table.toLowerCase());
     }
+    if (constraints?.sequence_generator) {
+      sequenceGeneratorTables.add(table.toLowerCase());
+    }
   }
-  return { byTable, volatileTables, auditSinkTables };
+  return { byTable, volatileTables, auditSinkTables, sequenceGeneratorTables };
 }
 
 /**

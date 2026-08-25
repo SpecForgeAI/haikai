@@ -172,3 +172,33 @@ export async function verifyS0Fingerprint(
     tolerated_mismatches: toleratedMismatches,
   };
 }
+
+/**
+ * The DEFAULT tolerated set for a standalone S0 verify (Kiro C2,
+ * 2026-08-25): tables the restore structurally CANNOT reset — un-dumped
+ * manifest entries (`file: null`: no-PK count-only coverage) — plus the
+ * model's tolerance classes (volatile scope, audit sinks, the sequence
+ * generator). Neither the restore runner's final self-verify nor the
+ * standalone /verify route passed a tolerated set, so a restore that reset
+ * every restorable table still reported `failed` on the audit/keyless
+ * tables it could never touch. Mismatches on these surface as
+ * `tolerated_mismatches` — visible, honest, non-failing.
+ */
+export function defaultVerifyTolerated(
+  metadata: {
+    volatileTables?: Set<string>;
+    auditSinkTables?: Set<string>;
+    sequenceGeneratorTables?: Set<string>;
+  },
+  manifest: S0Manifest,
+): Set<string> {
+  const tolerated = new Set<string>([
+    ...(metadata.volatileTables ?? []),
+    ...(metadata.auditSinkTables ?? []),
+    ...(metadata.sequenceGeneratorTables ?? []),
+  ]);
+  for (const entry of manifest.tables) {
+    if (entry.file === null) tolerated.add(entry.table.toLowerCase());
+  }
+  return tolerated;
+}

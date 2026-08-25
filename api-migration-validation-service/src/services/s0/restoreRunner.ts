@@ -23,7 +23,7 @@ import { renderLiteral } from '../compensation/sqlLiterals';
 import { valueForColumn } from '../compensation/tableImage';
 import type { CompensationEngine, CompensationTableMeta } from '../compensation/types';
 import type { CompensationWriteAdapter } from '../compensation/WriteAdapter';
-import { verifyS0Fingerprint, S0FingerprintReport } from './fingerprint';
+import { defaultVerifyTolerated, verifyS0Fingerprint, S0FingerprintReport } from './fingerprint';
 import type { S0Manifest } from './manifest';
 
 export interface S0RestoreArgs {
@@ -173,11 +173,17 @@ export async function runS0Restore(args: S0RestoreArgs): Promise<S0RestoreReport
   const anyFailed = tables.some((t) => t.status === 'failed');
   let verification: S0FingerprintReport | null = null;
   if (!anyFailed) {
+    // Kiro C2 (2026-08-25): the self-verify must tolerate what the restore
+    // structurally cannot reset (un-dumped count-only tables) plus the
+    // model's tolerance classes — a restore that reset every restorable
+    // table reports `restored`, with the untouchable tables shown as
+    // tolerated_mismatches instead of flipping the whole result to failed.
     verification = await verifyS0Fingerprint(
       args.readAdapter,
       args.metadata,
       args.manifest,
       args.schema,
+      defaultVerifyTolerated(args.metadata, args.manifest),
     );
   }
 

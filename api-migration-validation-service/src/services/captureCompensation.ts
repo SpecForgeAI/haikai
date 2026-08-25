@@ -221,6 +221,9 @@ export async function runQuietWindowCheck(args: {
   const tolerated = new Set<string>([
     ...(args.metadata.volatileTables ?? []),
     ...(args.metadata.auditSinkTables ?? []),
+    // Kiro C1 (2026-08-25): sequence/counter tables move under ANY create
+    // traffic — a bump is not evidence the window is unquiet.
+    ...(args.metadata.sequenceGeneratorTables ?? []),
   ]);
   for (const [lower, meta] of args.metadata.byTable) {
     if (meta.keyPolicy === 'keyless_multiset') tolerated.add(lower);
@@ -298,6 +301,11 @@ export async function runEndOfJobFingerprint(args: {
     }
     const tolerated = new Set<string>(args.metadata.volatileTables ?? []);
     for (const table of args.metadata.auditSinkTables ?? []) tolerated.add(table.toLowerCase());
+    // Kiro C1 (2026-08-25): the sequence table bumps unavoidably on every
+    // create and only the S0 restore resets it — tolerated by the SAME
+    // rationale as audit sinks (it has a PK, so the keyless rule never
+    // covered it and the fingerprint false-halted).
+    for (const table of args.metadata.sequenceGeneratorTables ?? []) tolerated.add(table.toLowerCase());
     for (const table of args.keylessWrittenTables ?? []) tolerated.add(table.toLowerCase());
     const report = await verifyS0Fingerprint(
       args.readAdapter,

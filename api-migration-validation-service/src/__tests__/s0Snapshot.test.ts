@@ -15,7 +15,7 @@ process.env.S0_SNAPSHOT_DIR = TMP_ROOT;
 /* eslint-disable @typescript-eslint/no-var-requires */
 const { buildCompensationMetadataIndex } = require('../services/compensation/compensationMetadata');
 const { runS0Snapshot } = require('../services/s0/snapshotRunner');
-const { verifyS0Fingerprint } = require('../services/s0/fingerprint');
+const { verifyS0Fingerprint, defaultVerifyTolerated } = require('../services/s0/fingerprint');
 const { runS0Restore } = require('../services/s0/restoreRunner');
 const { latestSnapshotId, readManifest, snapshotDirFor } = require('../services/s0/manifest');
 const {
@@ -194,6 +194,66 @@ describe('runS0Restore', () => {
     // Inserts silently skipped -> orders is empty -> verification count fails.
     expect(report.status).toBe('failed');
     expect(report.verification?.matches).toBe(false);
+  });
+});
+
+describe('S0 verify tolerated default (Kiro C2, 2026-08-25)', () => {
+  it('defaultVerifyTolerated composes un-dumped manifest tables with the model tolerance classes', () => {
+    const manifest = {
+      snapshot_id: 's', project_id: 'p', architecture_id: 'a',
+      created_at: 'x', source_db_type: 'sybase', schema: null,
+      tables: [
+        { table: 'orders', pk_columns: ['id'], row_count: 3, checksum: 'c', file: 'orders.jsonl', note: null },
+        { table: 'audit_log', pk_columns: [], row_count: 1, checksum: null, file: null, note: 'skipped_no_pk_count_only' },
+      ],
+    };
+    const tolerated = defaultVerifyTolerated(
+      {
+        volatileTables: new Set(['work_queue']),
+        auditSinkTables: new Set(['audit_trail_info']),
+        sequenceGeneratorTables: new Set(['seq_registry']),
+      },
+      manifest,
+    );
+    expect([...tolerated].sort()).toEqual([
+      'audit_log',
+      'audit_trail_info',
+      'seq_registry',
+      'work_queue',
+    ]);
+    // Dumped tables are NEVER tolerated — a mismatch there stays a hard failure.
+    expect(tolerated.has('orders')).toBe(false);
+  });
+
+  it('the restore self-verify reports RESTORED when only un-restorable tables diverged', async () => {
+    // Pre-fix: the self-verify received no tolerated set, so a restore
+    // that reset every restorable table still reported failed on the
+    // un-dumped audit table it structurally could not touch.
+    const store = seededStore();
+    const { manifest, dir } = await takeSnapshot(store, 's0-test-c2');
+
+    // Wreck a dumped table (restorable) AND write to the un-dumped no-PK
+    // audit table (NOT restorable — it was never dumped).
+    store.tables.get('orders')!.push({ id: 9, name: 'junk' });
+    store.tables.get('audit_log')!.push({ message: 'late write during capture' });
+
+    const report = await runS0Restore({
+      readAdapter: fakeReadAdapter(store),
+      writeAdapter: fakeWriteAdapter(store),
+      metadata: METADATA,
+      manifest,
+      dir,
+      engine: 'sybase',
+    });
+
+    const audit = report.tables.find((t: { table: string }) => t.table === 'audit_log');
+    expect(audit?.status).toBe('skipped_not_dumped');
+    // The un-dumped divergence is tolerated — visible, honest, non-failing.
+    expect(report.verification?.matches).toBe(true);
+    expect(
+      report.verification?.tolerated_mismatches.map((m: { table: string }) => m.table),
+    ).toContain('audit_log');
+    expect(report.status).toBe('restored');
   });
 });
 
