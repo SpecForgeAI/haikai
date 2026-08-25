@@ -352,6 +352,18 @@ vs FQN); (e) fresh project = fresh model, no carried edges. Fixes:
     expectation, OpenMRS baseline 3460->3132 (the dangling class), SOAP
     WSDL-vs-Java both-suppress. Net per Kiro: 34 blocked -> 0.
 
+18. **Capture wizard OPERATIONAL_HTTP filter (Kiro review, 2026-08-25)** —
+    the AMS reconciliation excludes OPERATIONAL_HTTP exactly like the
+    internal batch types (both in INTERNAL_INTERFACE_TYPES since item 6),
+    but the wizard's selectable-interface filter was never updated: it
+    dropped INTERNAL_PROCESSING/INTERNAL_PROCESS and left the web.xml
+    operational servlets selectable. Fix + Kiro's drift-prevention
+    suggestion taken: NON_CAPTURABLE_INTERFACE_TYPES exported constant
+    (the frontend mirror of the AMS set, doc-linked both ways) used by the
+    filter; comment rewritten to name both exclusion classes and the
+    server-side twin. Pins: mirror-set vocabulary + REST offered /
+    batch hidden / operational hidden. Restart: frontend.
+
 Pickup: discovery-service restart only. OPEN: transfer-proc invocation shape
 (estate grep), Blocked-101 breakdown, FindingEmitter persist errors (~476).
 
