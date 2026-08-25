@@ -122,3 +122,36 @@ export function groupIdenticalMessages(
   }
   return [...byMessage.values()];
 }
+
+/**
+ * Serialize the FULL diagnostics set to a plain-text report (2026-08-25 —
+ * Copy/Download buttons on the session screen's diagnostics header). Reuses
+ * `groupDiagnostics` + `labelFor` so the text ordering matches the on-screen
+ * section (halt -> warning -> info), but unlike the screen it emits EVERY
+ * row with its scenario/operation context and the complete `detail_json` —
+ * no xN collapsing, no 5-line truncation. The exported artefact is the
+ * whole thing, so what the operator pastes into a diagnosis chat is
+ * complete.
+ */
+export function serializeDiagnosticsReport(
+  header: string,
+  diagnostics: readonly ApiBehaviourDiagnosticDto[],
+): string {
+  const lines: string[] = [header, ''];
+  const groups = groupDiagnostics(diagnostics);
+  for (const g of groups) {
+    lines.push(`== ${labelFor(g.type)} [${g.severity}] (${g.items.length}) ==`);
+    for (const d of g.items) {
+      const context: string[] = [];
+      if (d.operation_id) context.push(`operation=${d.operation_id}`);
+      if (d.scenario_id) context.push(`scenario=${d.scenario_id}`);
+      const contextSuffix = context.length > 0 ? ` [${context.join(' ')}]` : '';
+      lines.push(`- ${d.message ?? '(no message)'}${contextSuffix}`);
+      if (d.detail_json && Object.keys(d.detail_json).length > 0) {
+        lines.push(`  detail: ${JSON.stringify(d.detail_json)}`);
+      }
+    }
+    lines.push('');
+  }
+  return lines.join('\n');
+}

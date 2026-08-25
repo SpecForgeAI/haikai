@@ -98,7 +98,7 @@ import {
 } from './postmanExport';
 import { retryUncoveredApis, listCaptures, excludeEndpoint, refreshOasCache, listDiagnostics } from '../../api/apiBehaviourClient';
 import type { ApiBehaviourDiagnosticDto } from '../../api/apiBehaviourClient';
-import { groupDiagnostics, groupIdenticalMessages, labelFor, shouldOfferS0Restore } from './captureDiagnosticsSupport';
+import { groupDiagnostics, groupIdenticalMessages, labelFor, serializeDiagnosticsReport, shouldOfferS0Restore } from './captureDiagnosticsSupport';
 import { S0RestorePanel } from './S0RestorePanel';
 import { useArchitectureDispatch } from '../../contexts/ArchitectureContext';
 import { useProject } from '../../contexts/ProjectContext';
@@ -300,6 +300,54 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
     };
   }, [projectId, architectureId, sessionId, session, detailsRefreshCounter]);
   const diagGroups = useMemo(() => groupDiagnostics(diagnostics), [diagnostics]);
+  // Diagnostics header actions (2026-08-25): Copy / Download export the FULL
+  // untruncated report (the screen keeps its readable collapsed view — the
+  // buttons exist so the operator can hand a diagnosis chat the whole
+  // thing); Collapse hides the group list while keeping header + buttons
+  // actionable.
+  const [diagCollapsed, setDiagCollapsed] = useState(false);
+  const [diagCopied, setDiagCopied] = useState(false);
+  const diagReport = useMemo(
+    () =>
+      serializeDiagnosticsReport(
+        `Capture diagnostics — session ${sessionId} (${session?.name ?? ''}) status=${session?.status ?? ''}`,
+        diagnostics,
+      ),
+    [sessionId, session, diagnostics],
+  );
+  const handleCopyDiagnostics = useCallback(async () => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(diagReport);
+      } else {
+        // Non-secure contexts (plain-http work machine): hidden-textarea
+        // execCommand fallback.
+        const ta = document.createElement('textarea');
+        ta.value = diagReport;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      setDiagCopied(true);
+      window.setTimeout(() => setDiagCopied(false), 2000);
+    } catch {
+      // Clipboard refusal is non-fatal — Download remains available.
+    }
+  }, [diagReport]);
+  const handleDownloadDiagnostics = useCallback(() => {
+    const blob = new Blob([diagReport], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `capture-diagnostics-${sessionId}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [diagReport, sessionId]);
 
   // Coverage Closure: run the "Retry uncovered APIs" pass, then refresh the
   // session so the patched coverage summary + gate re-render. Closes the modal
@@ -1229,8 +1277,35 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
           className={styles.detailSection}
           data-testid="capture-diagnostics-section"
         >
-          <h3>Diagnostics ({diagnostics.length})</h3>
-          {diagGroups.map((g) => {
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <h3 style={{ marginRight: 'auto' }}>Diagnostics ({diagnostics.length})</h3>
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              onClick={handleCopyDiagnostics}
+              data-testid="diag-copy-button"
+            >
+              {diagCopied ? 'Copied' : 'Copy'}
+            </button>
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              onClick={handleDownloadDiagnostics}
+              data-testid="diag-download-button"
+            >
+              Download
+            </button>
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              onClick={() => setDiagCollapsed((prev) => !prev)}
+              data-testid="diag-collapse-toggle"
+              aria-expanded={!diagCollapsed}
+            >
+              {diagCollapsed ? 'Expand' : 'Collapse'}
+            </button>
+          </div>
+          {!diagCollapsed && diagGroups.map((g) => {
             const color =
               g.severity === 'halt'
                 ? '#c62828'

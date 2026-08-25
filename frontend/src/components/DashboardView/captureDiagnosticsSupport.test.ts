@@ -128,3 +128,49 @@ describe('groupIdenticalMessages', () => {
     expect(grouped).toEqual([{ message: '(no message)', count: 2, id: 'a' }]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// serializeDiagnosticsReport (2026-08-25 — diagnostics header Copy/Download)
+// ---------------------------------------------------------------------------
+import { serializeDiagnosticsReport } from './captureDiagnosticsSupport';
+
+describe('serializeDiagnosticsReport', () => {
+  it('emits every row untruncated with context + full detail_json, ordered halt -> warning -> info', () => {
+    const diag = (
+      id: string,
+      type: string,
+      message: string,
+      extra: Partial<{ operation_id: string; scenario_id: string; detail_json: Record<string, unknown> }> = {},
+    ) => ({
+      id,
+      session_id: 's-1',
+      operation_id: extra.operation_id ?? null,
+      scenario_id: extra.scenario_id ?? null,
+      diagnostic_type: type,
+      message,
+      detail_json: extra.detail_json ?? null,
+      created_at: '2026-08-25T00:00:00Z',
+    });
+    const report = serializeDiagnosticsReport('Capture diagnostics — session s-1', [
+      diag('d1', 'endpoint_skipped', 'skipped: no effect map', {
+        operation_id: 'op-9',
+        detail_json: { endpoint: 'POST /api/x', reason: 'no_effect_map' },
+      }),
+      diag('d2', 'compensation_residue', 'residue on deal_book', { scenario_id: 'sc-3' }),
+      // Identical messages stay SEPARATE rows (no xN collapsing — the
+      // export is the complete artefact, unlike the screen).
+      diag('d3', 'endpoint_skipped', 'skipped: no effect map'),
+    ]);
+    const lines = report.split('\n');
+    expect(lines[0]).toBe('Capture diagnostics — session s-1');
+    // Halt group first even though the warning group has more rows.
+    expect(report.indexOf('== compensation residue [halt] (1) ==')).toBeLessThan(
+      report.indexOf('== endpoint skipped [warning] (2) =='),
+    );
+    expect(report).toContain('- residue on deal_book [scenario=sc-3]');
+    expect(report).toContain('- skipped: no effect map [operation=op-9]');
+    expect(report).toContain('detail: {"endpoint":"POST /api/x","reason":"no_effect_map"}');
+    // Both identical-message rows present.
+    expect(report.match(/- skipped: no effect map/g)).toHaveLength(2);
+  });
+});

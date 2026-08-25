@@ -364,6 +364,21 @@ vs FQN); (e) fresh project = fresh model, no carried edges. Fixes:
     server-side twin. Pins: mirror-set vocabulary + REST offered /
     batch hidden / operational hidden. Restart: frontend.
 
+19. **Diagnostics header buttons (Kiro replication, 2026-08-25)** —
+    serializeDiagnosticsReport pure helper (reuses groupDiagnostics +
+    labelFor; halt->warning->info order; EVERY row with
+    operation/scenario context + full detail_json — no xN collapsing, no
+    truncation: the exported artefact is complete). Session screen's
+    diagnostics header is a flex row with Copy
+    (navigator.clipboard.writeText + hidden-textarea execCommand fallback,
+    "Copied" flash 2s), Download (Blob -> object URL -> auto-click ->
+    revoke, capture-diagnostics-<sessionId>.txt), Collapse/Expand
+    (diag-collapse-toggle, aria-expanded; header+buttons stay actionable).
+    Report memoized on [sessionId, session, diagnostics]; per-group
+    "Show all" toggles untouched; styles.secondaryButton reused. One
+    deviation from Kiro's build: the serializer PIN Kiro offered is added
+    (house standard). Restart: frontend.
+
 Pickup: discovery-service restart only. OPEN: transfer-proc invocation shape
 (estate grep), Blocked-101 breakdown, FindingEmitter persist errors (~476).
 
