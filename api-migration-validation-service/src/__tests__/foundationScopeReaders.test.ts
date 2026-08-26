@@ -18,6 +18,7 @@ import { buildCompensationMetadataIndex } from '../services/compensation/compens
 import {
   buildEffectScopeIndexFromModel,
   effectTablesFor,
+  readTablesFor,
 } from '../services/stateDelta';
 import {
   computeScopeConflictEndpoints,
@@ -345,5 +346,59 @@ describe('fingerprint mismatch suspect attribution (2026-08-26)', () => {
     expect(fingerprintSuspectsNote([{ table: 'filter_tag' }], undefined)).toBe('');
     expect(fingerprintSuspectsNote([{ table: 'org_registry' }], scope)).toBe('');
     expect(fingerprintSuspectsNote([], scope)).toBe('');
+  });
+
+  it('readTablesFor template-matches like effectTablesFor and is [] on older index shapes (2026-08-26 defensive bracket)', () => {
+    const scope = buildEffectScopeIndexFromModel({
+      metaModel: {
+        entities: {
+          physical_data_entities: [{ id: 'e1', name: 'filter_tag' }],
+          endpoints: [
+            { id: 'ep1', operation_verb: 'POST', path_or_address: '/filters/{filterId}/markFavourite' },
+          ],
+        },
+        relationships: {
+          endpoint_data_effects: [
+            { endpoint_id: 'ep1', access_mode: 'read', data_entity_point_id: 'dep_phy_e1' },
+          ],
+        },
+      },
+    } as never);
+    // Concrete path resolves through the {param} template, mirror of
+    // effectTablesFor.
+    expect(readTablesFor(scope, 'post', '/filters/4593/markFavourite')).toEqual(['filter_tag']);
+    expect(readTablesFor(scope, 'POST', '/other/4593')).toEqual([]);
+    // Older index shapes (no read map) resolve to [] — never a throw.
+    expect(
+      readTablesFor(
+        { tablesByOperationKey: new Map(), readMappedOperationKeys: new Set() },
+        'POST',
+        '/filters/4593/markFavourite',
+      ),
+    ).toEqual([]);
+  });
+
+  it('scope-excluded/volatile read targets never enter the defensive bracket scope (policy drift must not become false residue)', () => {
+    const scope = buildEffectScopeIndexFromModel({
+      metaModel: {
+        entities: {
+          physical_data_entities: [
+            { id: 'e1', name: 'filter_tag' },
+            { id: 'e2', name: 'work_queue', migration_scope: 'volatile', scope_decision_ref: 'F-3' },
+          ],
+          endpoints: [{ id: 'ep1', operation_verb: 'POST', path_or_address: '/filters' }],
+        },
+        relationships: {
+          endpoint_data_effects: [
+            { endpoint_id: 'ep1', access_mode: 'read', data_entity_point_id: 'dep_phy_e1' },
+            { endpoint_id: 'ep1', access_mode: 'read', data_entity_point_id: 'dep_phy_e2' },
+          ],
+        },
+      },
+    } as never);
+    // The volatile table is read-mapped for CLASSIFICATION (the op is still
+    // a proven read) but excluded from the snapshot scope.
+    expect(readTablesFor(scope, 'POST', '/filters')).toEqual(['filter_tag']);
+    expect(scope.readMappedOperationKeys.has('POST /filters')).toBe(true);
   });
 });

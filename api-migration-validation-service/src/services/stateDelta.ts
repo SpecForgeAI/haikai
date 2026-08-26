@@ -132,12 +132,15 @@ export function buildEffectScopeIndexFromModel(model: RawModel): EffectScopeInde
     if (mode === 'read') {
       // Proven-read classification (2026-08-20): the edge itself is enough
       // for the no-bracket ruling — but the TABLE is kept too (2026-08-26),
-      // so a fingerprint failure on it can name this op as a suspect for a
-      // missed write edge.
+      // feeding both the fingerprint-failure suspect note AND the defensive
+      // bracket scope. Scope-excluded/volatile entities are SKIPPED exactly
+      // like the write side: policy says those tables drift, and imaging
+      // them per scenario would fight legitimate concurrent drift into
+      // false residue halts.
       readMappedOperationKeys.add(key);
-      const readPointId = edge.data_entity_point_id ?? '';
-      const readTable = tableByEntityId.get(readPointId.replace(/^dep_(phy|log)_/, ''));
-      if (readTable) {
+      const readEntityId = (edge.data_entity_point_id ?? '').replace(/^dep_(phy|log)_/, '');
+      const readTable = tableByEntityId.get(readEntityId);
+      if (readTable && !scopeByEntityId.has(readEntityId)) {
         const reads = readTablesByOperationKey.get(key) ?? [];
         if (!reads.includes(readTable)) reads.push(readTable);
         readTablesByOperationKey.set(key, reads);
@@ -227,6 +230,32 @@ export function effectTablesFor(
     const keyVerb = key.slice(0, spaceAt);
     const keyPath = key.slice(spaceAt + 1);
     if (keyVerb === verb && pathMatchesTemplate(path, keyPath)) return tables;
+  }
+  return [];
+}
+
+/**
+ * The READ-mode tables for a concrete (method, path) call, template-matched
+ * (2026-08-26 defensive bracket). Mirrors `effectTablesFor` but reads
+ * `readTablesByOperationKey` — the bracket widens its snapshot scope to the
+ * read∪write union so a mis-mined write edge (the read-then-write idiom
+ * whose INSERT the mining lost) is caught and reverted PER SCENARIO instead
+ * of leaking to the end-of-job S0 fingerprint and discarding a multi-hour
+ * run. Returns [] when the map is absent (older index shapes and existing
+ * test harnesses are unaffected).
+ */
+export function readTablesFor(
+  index: EffectScopeIndex,
+  method: string,
+  path: string,
+): string[] {
+  const readTables = index.readTablesByOperationKey;
+  if (!readTables) return [];
+  const verb = method.toUpperCase();
+  for (const [key, tables] of readTables) {
+    const spaceAt = key.indexOf(' ');
+    if (key.slice(0, spaceAt) !== verb) continue;
+    if (pathMatchesTemplate(path, key.slice(spaceAt + 1))) return tables;
   }
   return [];
 }

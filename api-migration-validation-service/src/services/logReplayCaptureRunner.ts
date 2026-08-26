@@ -49,7 +49,7 @@ import {
 } from './captureCompensation';
 import { runCompensationBracket } from './compensation/compensationRunner';
 import { fetchCompensationMetadataIndex } from './compensation/compensationMetadata';
-import { effectTablesFor, fetchEffectScopeIndex } from './stateDelta';
+import { effectTablesFor, fetchEffectScopeIndex, readTablesFor } from './stateDelta';
 import { createTracer } from '../trace';
 
 const trace = createTracer('capture-svc');
@@ -280,12 +280,12 @@ export async function runLogReplayCurrentCapture(
       try {
         let fired: Awaited<ReturnType<typeof fireItem>>;
         if (isMutating && compensation) {
-          const tables = effectTablesFor(
+          const writeTables = effectTablesFor(
             compensation.effectScope,
             item.method,
             item.path_template,
           );
-          if (tables.length === 0) {
+          if (writeTables.length === 0) {
             itemsSkipped += 1;
             trace.detail(
               'log_replay.compensation_refused',
@@ -294,6 +294,17 @@ export async function runLogReplayCurrentCapture(
             );
             continue;
           }
+          // Defensive bracket scope (2026-08-26, orchestrator mirror): the
+          // READ∪WRITE union, so a mis-mined write on a read-marked table is
+          // reverted per item instead of leaking to the end-of-job
+          // fingerprint. Skip semantics above are UNCHANGED — only what gets
+          // snapshotted expanded.
+          const tables = Array.from(
+            new Set([
+              ...writeTables,
+              ...readTablesFor(compensation.effectScope, item.method, item.path_template),
+            ]),
+          );
           const bracket = await runCompensationBracket({
             readAdapter: compensation.readAdapter,
             writeAdapter: compensation.writeAdapter,
