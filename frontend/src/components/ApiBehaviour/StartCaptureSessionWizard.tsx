@@ -149,6 +149,15 @@ interface Step3Config {
   schema: string;
   username: string;
   password: string;
+  /**
+   * Optional READ-ONLY observation login (credential-role split, Kiro run-3
+   * Issue 4): when both are supplied, DB sampling / snapshots / imaging /
+   * fingerprints connect with THIS login and the write-capable login above
+   * exists only inside the compensation bracket. Leaving them empty keeps
+   * the single-login posture and its advisory.
+   */
+  readonlyUsername: string;
+  readonlyPassword: string;
   allowlistText: string; // comma-separated table names
 }
 
@@ -188,6 +197,8 @@ const DEFAULT_STEP3: Step3Config = {
   schema: '',
   username: '',
   password: '',
+  readonlyUsername: '',
+  readonlyPassword: '',
   allowlistText: '',
 };
 
@@ -696,6 +707,20 @@ export function StartCaptureSessionWizard({
     return {
       apiAuth: apiAuth as { type: string },
       dbPassword: step3.dbType !== 'none' ? step3.password : null,
+      // Credential-role split: both-or-nothing, mirroring the backend rule
+      // (a lone value would silently fall back to the write password).
+      dbReadonlyUsername:
+        step3.dbType !== 'none' &&
+        step3.readonlyUsername.trim() &&
+        step3.readonlyPassword
+          ? step3.readonlyUsername.trim()
+          : null,
+      dbReadonlyPassword:
+        step3.dbType !== 'none' &&
+        step3.readonlyUsername.trim() &&
+        step3.readonlyPassword
+          ? step3.readonlyPassword
+          : null,
     };
   }, [step2, step3]);
 
@@ -1919,6 +1944,57 @@ export function StartCaptureSessionWizard({
                       value={step3.password}
                       onChange={(e) => setStep3((s) => ({ ...s, password: e.target.value }))}
                     />
+                  </div>
+                  <div className={styles.fieldGroup}>
+                    <label className={styles.label}>
+                      Read-only login (optional, recommended)
+                    </label>
+                    <input
+                      className={styles.input}
+                      placeholder="Read-only username"
+                      value={step3.readonlyUsername}
+                      onChange={(e) =>
+                        setStep3((s) => ({ ...s, readonlyUsername: e.target.value }))
+                      }
+                      data-testid="start-capture-session-wizard-readonly-username"
+                    />
+                    <input
+                      type="password"
+                      className={styles.input}
+                      placeholder="Read-only password"
+                      value={step3.readonlyPassword}
+                      onChange={(e) =>
+                        setStep3((s) => ({ ...s, readonlyPassword: e.target.value }))
+                      }
+                      data-testid="start-capture-session-wizard-readonly-password"
+                      style={{ marginTop: 6 }}
+                    />
+                    <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
+                      When supplied, DB sampling, snapshots and state
+                      fingerprints connect with this read-only login and the
+                      write-capable login above is used ONLY inside
+                      compensation brackets — clearing the
+                      &ldquo;credential split recommended&rdquo; advisory.
+                      Both fields are required for the split to engage.
+                    </div>
+                    {((step3.readonlyUsername.trim() !== '') !==
+                      (step3.readonlyPassword !== '')) && (
+                      <div
+                        data-testid="start-capture-session-wizard-readonly-incomplete"
+                        style={{
+                          color: '#8a6d3b',
+                          background: '#fcf8e3',
+                          border: '1px solid #faebcc',
+                          borderRadius: 4,
+                          padding: '6px 8px',
+                          marginTop: 4,
+                        }}
+                      >
+                        Enter BOTH read-only fields — a lone value is ignored
+                        and the single-login posture (with its advisory)
+                        remains.
+                      </div>
+                    )}
                   </div>
                   <div className={styles.fieldGroup}>
                     <label className={styles.label}>

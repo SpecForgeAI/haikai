@@ -48,7 +48,12 @@ public class ApiBehaviourDiagnosticService {
         "s0_fingerprint_check_failed",
         // Proven-read classification (2026-08-20): write-verb endpoint with
         // READ-only committed effects fires unbracketed (info diagnostic).
-        "proven_read_only", "scope_conflict", "keyless_write_recorded"
+        "proven_read_only", "scope_conflict", "keyless_write_recorded",
+        // 2026-08-26: a scenario whose behaviour WAS captured as a
+        // 200-with-business-error-code (the legacy negative idiom) is a
+        // successful capture, not a skip — distinct type so the 100+
+        // "endpoint skipped" rows stop mislabelling captured negatives.
+        "captured_as_business_error"
     );
 
     private final ApiBehaviourDiagnosticRepository repository;

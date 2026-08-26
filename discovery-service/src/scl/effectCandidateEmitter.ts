@@ -133,7 +133,12 @@ export function parseProcCallsFromSql(sql: string | null | undefined): string[] 
 }
 
 const WRITE_SQL_PATTERNS: RegExp[] = [
-  /\binsert\s+into\s+([A-Za-z0-9_."\[\]$#]+)/gi,
+  // T-SQL makes INTO optional: `insert filter_tag (…) values (…)` is legal
+  // Sybase and a real house style (2026-08-26 shakedown: a createOrGet-style
+  // op's INSERT used the bare form, so the table surfaced as READ-only and
+  // the compensation bracket never imaged it — the write leaked straight to
+  // the end-of-job fingerprint). The SELECT side always parsed fine.
+  /\binsert\s+(?:into\s+)?([A-Za-z0-9_."\[\]$#]+)/gi,
   /\bupdate\s+([A-Za-z0-9_."\[\]$#]+)\s+set\b/gi,
   /\bdelete\s+from\s+([A-Za-z0-9_."\[\]$#]+)/gi,
   /\bmerge\s+into\s+([A-Za-z0-9_."\[\]$#]+)/gi,
@@ -143,6 +148,15 @@ const WRITE_SQL_PATTERNS: RegExp[] = [
 /** Sybase aliased delete: `delete <alias> from <table> <alias>, ...`. The
  *  plain `delete from X` form stays with WRITE_SQL_PATTERNS. */
 const ALIASED_DELETE_RE = /\bdelete\s+([A-Za-z0-9_."\[\]$#]+)\s+from\b/gi;
+
+/** T-SQL bare delete: `delete filter_tag where …` (FROM optional, same
+ *  2026-08-26 gap as bare INSERT). The lookaheads route the other forms to
+ *  their own matchers: `(?!from\b)` leaves `delete from X` to the plain
+ *  pattern; the trailing pair first pins the WHOLE token (no partial-token
+ *  backtracking), then `(?!\s+from\b)` leaves `delete <alias> from …` to
+ *  the alias-resolving matcher above. */
+const BARE_DELETE_RE =
+  /\bdelete\s+(?!from\b)([A-Za-z0-9_."\[\]$#]+)(?![A-Za-z0-9_."\[\]$#])(?!\s+from\b)/gi;
 
 /**
  * alias(lower) -> table for every `FROM <table> [as] <alias>` pair in the
@@ -172,6 +186,10 @@ export function parseWriteTablesFromSql(sql: string | null | undefined): string[
   const push = (raw: string) => {
     const token = bareTableToken(raw);
     if (!token || token.startsWith('#') || token.startsWith('@')) return;
+    // The optional-keyword T-SQL forms can capture a clause keyword when the
+    // statement is truncated mid-fragment (`insert into` at a literal-join
+    // seam captures "into") — SQL keywords are never tables.
+    if (FROM_LIST_STOP_WORDS.has(token.toLowerCase())) return;
     // An update/delete target that is actually a FROM-list ALIAS resolves to
     // its real table; unknown tokens pass through unchanged.
     const resolved = aliases.get(token.toLowerCase()) ?? token;
@@ -191,6 +209,11 @@ export function parseWriteTablesFromSql(sql: string | null | undefined): string[
     // form is already handled above.
     if (deleteMatch[1].toLowerCase() === 'from') continue;
     push(deleteMatch[1]);
+  }
+  BARE_DELETE_RE.lastIndex = 0;
+  let bareDeleteMatch: RegExpExecArray | null;
+  while ((bareDeleteMatch = BARE_DELETE_RE.exec(sql)) !== null) {
+    push(bareDeleteMatch[1]);
   }
   return found;
 }

@@ -83,6 +83,9 @@ if (process.env.NODE_ENV !== 'test' && require.main === module) {
           volatility_probe_budget_ms: Number(process.env.VOLATILITY_PROBE_BUDGET_MS ?? 10000),
           replay_consecutive_failure_abort: Number(process.env.TARGET_REPLAY_CONSECUTIVE_FAILURE_ABORT ?? 10),
           llm_scenario_round_limit: Number(process.env.LLM_SCENARIO_ROUND_LIMIT ?? 12),
+          llm_scenario_research_round_ceiling: Number(
+            process.env.LLM_SCENARIO_RESEARCH_ROUND_CEILING ?? 60,
+          ),
           ...pairInfo,
         });
       }

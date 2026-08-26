@@ -100,4 +100,5 @@ export const searchSourceFilesTool: ToolRegistryEntry = {
     additionalProperties: false,
   },
   handler,
+  research: true,
 };

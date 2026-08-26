@@ -56,4 +56,5 @@ export const getOasOperationDetailTool: ToolRegistryEntry = {
     additionalProperties: false,
   },
   handler,
+  research: true,
 };

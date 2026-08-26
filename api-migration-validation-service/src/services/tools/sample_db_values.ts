@@ -95,4 +95,5 @@ export const sampleDbValuesTool: ToolRegistryEntry = {
     additionalProperties: false,
   },
   handler,
+  research: true,
 };

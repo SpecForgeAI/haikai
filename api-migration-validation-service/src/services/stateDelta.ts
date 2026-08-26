@@ -54,6 +54,14 @@ export interface EffectScopeIndex {
    * safety net if the proof were ever wrong.
    */
   readMappedOperationKeys: Set<string>;
+  /**
+   * key `${METHOD} ${pathTemplate}` -> tables the op's committed edges hold
+   * as READ-mode (2026-08-26): when the end-of-job fingerprint fails on a
+   * table, the ops that READ it are the prime suspects for a missed write
+   * edge (the legacy read-then-write idiom whose INSERT the mining lost) —
+   * the failure detail names them instead of leaving the operator to infer.
+   */
+  readTablesByOperationKey?: Map<string, string[]>;
 }
 
 interface RawModel {
@@ -116,14 +124,24 @@ export function buildEffectScopeIndexFromModel(model: RawModel): EffectScopeInde
   const tablesByOperationKey = new Map<string, string[]>();
   const scopeExcludedByOperationKey: EffectScopeIndex['scopeExcludedByOperationKey'] = new Map();
   const readMappedOperationKeys = new Set<string>();
+  const readTablesByOperationKey = new Map<string, string[]>();
   for (const edge of model.metaModel?.relationships?.endpoint_data_effects ?? []) {
     const mode = (edge.access_mode ?? '').toLowerCase();
     const key = edge.endpoint_id ? endpointKeyById.get(edge.endpoint_id) : undefined;
     if (!key) continue;
     if (mode === 'read') {
       // Proven-read classification (2026-08-20): the edge itself is enough
-      // — the table side matters only for write imaging.
+      // for the no-bracket ruling — but the TABLE is kept too (2026-08-26),
+      // so a fingerprint failure on it can name this op as a suspect for a
+      // missed write edge.
       readMappedOperationKeys.add(key);
+      const readPointId = edge.data_entity_point_id ?? '';
+      const readTable = tableByEntityId.get(readPointId.replace(/^dep_(phy|log)_/, ''));
+      if (readTable) {
+        const reads = readTablesByOperationKey.get(key) ?? [];
+        if (!reads.includes(readTable)) reads.push(readTable);
+        readTablesByOperationKey.set(key, reads);
+      }
       continue;
     }
     if (mode !== 'write' && mode !== 'read-write') continue;
@@ -142,7 +160,12 @@ export function buildEffectScopeIndexFromModel(model: RawModel): EffectScopeInde
     if (!list.includes(table)) list.push(table);
     tablesByOperationKey.set(key, list);
   }
-  return { tablesByOperationKey, scopeExcludedByOperationKey, readMappedOperationKeys };
+  return {
+    tablesByOperationKey,
+    scopeExcludedByOperationKey,
+    readMappedOperationKeys,
+    readTablesByOperationKey,
+  };
 }
 
 export async function fetchEffectScopeIndex(

@@ -57,6 +57,19 @@ describe('parseWriteTablesFromSql', () => {
     const sql = 'INSERT INTO Orders (a) VALUES (1); UPDATE ORDERS SET a = 2';
     expect(parseWriteTablesFromSql(sql)).toEqual(['Orders']);
   });
+
+  it('parses the T-SQL optional-keyword forms (2026-08-26 mirror of the emitter fix)', () => {
+    // Sybase INSERT without INTO / DELETE without FROM — the bare forms left
+    // written tables READ-only in the model, so no bracket imaged them.
+    expect(parseWriteTablesFromSql('insert filter_tag (filter_id, tag_name) values (?, ?)')).toEqual([
+      'filter_tag',
+    ]);
+    expect(parseWriteTablesFromSql('delete filter_tag where tag_name = ?')).toEqual(['filter_tag']);
+    // Routing between the delete forms is unchanged; a truncated-fragment
+    // clause keyword is never a table.
+    expect(parseWriteTablesFromSql('delete from filter_tag where x = 1')).toEqual(['filter_tag']);
+    expect(parseWriteTablesFromSql('values (?) insert into')).toEqual([]);
+  });
 });
 
 describe('matchRootsForEndpoint (longest-fragment discipline)', () => {

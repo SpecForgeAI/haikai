@@ -78,4 +78,5 @@ export const listDbMetadataTool: ToolRegistryEntry = {
     additionalProperties: false,
   },
   handler,
+  research: true,
 };

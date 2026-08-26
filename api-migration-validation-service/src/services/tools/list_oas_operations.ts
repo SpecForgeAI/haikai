@@ -40,4 +40,5 @@ export const listOasOperationsTool: ToolRegistryEntry = {
     additionalProperties: false,
   },
   handler,
+  research: true,
 };

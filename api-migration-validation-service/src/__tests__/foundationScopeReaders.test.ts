@@ -22,6 +22,7 @@ import {
 import {
   computeScopeConflictEndpoints,
   computeWriteEndpointsWithoutEffectMap,
+  fingerprintSuspectsNote,
   scopeConflictFor,
 } from '../services/captureCompensation';
 import { verifyS0Fingerprint } from '../services/s0/fingerprint';
@@ -290,5 +291,59 @@ describe('quiet-window guardrail + audit sink (Oracle Nine item 5)', () => {
       },
     });
     expect([...(metadata.sequenceGeneratorTables ?? [])]).toEqual(['seq_registry']);
+  });
+});
+
+describe('fingerprint mismatch suspect attribution (2026-08-26)', () => {
+  // A favourite-style read-then-write op whose write edge the mining missed:
+  // the committed model holds filter_tag as READ on the toggle op and WRITE
+  // on the plain create op.
+  const model = {
+    metaModel: {
+      entities: {
+        physical_data_entities: [
+          { id: 'e1', name: 'filter_tag' },
+          { id: 'e2', name: 'screen_filter' },
+        ],
+        endpoints: [
+          { id: 'ep1', operation_verb: 'POST', path_or_address: '/filters/markFavourite' },
+          { id: 'ep2', operation_verb: 'POST', path_or_address: '/filters' },
+        ],
+      },
+      relationships: {
+        endpoint_data_effects: [
+          { endpoint_id: 'ep1', access_mode: 'read', data_entity_point_id: 'dep_phy_e1' },
+          { endpoint_id: 'ep1', access_mode: 'write', data_entity_point_id: 'dep_phy_e2' },
+          { endpoint_id: 'ep2', access_mode: 'write', data_entity_point_id: 'dep_phy_e1' },
+        ],
+      },
+    },
+  };
+
+  it('the builder keeps read-mode TABLES per operation (not just the read-mapped flag)', () => {
+    const scope = buildEffectScopeIndexFromModel(model as never);
+    expect(scope.readTablesByOperationKey?.get('POST /filters/markFavourite')).toEqual([
+      'filter_tag',
+    ]);
+    // Write edges are untouched by the new map.
+    expect(effectTablesFor(scope, 'POST', '/filters/markFavourite')).toEqual(['screen_filter']);
+    expect(effectTablesFor(scope, 'POST', '/filters')).toEqual(['filter_tag']);
+  });
+
+  it('a diverged table names the ops that hold it as READ — the missed-write suspects', () => {
+    const scope = buildEffectScopeIndexFromModel(model as never);
+    const note = fingerprintSuspectsNote([{ table: 'filter_tag' }], scope);
+    expect(note).toContain('POST /filters/markFavourite');
+    expect(note).toContain('missed write edge');
+    // The op that WRITE-maps the table is not a suspect (its bracket imaged
+    // and verified the revert); only read-holders are named.
+    expect(note).not.toContain('POST /filters:');
+  });
+
+  it('stays silent with no scope or when nothing read-maps the diverged table', () => {
+    const scope = buildEffectScopeIndexFromModel(model as never);
+    expect(fingerprintSuspectsNote([{ table: 'filter_tag' }], undefined)).toBe('');
+    expect(fingerprintSuspectsNote([{ table: 'org_registry' }], scope)).toBe('');
+    expect(fingerprintSuspectsNote([], scope)).toBe('');
   });
 });

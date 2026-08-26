@@ -1,4 +1,5 @@
 import {
+  LLM_SCENARIO_RESEARCH_ROUND_CEILING,
   LLM_SCENARIO_ROUND_LIMIT,
   LLM_SCENARIO_WALL_CLOCK_MS,
   LLM_TOOL_CALL_TIMEOUT_MS,
@@ -24,7 +25,12 @@ import type {
  * gateway-relayed LLM and the eight tools registered in `tools/index.ts`.
  *
  * Hard limits enforced (from `config.ts`, all spec-fixed):
- *   - 12 rounds per scenario        -> `retry_exhausted` diagnostic
+ *   - 12 BUDGET rounds per scenario -> `retry_exhausted` diagnostic.
+ *     Rounds whose tool calls are ALL research (`research: true` registry
+ *     flag — contract/OAS reads, DB metadata + sampling, read-only SQL,
+ *     source search/read) are FREE, mirroring the fired-attempt budget's
+ *     "research is free" rule (2026-08-26 accounting fix); a generous
+ *     env-tunable RESEARCH ceiling (default 60) backstops runaway research.
  *   - 30s per individual tool call  -> `llm_generation_failure` diagnostic
  *   - 5min wall-clock per scenario  -> scenario marked `executed_error`
  *
@@ -61,6 +67,8 @@ export interface LoopOutcome {
   reason: LoopOutcomeReason;
   /** Number of LLM round-trips actually issued before termination. */
   roundsUsed: number;
+  /** Rounds whose tool calls were ALL research — free against the cap. */
+  researchRounds: number;
   /**
    * Number of `execute_http_request` calls fired at the target operation
    * (always 0 when no `firedAttemptBudget` was configured).
@@ -89,6 +97,7 @@ export interface RunScenarioArgs {
   archModelClient?: { createDiagnostic: typeof defaultArchModelClient.createDiagnostic };
   /** Optional limit overrides (test-only -- production reads from config). */
   roundLimit?: number;
+  researchRoundCeiling?: number;
   toolCallTimeoutMs?: number;
   scenarioWallClockMs?: number;
   /** Optional model name forwarded to the LLM relay. */
@@ -167,6 +176,7 @@ export async function runScenarioLoop(args: RunScenarioArgs): Promise<LoopOutcom
     gatewayClient = defaultGatewayClient,
     archModelClient = defaultArchModelClient,
     roundLimit = LLM_SCENARIO_ROUND_LIMIT,
+    researchRoundCeiling = LLM_SCENARIO_RESEARCH_ROUND_CEILING,
     toolCallTimeoutMs = LLM_TOOL_CALL_TIMEOUT_MS,
     scenarioWallClockMs = LLM_SCENARIO_WALL_CLOCK_MS,
     model,
@@ -180,6 +190,9 @@ export async function runScenarioLoop(args: RunScenarioArgs): Promise<LoopOutcom
   const startedAt = Date.now();
   const messages: ChatMessage[] = [...initialMessages];
   let roundsUsed = 0;
+  // Rounds whose tool calls were ALL research (read-only) — free against
+  // the round cap, mirroring the fired-attempt budget's rule (2026-08-26).
+  let researchRounds = 0;
   let firedAttempts = 0;
   let finalMessage: AssistantMessage | null = null;
 
@@ -205,6 +218,7 @@ export async function runScenarioLoop(args: RunScenarioArgs): Promise<LoopOutcom
       return {
         reason: 'cancelled',
         roundsUsed,
+        researchRounds,
         firedAttempts,
         durationMs: Date.now() - startedAt,
         finalMessage,
@@ -224,6 +238,7 @@ export async function runScenarioLoop(args: RunScenarioArgs): Promise<LoopOutcom
       return {
         reason: 'wall_clock_exceeded',
         roundsUsed,
+        researchRounds,
         firedAttempts,
         durationMs: Date.now() - startedAt,
         finalMessage,
@@ -232,21 +247,70 @@ export async function runScenarioLoop(args: RunScenarioArgs): Promise<LoopOutcom
       };
     }
 
-    // ---- Limit 2: round-count cap (12 rounds per scenario) ----
-    if (roundsUsed >= roundLimit) {
+    // ---- Limit 2: round-count cap — BUDGET rounds only (2026-08-26).
+    // All-research rounds are free; the cap counts rounds that made (or
+    // failed to make) execution progress, so research-heavy legacy APIs
+    // never burn their build/execute budget on legitimate homework.
+    const budgetRounds = roundsUsed - researchRounds;
+    if (budgetRounds >= roundLimit) {
       const diagnosticId = await safeRecordDiagnostic(archModelClient, context, {
         diagnostic_type: 'retry_exhausted',
-        message: `Scenario round-count cap (${roundLimit} rounds) reached without a terminal tool call; aborting scenario.`,
-        detail_json: { reason: 'round_limit_exhausted', roundsUsed, roundLimit },
+        message:
+          `Scenario round-count cap (${roundLimit} budget rounds; ` +
+          `${researchRounds} research round(s) were free) reached without a ` +
+          `terminal tool call; aborting scenario. Raise LLM_SCENARIO_ROUND_LIMIT ` +
+          `if scenarios legitimately need more build/execute rounds.`,
+        detail_json: {
+          reason: 'round_limit_exhausted',
+          roundsUsed,
+          researchRounds,
+          budgetRounds,
+          roundLimit,
+        },
       });
       return {
         reason: 'round_limit_exhausted',
         roundsUsed,
+        researchRounds,
         firedAttempts,
         durationMs: Date.now() - startedAt,
         finalMessage,
         diagnosticId,
-        errorMessage: `Scenario aborted after ${roundsUsed} rounds (limit ${roundLimit}).`,
+        errorMessage: `Scenario aborted after ${budgetRounds} budget rounds (limit ${roundLimit}; ${researchRounds} research rounds free).`,
+      };
+    }
+
+    // ---- Limit 2b: RESEARCH-round safety ceiling so a pathological
+    // all-research loop cannot spin to the wall clock. Deliberately split
+    // from the budget cap: Pass-B derives raised budget limits and the
+    // ceiling must never undercut them. Generous + env-tunable per the cap
+    // ruling; the refusal names the knob.
+    if (researchRounds >= researchRoundCeiling) {
+      const diagnosticId = await safeRecordDiagnostic(archModelClient, context, {
+        diagnostic_type: 'retry_exhausted',
+        message:
+          `Scenario research-round ceiling (${researchRoundCeiling}) reached ` +
+          `(${researchRounds} research + ${budgetRounds} budget rounds) without ` +
+          `a terminal tool call; aborting scenario. Raise ` +
+          `LLM_SCENARIO_RESEARCH_ROUND_CEILING if scenarios legitimately need ` +
+          `deeper research.`,
+        detail_json: {
+          reason: 'round_limit_exhausted',
+          roundsUsed,
+          researchRounds,
+          budgetRounds,
+          researchRoundCeiling,
+        },
+      });
+      return {
+        reason: 'round_limit_exhausted',
+        roundsUsed,
+        researchRounds,
+        firedAttempts,
+        durationMs: Date.now() - startedAt,
+        finalMessage,
+        diagnosticId,
+        errorMessage: `Scenario aborted at the research-round ceiling (${researchRoundCeiling}).`,
       };
     }
 
@@ -284,6 +348,7 @@ export async function runScenarioLoop(args: RunScenarioArgs): Promise<LoopOutcom
       return {
         reason: isDailyLimit ? 'llm_daily_limit' : 'llm_relay_error',
         roundsUsed: roundsUsed + 1,
+        researchRounds,
         firedAttempts,
         durationMs: Date.now() - startedAt,
         finalMessage,
@@ -306,6 +371,7 @@ export async function runScenarioLoop(args: RunScenarioArgs): Promise<LoopOutcom
       return {
         reason: 'completed',
         roundsUsed,
+        researchRounds,
         firedAttempts,
         durationMs: Date.now() - startedAt,
         finalMessage,
@@ -317,8 +383,14 @@ export async function runScenarioLoop(args: RunScenarioArgs): Promise<LoopOutcom
     // ---- Dispatch each tool call ----
     let terminalCalled = false;
     let attemptBudgetExhausted = false;
+    // A round is FREE against the round cap when every tool call in it is a
+    // read-only research tool (`research: true` in the registry) — identity
+    // decides, not success: a failed research call still cost no execution
+    // budget, and the total ceiling bounds error churn.
+    let allResearch = toolCalls.length > 0;
     for (const call of toolCalls) {
       const tool = registry.get(call.function.name);
+      if (tool?.research !== true) allResearch = false;
       let resultText: string;
       if (!tool) {
         // Unknown tool -- feed an error back to the LLM so it can recover.
@@ -394,6 +466,7 @@ export async function runScenarioLoop(args: RunScenarioArgs): Promise<LoopOutcom
             return {
               reason: 'tool_call_timeout',
               roundsUsed,
+              researchRounds,
               firedAttempts,
               durationMs: Date.now() - startedAt,
               finalMessage,
@@ -416,10 +489,13 @@ export async function runScenarioLoop(args: RunScenarioArgs): Promise<LoopOutcom
       messages.push(buildToolMessage(call, resultText));
     }
 
+    if (allResearch) researchRounds += 1;
+
     if (terminalCalled) {
       return {
         reason: 'completed',
         roundsUsed,
+        researchRounds,
         firedAttempts,
         durationMs: Date.now() - startedAt,
         finalMessage,
@@ -445,6 +521,7 @@ export async function runScenarioLoop(args: RunScenarioArgs): Promise<LoopOutcom
       return {
         reason: 'attempt_budget_exhausted',
         roundsUsed,
+        researchRounds,
         firedAttempts,
         durationMs: Date.now() - startedAt,
         finalMessage,

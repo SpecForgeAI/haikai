@@ -74,12 +74,31 @@ export const SYBASE_SIDECAR_URL: string =
   process.env.SYBASE_SIDECAR_URL || 'http://localhost:8093';
 
 /**
- * Maximum number of LLM/tool-call rounds per scenario before the loop is
- * aborted with a `retry_exhausted` diagnostic. Spec-fixed limit.
+ * Maximum number of BUDGET-CONSUMING LLM/tool-call rounds per scenario
+ * before the loop is aborted with a `retry_exhausted` diagnostic. Rounds
+ * whose tool calls are ALL read-only research (contract/OAS reads, DB
+ * metadata + sampling, read-only SQL, source search/read) are FREE
+ * (2026-08-26): once DB metadata worked, legitimate per-scenario research
+ * (list_db_metadata -> sample_db_values -> absence checks) pushed 59
+ * scenarios over the flat cap — the accounting now mirrors the
+ * fired-attempt budget's "research is free" rule.
  * Default: 12.
  */
 export const LLM_SCENARIO_ROUND_LIMIT: number =
   parseInt(process.env.LLM_SCENARIO_ROUND_LIMIT || '12', 10);
+
+/**
+ * Safety ceiling on RESEARCH rounds per scenario so a pathological
+ * all-research loop cannot spin until the wall clock. Budget rounds have
+ * their own cap (LLM_SCENARIO_ROUND_LIMIT — including the Pass-B derived
+ * budgets, which this ceiling must never undercut, hence the split
+ * accounting). Generous by design (cap ruling 2026-08-24: caps never
+ * ration ordinary flow) and env-tunable; the refusal diagnostic names
+ * this knob.
+ * Default: 60.
+ */
+export const LLM_SCENARIO_RESEARCH_ROUND_CEILING: number =
+  parseInt(process.env.LLM_SCENARIO_RESEARCH_ROUND_CEILING || '60', 10);
 
 /**
  * Hard timeout (ms) for any single tool-call execution. Breaching this limit
