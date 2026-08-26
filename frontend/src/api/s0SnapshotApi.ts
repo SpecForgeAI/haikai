@@ -40,7 +40,9 @@ export interface S0SourceDb {
 
 export interface S0RestoreTableResult {
   table: string;
-  status: 'restored' | 'skipped_not_dumped' | 'failed';
+  // 'unchanged' (2026-08-26 minimal-diff restore): the table was already at
+  // S0 and was deliberately not reloaded.
+  status: 'restored' | 'skipped_not_dumped' | 'unchanged' | 'failed';
   rows_inserted: number;
   detail: string | null;
 }

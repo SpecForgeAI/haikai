@@ -515,6 +515,36 @@ vs FQN); (e) fresh project = fresh model, no carried edges. Fixes:
     already carries Kiro's version; canonical adds the volatile filter —
     next clone).
 
+24. **Minimal-diff S0 restore (Kiro replication, 2026-08-26)** — the
+    restore truncated+reloaded EVERY dumped table unconditionally; Sybase
+    refuses TRUNCATE on an FK-referenced parent with referencing rows, so
+    two UNCHANGED reference parents failed a restore that had actually
+    succeeded ("6 restored, 57 skipped, 2 FAILED" while the DB was at S0
+    and a live verify showed matches:true). Now `runS0Restore`: computes
+    the tolerated set ONCE; fingerprints FIRST (verifyS0Fingerprint before
+    touching anything); divergedTables = hard mismatches ∪ tolerated
+    mismatches (restore's job includes resetting the tolerated
+    volatile/audit/sequence drift); any dumped table NOT diverged gets new
+    status `unchanged` ("already at S0 — not reloaded") and is NEVER
+    truncated; only genuine drift walks the existing truncate +
+    bulk-reinsert + reseed path; final verify reuses the same tolerated
+    const. Guard beyond Kiro: if the PRE-verify itself errors, fall back
+    to reloading everything (the optimization must never make restore less
+    capable). Frontend: s0SnapshotApi status union + panel unchangedCount
+    in the summary ("N already at S0"), intro copy + destructive-consent
+    checkbox text now say "the tables that drifted", not "every dumped
+    table". HONEST RESIDUAL EDGE (deliberate, from Kiro): a GENUINELY
+    drifted FK-referenced parent still cannot be truncated — minimal-diff
+    makes that rare, not impossible; no DELETE FROM fallback (grammar
+    guard + referenced-parent DELETE fails anyway); if it ever bites, the
+    real fix is disabling constraints during restore. Pins: unchanged
+    never truncated, the estate scenario (throwing TRUNCATE on an
+    unchanged parent → restore succeeds), zero-drift no-op restore;
+    existing 14 (incl. sabotage fail-loud) unchanged. s0Snapshot 17/17,
+    AMVS tsc clean, both frontend files tsc-clean in isolation. Restart:
+    AMVS + frontend (work machine already carries Kiro's version; next
+    clone adds the pre-verify fallback guard + checkbox copy).
+
 Pickup: discovery-service restart only. OPEN: transfer-proc invocation shape
 (estate grep), Blocked-101 breakdown, FindingEmitter persist errors (~476).
 
