@@ -70,8 +70,22 @@ const handler: ToolHandler = async (args, ctx) => {
       ? (args.generationSource as GenerationSource)
       : 'llm_generated';
 
-  const requestMethod = typeof args.requestMethod === 'string' ? args.requestMethod : null;
-  const requestPath = typeof args.requestPath === 'string' ? args.requestPath : null;
+  // AMS REQUIRES request_method + request_path (NOT NULL columns;
+  // `ApiBehaviourScenarioService.create` 400s on blank). The orchestrator's
+  // own scenario create learned this long ago and sources them from the
+  // persisted operation row — this tool path never got the same fix, so
+  // every LLM call that omitted the (schema-optional) args 400'd
+  // systematically, losing the variant AND burning budget rounds on the
+  // error round-trip (2026-08-26). Default from the operation row; an
+  // explicit LLM value (e.g. a variant path with params filled) still wins.
+  const requestMethod =
+    typeof args.requestMethod === 'string' && args.requestMethod.trim().length > 0
+      ? args.requestMethod
+      : persisted.method;
+  const requestPath =
+    typeof args.requestPath === 'string' && args.requestPath.trim().length > 0
+      ? args.requestPath
+      : persisted.path;
   const requestQuery = (args.requestQuery && typeof args.requestQuery === 'object') ? args.requestQuery : null;
   const requestHeaders = (args.requestHeaders && typeof args.requestHeaders === 'object')
     ? normaliseHeaders(redactHeaders(args.requestHeaders as Record<string, string>))

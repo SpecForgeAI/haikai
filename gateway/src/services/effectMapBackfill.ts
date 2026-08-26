@@ -139,12 +139,31 @@ function bareTableToken(raw: string): string {
 }
 
 const WRITE_SQL_PATTERNS: RegExp[] = [
-  /\binsert\s+into\s+([A-Za-z0-9_."\[\]$#]+)/gi,
+  // T-SQL makes INTO optional (`insert filter_tag (…) values (…)`) — mirror
+  // of the scan emitter's 2026-08-26 fix: the bare form left the written
+  // table READ-only in the model, so no bracket ever imaged it.
+  /\binsert\s+(?:into\s+)?([A-Za-z0-9_."\[\]$#]+)/gi,
   /\bupdate\s+([A-Za-z0-9_."\[\]$#]+)\s+set\b/gi,
   /\bdelete\s+from\s+([A-Za-z0-9_."\[\]$#]+)/gi,
   /\bmerge\s+into\s+([A-Za-z0-9_."\[\]$#]+)/gi,
   /\btruncate\s+table\s+([A-Za-z0-9_."\[\]$#]+)/gi,
+  // T-SQL bare delete (`delete filter_tag where …`, FROM optional). The
+  // first lookahead routes `delete from X` to the plain pattern; the
+  // trailing pair pins the WHOLE token (no partial-token backtracking) and
+  // skips the aliased `delete <alias> from …` form — no alias map here, and
+  // the committed-vocabulary allowlist drops stranger tokens downstream.
+  /\bdelete\s+(?!from\b)([A-Za-z0-9_."\[\]$#]+)(?![A-Za-z0-9_."\[\]$#])(?!\s+from\b)/gi,
 ];
+
+/** SQL clause keywords the optional-keyword T-SQL forms can capture at a
+ *  truncated fragment seam — never tables (mirror of the emitter guard). */
+const WRITE_TOKEN_STOP_WORDS = new Set([
+  'into', 'from', 'where', 'select', 'values', 'set', 'group', 'order',
+  'having', 'union', 'join', 'inner', 'left', 'right', 'outer', 'cross',
+  'full', 'on', 'and', 'or', 'not', 'exists', 'when', 'then', 'else', 'end',
+  'insert', 'update', 'delete', 'with', 'exec', 'execute', 'go', 'begin',
+  'declare', 'return', 'top',
+]);
 
 /** Distinct written-table tokens from one verbatim SQL string. */
 export function parseWriteTablesFromSql(sql: string | null | undefined): string[] {
@@ -157,6 +176,7 @@ export function parseWriteTablesFromSql(sql: string | null | undefined): string[
       const token = bareTableToken(match[1]);
       // Temp tables (#t) and variables (@t) are never committed entities.
       if (!token || token.startsWith('#') || token.startsWith('@')) continue;
+      if (WRITE_TOKEN_STOP_WORDS.has(token.toLowerCase())) continue;
       if (!found.some((t) => t.toLowerCase() === token.toLowerCase())) found.push(token);
     }
   }

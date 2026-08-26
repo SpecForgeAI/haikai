@@ -249,6 +249,10 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
   const [basicUsername, setBasicUsername] = useState('');
   const [basicPassword, setBasicPassword] = useState('');
   const [dbPassword, setDbPassword] = useState('');
+  // Optional read-only observation login (credential-role split) — the
+  // re-enter path must be able to restore the same split the wizard set up.
+  const [dbReadonlyUsername, setDbReadonlyUsername] = useState('');
+  const [dbReadonlyPassword, setDbReadonlyPassword] = useState('');
   const [actionInFlight, setActionInFlight] = useState<string | null>(null);
 
   // Track polling interval handle so we can clear it on terminal status.
@@ -691,6 +695,12 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
       await submitSecrets(projectId, architectureId, sessionId, {
         apiAuth,
         dbPassword: dbPassword || null,
+        dbReadonlyUsername:
+          dbReadonlyUsername.trim() && dbReadonlyPassword
+            ? dbReadonlyUsername.trim()
+            : null,
+        dbReadonlyPassword:
+          dbReadonlyUsername.trim() && dbReadonlyPassword ? dbReadonlyPassword : null,
       });
       setSecretsLoadedLocal(true);
       setSecretsPromptOpen(false);
@@ -699,6 +709,8 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
       setBasicUsername('');
       setBasicPassword('');
       setDbPassword('');
+      setDbReadonlyUsername('');
+      setDbReadonlyPassword('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to submit secrets');
     } finally {
@@ -715,6 +727,8 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
     basicUsername,
     basicPassword,
     dbPassword,
+    dbReadonlyUsername,
+    dbReadonlyPassword,
     session,
   ]);
 
@@ -1208,6 +1222,20 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
                 value={dbPassword}
                 onChange={(e) => setDbPassword(e.target.value)}
                 data-testid="capture-session-detail-secrets-db-password"
+              />
+              {/* Optional read-only observation login (both-or-nothing). */}
+              <input
+                placeholder="Read-only DB username (optional)"
+                value={dbReadonlyUsername}
+                onChange={(e) => setDbReadonlyUsername(e.target.value)}
+                data-testid="capture-session-detail-secrets-db-readonly-username"
+              />
+              <input
+                type="password"
+                placeholder="Read-only DB password (optional)"
+                value={dbReadonlyPassword}
+                onChange={(e) => setDbReadonlyPassword(e.target.value)}
+                data-testid="capture-session-detail-secrets-db-readonly-password"
               />
               <div className={styles.cta}>
                 <button

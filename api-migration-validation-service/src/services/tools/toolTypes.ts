@@ -140,6 +140,16 @@ export interface ToolRegistryEntry {
    * scenario gracefully after this tool's result is fed back to the LLM.
    */
   terminal?: boolean;
+  /**
+   * Read-only RESEARCH tool (contract/OAS reads, DB metadata + sampling,
+   * read-only SQL, source search/read): a round whose tool calls are ALL
+   * research is FREE against the scenario round cap, mirroring the
+   * fired-attempt budget's "research is free" rule (2026-08-26 — once DB
+   * metadata started working, per-scenario research legitimately grew and
+   * the flat cap abandoned 59 scenarios as retry_exhausted). The wall-clock
+   * cap and the research-round safety ceiling still bound free rounds.
+   */
+  research?: boolean;
 }
 
 /**

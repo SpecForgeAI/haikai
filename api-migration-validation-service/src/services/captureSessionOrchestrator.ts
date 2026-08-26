@@ -541,7 +541,8 @@ export function buildScenarioPrompt(
         'You must use `execute_http_request` for any HTTP call (never describe one in prose) and `run_readonly_sql` for any DB read. ' +
         'Do NOT call `execute_http_request` until you have (a) fetched `get_oas_operation_detail` for the operation and (b) resolved real input values from the database where one is configured. ' +
         'After any non-2xx or error response, READ the error before retrying and change the specific value/field the API rejected -- never repeat an identical request. ' +
-        'When you are satisfied that the scenario is captured (or determine it cannot be), call `record_capture_note` to end the loop.',
+        'When you are satisfied that the scenario is captured (or determine it cannot be), call `record_capture_note` to end the loop. ' +
+        'In the closing note, pick the diagnosticType honestly: `captured_as_business_error` when the behaviour WAS captured but the API answered with a business-error outcome (e.g. HTTP 200 carrying an error code — the legacy negative idiom); `endpoint_skipped` ONLY when you did not capture the scenario at all.',
     },
     {
       role: 'user',
@@ -2456,6 +2457,7 @@ export async function orchestrateCaptureSession(
         metadata: compensation.metadata,
         schema: compensation.schema,
         keylessWrittenTables,
+        effectScope: compensation.effectScope,
       });
       trace.detail(
         'capture.s0_fingerprint',

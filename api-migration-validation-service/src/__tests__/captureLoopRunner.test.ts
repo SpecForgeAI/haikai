@@ -229,23 +229,33 @@ describe('captureLoopRunner -- happy path', () => {
 });
 
 describe('captureLoopRunner -- 12-round hard cap', () => {
+  // 2026-08-26 accounting fix: research rounds are FREE, so the cap test
+  // must spin on a NON-research tool. A bare unknown-args call to the
+  // scenario-candidate recorder still counts (identity decides, not
+  // success) — exactly the round-burning churn Kiro's Issue 3 observed.
+  const buildNonResearchAssistant = (n: number): AssistantMessage =>
+    makeAssistant([
+      {
+        id: `call-${n}`,
+        type: 'function',
+        function: { name: 'record_scenario_candidate', arguments: '{}' },
+      },
+    ]);
+  const buildResearchAssistant = (n: number): AssistantMessage =>
+    makeAssistant([
+      {
+        id: `research-${n}`,
+        type: 'function',
+        function: { name: 'list_oas_operations', arguments: '{}' },
+      },
+    ]);
+
   it('emits retry_exhausted diagnostic and returns reason=round_limit_exhausted', async () => {
     const ctx = buildContext();
-    // The assistant never calls a terminal tool; it loops forever asking for
-    // list_oas_operations. The round cap should fire after 3 rounds (we
-    // override the limit to keep the test fast).
-    const buildNonTerminalAssistant = (n: number): AssistantMessage =>
-      makeAssistant([
-        {
-          id: `call-${n}`,
-          type: 'function',
-          function: { name: 'list_oas_operations', arguments: '{}' },
-        },
-      ]);
     const stubGateway = buildStubGateway([
-      buildNonTerminalAssistant(1),
-      buildNonTerminalAssistant(2),
-      buildNonTerminalAssistant(3),
+      buildNonResearchAssistant(1),
+      buildNonResearchAssistant(2),
+      buildNonResearchAssistant(3),
     ]);
 
     const outcome = await runScenarioLoop({
@@ -259,10 +269,75 @@ describe('captureLoopRunner -- 12-round hard cap', () => {
 
     expect(outcome.reason).toBe('round_limit_exhausted');
     expect(outcome.roundsUsed).toBe(3);
+    expect(outcome.researchRounds).toBe(0);
     const archMock = ctx.archModelClient as unknown as MockArchClient;
     expect(archMock.createDiagnostic).toHaveBeenCalledTimes(1);
     const diagnosticBody = archMock.createDiagnostic.mock.calls[0][1] as { diagnostic_type: string };
     expect(diagnosticBody.diagnostic_type).toBe('retry_exhausted');
+  });
+
+  it('research rounds are FREE against the cap (2026-08-26 accounting fix)', async () => {
+    const ctx = buildContext();
+    // Four research rounds — beyond the roundLimit of 2 — then the terminal
+    // note. Under the old all-rounds accounting this aborted at round 2 as
+    // retry_exhausted; research-is-free lets the scenario complete.
+    const stubGateway = buildStubGateway([
+      buildResearchAssistant(1),
+      buildResearchAssistant(2),
+      buildResearchAssistant(3),
+      buildResearchAssistant(4),
+      makeAssistant([
+        {
+          id: 'call-final',
+          type: 'function',
+          function: {
+            name: 'record_capture_note',
+            arguments: JSON.stringify({
+              message: 'captured after legitimate research',
+              diagnosticType: 'endpoint_skipped',
+            }),
+          },
+        },
+      ]),
+    ]);
+
+    const outcome = await runScenarioLoop({
+      context: ctx,
+      initialMessages: [{ role: 'user', content: 'go' }],
+      tools: ALL_TOOLS,
+      gatewayClient: stubGateway,
+      archModelClient: ctx.archModelClient as unknown as { createDiagnostic: typeof ctx.archModelClient.createDiagnostic },
+      roundLimit: 2,
+    });
+
+    expect(outcome.reason).toBe('completed');
+    expect(outcome.roundsUsed).toBe(5);
+    expect(outcome.researchRounds).toBe(4);
+  });
+
+  it('the research-round ceiling backstops an all-research spin, naming the knob', async () => {
+    const ctx = buildContext();
+    const stubGateway = buildStubGateway([
+      buildResearchAssistant(1),
+      buildResearchAssistant(2),
+      buildResearchAssistant(3),
+    ]);
+
+    const outcome = await runScenarioLoop({
+      context: ctx,
+      initialMessages: [{ role: 'user', content: 'go' }],
+      tools: ALL_TOOLS,
+      gatewayClient: stubGateway,
+      archModelClient: ctx.archModelClient as unknown as { createDiagnostic: typeof ctx.archModelClient.createDiagnostic },
+      roundLimit: 12,
+      researchRoundCeiling: 2,
+    });
+
+    expect(outcome.reason).toBe('round_limit_exhausted');
+    expect(outcome.researchRounds).toBe(2);
+    const archMock = ctx.archModelClient as unknown as MockArchClient;
+    const diagnosticBody = archMock.createDiagnostic.mock.calls[0][1] as { message: string };
+    expect(diagnosticBody.message).toContain('LLM_SCENARIO_RESEARCH_ROUND_CEILING');
   });
 });
 

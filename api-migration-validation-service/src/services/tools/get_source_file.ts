@@ -106,4 +106,5 @@ export const getSourceFileTool: ToolRegistryEntry = {
     additionalProperties: false,
   },
   handler,
+  research: true,
 };

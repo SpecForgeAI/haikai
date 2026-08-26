@@ -199,6 +199,36 @@ describe('apiBehaviourClient -- submitSecrets payload reshape (Bug fix 2026-05-1
       expect(JSON.parse(options.body).api.type).toBe(t);
     }
   });
+
+  it('carries the read-only observation login as db.readonly_* (Kiro run-3 Issue 4)', async () => {
+    const { submitSecrets } = await import('../apiBehaviourClient');
+    await submitSecrets(PROJECT_ID, ARCH_ID, 'session-1', {
+      apiAuth: { type: 'none' },
+      dbPassword: 'write-pwd',
+      dbReadonlyUsername: 'obs_reader',
+      dbReadonlyPassword: 'obs-pwd',
+    });
+    const [, options] = fetchMock.mock.calls[0];
+    const body = JSON.parse(options.body);
+    expect(body.db).toEqual({
+      password: 'write-pwd',
+      readonly_username: 'obs_reader',
+      readonly_password: 'obs-pwd',
+    });
+  });
+
+  it('a LONE read-only value is dropped (both-or-nothing, matching the backend rule)', async () => {
+    const { submitSecrets } = await import('../apiBehaviourClient');
+    await submitSecrets(PROJECT_ID, ARCH_ID, 'session-1', {
+      apiAuth: { type: 'none' },
+      dbPassword: 'write-pwd',
+      dbReadonlyUsername: 'obs_reader',
+      dbReadonlyPassword: null,
+    });
+    const [, options] = fetchMock.mock.calls[0];
+    const body = JSON.parse(options.body);
+    expect(body.db).toEqual({ password: 'write-pwd' });
+  });
 });
 
 // ---------------------------------------------------------------------------

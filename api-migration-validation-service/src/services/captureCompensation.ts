@@ -274,6 +274,11 @@ export async function runEndOfJobFingerprint(args: {
   /** Lowercase names of tables written under keyless_multiset THIS run
    *  (Foundations Spec 3) — tolerated alongside `volatile`-scoped tables. */
   keylessWrittenTables?: Set<string>;
+  /** When supplied (2026-08-26), a mismatch names the ops whose committed
+   *  effect map holds the diverged table as READ — the prime suspects for a
+   *  missed write edge (the read-then-write idiom whose write the mining
+   *  lost). Turns "table X diverged" into "table X diverged; look at op Y". */
+  effectScope?: EffectScopeIndex;
 }): Promise<EndOfJobFingerprintResult> {
   let snapshotId: string | null = null;
   try {
@@ -330,7 +335,9 @@ export async function runEndOfJobFingerprint(args: {
         ? toleratedNote.length > 0
           ? `all non-tolerated tables match S0${toleratedNote}`
           : null
-        : fingerprintMismatchDetail(report.mismatches) + toleratedNote,
+        : fingerprintMismatchDetail(report.mismatches) +
+          toleratedNote +
+          fingerprintSuspectsNote(report.mismatches, args.effectScope),
     };
   } catch (err) {
     return {
@@ -367,5 +374,41 @@ export function fingerprintMismatchDetail(
   return (
     `${mismatches.length} table(s) diverged from S0 [${shown}${tail}] — ` +
     'restore via POST /api/s0-snapshot/restore before further captures'
+  );
+}
+
+/**
+ * Suspect attribution for a fingerprint mismatch (2026-08-26): a diverged
+ * table that NO bracket imaged means some op wrote it outside its effect
+ * map, and the op whose committed map holds the table as READ is the usual
+ * culprit — the legacy read-then-write idiom (createOrGet, favourite-style
+ * toggles) whose write edge the mining missed. Name those ops in the halt
+ * detail so the discovery gap is chased by op, not by forensic grep.
+ * Empty string when the scope is absent or nothing read-maps the tables.
+ */
+export function fingerprintSuspectsNote(
+  mismatches: ReadonlyArray<{ table: string }>,
+  effectScope?: EffectScopeIndex,
+): string {
+  const readTables = effectScope?.readTablesByOperationKey;
+  if (!readTables || readTables.size === 0 || mismatches.length === 0) return '';
+  const notes: string[] = [];
+  for (const mismatch of mismatches.slice(0, 10)) {
+    const table = mismatch.table.toLowerCase();
+    const suspects: string[] = [];
+    for (const [opKey, tables] of readTables) {
+      if (tables.some((t) => t.toLowerCase() === table)) suspects.push(opKey);
+    }
+    if (suspects.length === 0) continue;
+    suspects.sort();
+    const shownSuspects = suspects.slice(0, 6).join(', ');
+    const suspectTail = suspects.length > 6 ? `, +${suspects.length - 6} more` : '';
+    notes.push(`${mismatch.table}: ${shownSuspects}${suspectTail}`);
+  }
+  if (notes.length === 0) return '';
+  return (
+    ` — suspect op(s) holding the diverged table(s) as READ in the committed ` +
+    `map (a read-then-write op with a missed write edge is the usual cause; ` +
+    `fix the effect map in discovery): ${notes.join(' | ')}`
   );
 }

@@ -891,6 +891,15 @@ export interface SubmitSecretsRequest {
     [k: string]: unknown;
   };
   dbPassword?: string | null;
+  /**
+   * Optional READ-ONLY observation login (credential-role split): when BOTH
+   * are present the capture service's observational DB paths (sampling,
+   * snapshots, imaging, fingerprints) use this login and the write login
+   * exists only inside compensation brackets. Sent as
+   * `db.readonly_username` / `db.readonly_password` on the wire.
+   */
+  dbReadonlyUsername?: string | null;
+  dbReadonlyPassword?: string | null;
   customHeaderSecrets?: Record<string, string>;
 }
 
@@ -1801,7 +1810,11 @@ function mapAuthTypeToBackend(raw: string | undefined): string {
  */
 function toSecretsWireBody(payload: SubmitSecretsRequest): {
   api: Record<string, unknown>;
-  db: { password: string } | null;
+  db: {
+    password: string;
+    readonly_username?: string;
+    readonly_password?: string;
+  } | null;
 } {
   const apiIn = payload.apiAuth ?? { type: 'none' };
   const api: Record<string, unknown> = {
@@ -1812,10 +1825,25 @@ function toSecretsWireBody(payload: SubmitSecretsRequest): {
   // mode; the backend reads the same field names for `'custom_header'`, so
   // no further key remapping is needed.
   const dbPassword = payload.dbPassword;
+  // Credential-role split: both-or-nothing, matching the backend rule (a
+  // lone value silently keeps the single-login posture).
+  const readonlySplit =
+    typeof payload.dbReadonlyUsername === 'string' &&
+    payload.dbReadonlyUsername.length > 0 &&
+    typeof payload.dbReadonlyPassword === 'string' &&
+    payload.dbReadonlyPassword.length > 0;
   return {
     api,
     db: typeof dbPassword === 'string' && dbPassword.length > 0
-      ? { password: dbPassword }
+      ? {
+          password: dbPassword,
+          ...(readonlySplit
+            ? {
+                readonly_username: payload.dbReadonlyUsername as string,
+                readonly_password: payload.dbReadonlyPassword as string,
+              }
+            : {}),
+        }
       : null,
   };
 }

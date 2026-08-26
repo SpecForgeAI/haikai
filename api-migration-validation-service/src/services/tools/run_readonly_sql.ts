@@ -89,4 +89,5 @@ export const runReadonlySqlTool: ToolRegistryEntry = {
     additionalProperties: false,
   },
   handler,
+  research: true,
 };

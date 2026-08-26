@@ -419,6 +419,69 @@ vs FQN); (e) fresh project = fresh model, no carried edges. Fixes:
     machine already patched by Kiro directly — this replicates to
     canonical main; next clone carries it, no extra pickup action.
 
+22. **Kiro run-3 review: capture round 4 fixes (2026-08-26)** — five fixes
+    from the re-run analysis (2 landed confirmed: dbo.* metadata + 2
+    tolerated tables; run failed on ONE table).
+    **Issue 1 / C3 (the halt, filter_tag +1)** two prongs: (a) ROOT CAUSE
+    CANDIDATE — the write-table SQL parser required the optional-in-T-SQL
+    keywords: `insert <table>` (no INTO) and `delete <table>` (no FROM)
+    are legal Sybase and were INVISIBLE, while the same chain's SELECT
+    parsed fine → the favourite-style createOrGet op surfaced its table as
+    READ-only, so no bracket imaged it and the +1 leaked to the
+    fingerprint (explains +2→+1: other writers use `insert into`). Fixed
+    in emitter WRITE_SQL_PATTERNS (optional INTO; new BARE_DELETE_RE with
+    whole-token + routing lookaheads — no partial-token backtracking;
+    stop-word guard on captured tokens) + gateway effectMapBackfill
+    mirror; proc harvester reuses the emitter parser. (b) ATTRIBUTION —
+    EffectScopeIndex now KEEPS read-mode tables per op
+    (readTablesByOperationKey); a fingerprint mismatch names the ops
+    holding the diverged table as READ ("suspect op(s) … missed write
+    edge") in the halt detail — Kiro's manual inference automated; both
+    orchestrator + log-replay pass the scope. If the next run still
+    leaks, the halt now names the op — screenshot it.
+    **Issue 2 (retry_exhausted 34→59)** — research rounds are FREE:
+    tools declare `research: true` (OAS/contract reads, list_db_metadata,
+    sample_db_values, run_readonly_sql, source search/read); a round
+    whose calls are ALL research never consumes LLM_SCENARIO_ROUND_LIMIT
+    (mirrors the fired-attempt "research is free" rule); new
+    LLM_SCENARIO_RESEARCH_ROUND_CEILING (default 60, env-tunable,
+    refusal names the knob) bounds pure-research spin WITHOUT undercutting
+    Pass-B's derived budget limits; LoopOutcome gains researchRounds and
+    the retry_exhausted messages split budget vs research counts.
+    **Issue 3 (record_scenario_candidate AMS 400, feeder of 2)** — the
+    tool sent request_method/request_path NULL when the LLM omitted the
+    schema-optional args; AMS 400s on blank (NOT NULL columns — the
+    orchestrator's own create learned this long ago, the tool path never
+    did). Now defaulted from the persisted operation row; explicit values
+    still win; blank = omitted.
+    **Issue 4 (un-actionable credential-split advisory)** — backend was
+    fully wired (secrets.db.readonlyUsername/Password → observation
+    adapter; advisory when absent); added the MISSING UI: wizard Step 3
+    gains an optional read-only login pair (both-or-nothing with an
+    incomplete-pair warning), the session screen's re-enter-secrets
+    prompt gains the same pair, client toSecretsWireBody maps to
+    db.readonly_username/readonly_password (lone value dropped, matching
+    the backend rule).
+    **Minor** — new diagnostic type `captured_as_business_error`
+    (AMS allowlist + AMVS union + record_capture_note valid set + system
+    prompt steer): captured-as-200-with-business-error-code is a
+    SUCCESSFUL negative capture, not "endpoint skipped" (108 mislabels);
+    frontend renders it as info automatically. Auth-failure minor =
+    legacy behaviour correctly captured, no action.
+    Tests: emitter T-SQL parse+walk pins (incl. backtracking negative),
+    gateway mirror pins, suspects-note pins, loop research-free +
+    ceiling-knob pins, config knob pins, scenario-candidate default pins,
+    secrets wire pins. Suites: discovery 2047 green (2 known parallel
+    flakes pass isolated) + tsc, gateway backfill 19 + tsc, AMVS FULL 121
+    suites / 790 + tsc, AMS compiles, frontend client 18 + wizard 2 +
+    detail-view 11.
+    PICKUP (fresh clone covers all): **AMS REBUILD required** (`mvn
+    package` — diagnostics allowlist) + restart discovery-service,
+    gateway, AMVS, frontend. Expected on the re-run: filter_tag bracketed
+    (write edge derives) after code scan re-run + save; retry_exhausted
+    collapses; scenario candidates persist; supply the read-only login in
+    the wizard to clear the advisory; "endpoint skipped" splits honestly.
+
 Pickup: discovery-service restart only. OPEN: transfer-proc invocation shape
 (estate grep), Blocked-101 breakdown, FindingEmitter persist errors (~476).
 

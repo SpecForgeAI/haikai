@@ -405,6 +405,7 @@ export async function runLogReplayCurrentCapture(
         readAdapter: compensation.readAdapter,
         metadata: compensation.metadata,
         schema: compensation.schema,
+        effectScope: compensation.effectScope,
       });
       if (fingerprint.status === 'mismatch') {
         return await fail(

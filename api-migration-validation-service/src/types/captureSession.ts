@@ -165,6 +165,10 @@ export type DiagnosticType =
   | 'llm_generation_failure'
   | 'redaction_warning'
   | 'endpoint_skipped'
+  // 2026-08-26: the behaviour WAS captured, as the legacy 200-with-
+  // business-error-code idiom — a successful negative capture, never a
+  // skip (108 "endpoint skipped" rows were mislabelled captured negatives).
+  | 'captured_as_business_error'
   | 'retry_exhausted'
   // Capture-State Discipline Spec 3 (2026-08-18): compensation-bracket and
   // S0-fingerprint session diagnostics (mirrored in the AMS allowlist).

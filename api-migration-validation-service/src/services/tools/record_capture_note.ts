@@ -26,6 +26,9 @@ const VALID_DIAGNOSTIC_TYPES: ReadonlySet<DiagnosticType> = new Set<DiagnosticTy
   'llm_generation_failure',
   'redaction_warning',
   'endpoint_skipped',
+  // 2026-08-26: captured-as-200-with-business-error-code — a SUCCESSFUL
+  // negative capture; `endpoint_skipped` on these mislabelled 108 rows.
+  'captured_as_business_error',
   'retry_exhausted',
 ]);
 
@@ -102,7 +105,7 @@ export const recordCaptureNoteTool: ToolRegistryEntry = {
     type: 'object',
     properties: {
       message: { type: 'string', description: 'Free-text note describing the scenario outcome.' },
-      diagnosticType: { type: 'string', description: 'One of failed_request, auth_failure, db_sample_failure, llm_generation_failure, redaction_warning, endpoint_skipped, retry_exhausted. Defaults to endpoint_skipped.' },
+      diagnosticType: { type: 'string', description: 'One of failed_request, auth_failure, db_sample_failure, llm_generation_failure, redaction_warning, endpoint_skipped, captured_as_business_error, retry_exhausted. Defaults to endpoint_skipped. Use captured_as_business_error when the scenario behaviour WAS captured but the API answered with the legacy 200-plus-business-error-code idiom (or another captured negative outcome); reserve endpoint_skipped for scenarios you did NOT capture.' },
       detail: { description: 'Optional JSON detail bag (auto-redacted).' },
       operationId: { type: 'string', description: 'Optional OAS operationId for FK linkage.' },
       scenarioId: { type: 'string', description: 'Optional scenario id (defaults to the runner-set current scenario).' },

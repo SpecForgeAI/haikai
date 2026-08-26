@@ -591,4 +591,5 @@ export const getOperationPayloadContextTool: ToolRegistryEntry = {
     additionalProperties: false,
   },
   handler,
+  research: true,
 };

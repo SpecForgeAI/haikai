@@ -1398,6 +1398,36 @@ describe('helpers', () => {
     expect(parseWriteTablesFromSql('SELECT update_count FROM t')).toEqual([]);
   });
 
+  it('parses the T-SQL optional-keyword write forms (2026-08-26 capture leak)', () => {
+    // Sybase allows INSERT without INTO — the createOrGet/favourite-style
+    // DAO idiom that left the written table READ-only in the model, so the
+    // compensation bracket never imaged it and the write leaked to the
+    // end-of-job fingerprint.
+    expect(parseWriteTablesFromSql("insert filter_tag (filter_id, tag_name) values (?, ?)")).toEqual([
+      'filter_tag',
+    ]);
+    expect(parseWriteTablesFromSql('insert dbo.filter_tag select filter_id from screen_filter')).toEqual([
+      'filter_tag',
+    ]);
+    // …and DELETE without FROM (the un-favourite side of the same idiom).
+    expect(parseWriteTablesFromSql("delete filter_tag where tag_name = ?")).toEqual(['filter_tag']);
+    // The read side of the same statement pair still parses as before — the
+    // bug was the write going dark while the read edge derived fine.
+    expect(parseReadTablesFromSql('select tag_name from filter_tag where filter_id = ?')).toEqual([
+      'filter_tag',
+    ]);
+    // Existing forms are untouched: plain, aliased (alias resolved, never a
+    // phantom, and never a partial-token backtrack match).
+    expect(parseWriteTablesFromSql('delete from filter_tag where x = 1')).toEqual(['filter_tag']);
+    expect(parseWriteTablesFromSql('delete tr from org_registry tr where tr.org_id < 0')).toEqual([
+      'org_registry',
+    ]);
+    // Clause keywords captured at a truncated literal-join seam are never
+    // tables ("insert into" with nothing after it captures "into").
+    expect(parseWriteTablesFromSql('values (?) insert into')).toEqual([]);
+    expect(parseWriteTablesFromSql('log text then delete where current')).toEqual([]);
+  });
+
   it('parseReadTablesFromSql walks comma-separated FROM lists with aliases (2026-08-23 shakedown)', () => {
     // The classic Sybase comma join — previously only the first table read.
     expect(
