@@ -165,6 +165,8 @@ export const S0RestorePanel: React.FC<S0RestorePanelProps> = ({
     result?.report.tables.filter((t) => t.status === 'restored').length ?? 0;
   const skippedCount =
     result?.report.tables.filter((t) => t.status === 'skipped_not_dumped').length ?? 0;
+  const unchangedCount =
+    result?.report.tables.filter((t) => t.status === 'unchanged').length ?? 0;
   const failedRows = result?.report.tables.filter((t) => t.status === 'failed') ?? [];
 
   return (
@@ -176,9 +178,9 @@ export const S0RestorePanel: React.FC<S0RestorePanelProps> = ({
       <h3>Canonical state (S0) — restore</h3>
       <p style={{ margin: '4px 0 8px' }}>
         This run halted because the source database no longer matches the pinned
-        canonical state. Restoring truncates and reloads every dumped table from
-        the snapshot, reseeds identities, and verifies the result — after that,
-        re-run the capture.
+        canonical state. Restoring reloads only the tables that drifted from the
+        snapshot (tables already at S0 are left untouched), reseeds identities,
+        and verifies the result — after that, re-run the capture.
       </p>
 
       {!snapshotLoaded && <p>Loading latest snapshot…</p>}
@@ -234,8 +236,8 @@ export const S0RestorePanel: React.FC<S0RestorePanelProps> = ({
               onChange={(e) => setForm((f) => ({ ...f, confirm: e.target.checked }))}
               data-testid="s0-restore-confirm"
             />
-            I understand this TRUNCATES and reloads every dumped table in the
-            source database.
+            I understand this TRUNCATES and reloads the tables that drifted
+            from S0 in the source database.
           </label>
           <button
             type="button"
@@ -259,6 +261,7 @@ export const S0RestorePanel: React.FC<S0RestorePanelProps> = ({
           <p>
             Restore <strong>{result.report.status}</strong>: {restoredCount} table
             {restoredCount === 1 ? '' : 's'} restored
+            {unchangedCount > 0 ? `, ${unchangedCount} already at S0` : ''}
             {skippedCount > 0 ? `, ${skippedCount} skipped (count-only tables)` : ''}
             {failedRows.length > 0 ? `, ${failedRows.length} FAILED` : ''}.
             {result.report.verification &&

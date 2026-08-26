@@ -1,10 +1,21 @@
 /**
  * S0 restore runner (Capture-State Discipline Spec 2) — the safety net's
- * payout path: truncate each dumped table and bulk re-insert the snapshot
- * rows through the RESTORE write surface (compensation grammar + TRUNCATE),
- * identity-wrapped and reseeded, then VERIFY the result against the
- * manifest's fingerprint. A restore that cannot prove it restored reports
- * `failed` with the mismatch detail — never a silent "probably fine".
+ * payout path, MINIMAL-DIFF since 2026-08-26 (Kiro replication): fingerprint
+ * FIRST, then truncate + bulk re-insert ONLY the tables that actually
+ * diverged from S0, identity-wrapped and reseeded, then VERIFY the result
+ * against the manifest's fingerprint. A restore that cannot prove it
+ * restored reports `failed` with the mismatch detail — never a silent
+ * "probably fine".
+ *
+ * Why minimal-diff: Sybase refuses TRUNCATE on an FK-referenced parent
+ * whose referencing tables hold rows. The old unconditional loop truncated
+ * EVERY dumped table, so unchanged reference parents (which never needed
+ * touching) failed the whole restore even though the DB was effectively at
+ * S0. Unchanged tables are now reported `unchanged` and never touched.
+ * HONEST RESIDUAL EDGE: an FK-referenced parent that GENUINELY drifts still
+ * cannot be truncated — minimal-diff makes that rare, not impossible; the
+ * fix for that edge (disabling constraints during restore) is deliberately
+ * not made speculatively.
  *
  * Tables the snapshot skipped (`skipped_no_pk_count_only`) CANNOT be
  * restored (their content was never dumped) and are reported as such.
@@ -38,7 +49,7 @@ export interface S0RestoreArgs {
 
 export interface S0RestoreTableResult {
   table: string;
-  status: 'restored' | 'skipped_not_dumped' | 'failed';
+  status: 'restored' | 'skipped_not_dumped' | 'unchanged' | 'failed';
   rows_inserted: number;
   detail: string | null;
 }
@@ -92,6 +103,32 @@ async function readRows(file: string): Promise<Array<Record<string, unknown>>> {
 
 export async function runS0Restore(args: S0RestoreArgs): Promise<S0RestoreReport> {
   const tables: S0RestoreTableResult[] = [];
+  const tolerated = defaultVerifyTolerated(args.metadata, args.manifest);
+
+  // Minimal-diff (2026-08-26): fingerprint BEFORE touching anything and
+  // reload only the tables that actually diverged (hard mismatches AND
+  // tolerated ones — the whole point of restore is resetting the volatile /
+  // audit-sink / sequence drift the fingerprint tolerates). If the
+  // pre-verify itself errors, fall back to reloading everything — the
+  // optimization must never make restore LESS capable than the old
+  // unconditional loop.
+  let divergedTables: Set<string> | null = null;
+  try {
+    const preVerify = await verifyS0Fingerprint(
+      args.readAdapter,
+      args.metadata,
+      args.manifest,
+      args.schema,
+      tolerated,
+    );
+    divergedTables = new Set<string>(
+      [...preVerify.mismatches, ...preVerify.tolerated_mismatches].map((m) =>
+        m.table.toLowerCase(),
+      ),
+    );
+  } catch {
+    divergedTables = null;
+  }
 
   for (const entry of args.manifest.tables) {
     if (!entry.file) {
@@ -100,6 +137,17 @@ export async function runS0Restore(args: S0RestoreArgs): Promise<S0RestoreReport
         status: 'skipped_not_dumped',
         rows_inserted: 0,
         detail: entry.note ?? 'snapshot holds no data file for this table',
+      });
+      continue;
+    }
+    if (divergedTables !== null && !divergedTables.has(entry.table.toLowerCase())) {
+      // Already at S0 — never truncated, so an unchanged FK-referenced
+      // parent can no longer fail the whole restore on the Sybase refusal.
+      tables.push({
+        table: entry.table,
+        status: 'unchanged',
+        rows_inserted: 0,
+        detail: 'already at S0 — not reloaded',
       });
       continue;
     }
@@ -178,12 +226,13 @@ export async function runS0Restore(args: S0RestoreArgs): Promise<S0RestoreReport
     // model's tolerance classes — a restore that reset every restorable
     // table reports `restored`, with the untouchable tables shown as
     // tolerated_mismatches instead of flipping the whole result to failed.
+    // Same tolerated set as the pre-verify (computed once at the top).
     verification = await verifyS0Fingerprint(
       args.readAdapter,
       args.metadata,
       args.manifest,
       args.schema,
-      defaultVerifyTolerated(args.metadata, args.manifest),
+      tolerated,
     );
   }
 

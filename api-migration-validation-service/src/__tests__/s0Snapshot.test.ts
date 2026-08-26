@@ -197,6 +197,98 @@ describe('runS0Restore', () => {
   });
 });
 
+describe('minimal-diff restore (Kiro replication, 2026-08-26)', () => {
+  it('unchanged tables are never truncated and report `unchanged`', async () => {
+    const store = seededStore();
+    const pristine = store.snapshotJson();
+    const { manifest, dir } = await takeSnapshot(store, 's0-test-030');
+
+    // Only orders drifts; order_lines stays at S0.
+    store.tables.get('orders')!.push({ id: 9, name: 'junk' });
+
+    const report = await runS0Restore({
+      readAdapter: fakeReadAdapter(store),
+      writeAdapter: fakeWriteAdapter(store),
+      metadata: METADATA,
+      manifest,
+      dir,
+      engine: 'sybase',
+    });
+
+    expect(report.status).toBe('restored');
+    expect(store.snapshotJson()).toBe(pristine);
+    expect(store.truncates).toContain('orders');
+    expect(store.truncates).not.toContain('order_lines');
+    const lines = report.tables.find((t: { table: string }) => t.table === 'order_lines');
+    expect(lines?.status).toBe('unchanged');
+    expect(lines?.detail).toContain('already at S0');
+  });
+
+  it('an unchanged FK-referenced parent whose TRUNCATE would be refused no longer fails the restore (the estate scenario)', async () => {
+    const store = seededStore();
+    const pristine = store.snapshotJson();
+    const { manifest, dir } = await takeSnapshot(store, 's0-test-031');
+
+    store.tables.get('orders')!.push({ id: 9, name: 'junk' });
+
+    // Sybase-style refusal: TRUNCATE on the (unchanged) FK-referenced parent
+    // throws. Pre-fix the unconditional loop attempted it, the per-table
+    // catch marked it failed, and a fully-successful restore reported
+    // `failed`. Minimal-diff never attempts it.
+    const inner = fakeWriteAdapter(store);
+    const fkGuarded = {
+      ...inner,
+      async executeRestoreBatch(statements: string[], options?: unknown) {
+        if (statements.some((s: string) => /^TRUNCATE TABLE order_lines$/i.test(s))) {
+          throw new Error(
+            "Could not truncate table 'order_lines' because there are referential " +
+              'constraints defined on it and there are data rows in some of the ' +
+              'referencing tables.',
+          );
+        }
+        return inner.executeRestoreBatch(statements, options as never);
+      },
+    };
+
+    const report = await runS0Restore({
+      readAdapter: fakeReadAdapter(store),
+      writeAdapter: fkGuarded,
+      metadata: METADATA,
+      manifest,
+      dir,
+      engine: 'sybase',
+    });
+
+    expect(report.status).toBe('restored');
+    expect(store.snapshotJson()).toBe(pristine);
+    expect(
+      report.tables.find((t: { table: string }) => t.table === 'order_lines')?.status,
+    ).toBe('unchanged');
+  });
+
+  it('a zero-drift restore touches nothing and still verifies as restored', async () => {
+    const store = seededStore();
+    const { manifest, dir } = await takeSnapshot(store, 's0-test-032');
+
+    const report = await runS0Restore({
+      readAdapter: fakeReadAdapter(store),
+      writeAdapter: fakeWriteAdapter(store),
+      metadata: METADATA,
+      manifest,
+      dir,
+      engine: 'sybase',
+    });
+
+    expect(report.status).toBe('restored');
+    expect(store.truncates).toEqual([]);
+    const dumped = report.tables.filter(
+      (t: { status: string }) => t.status !== 'skipped_not_dumped',
+    );
+    expect(dumped.length).toBeGreaterThan(0);
+    expect(dumped.every((t: { status: string }) => t.status === 'unchanged')).toBe(true);
+  });
+});
+
 describe('S0 verify tolerated default (Kiro C2, 2026-08-25)', () => {
   it('defaultVerifyTolerated composes un-dumped manifest tables with the model tolerance classes', () => {
     const manifest = {
