@@ -73,8 +73,20 @@ function seededStore() {
   return store;
 }
 
-function effectScopeWith(entries: Array<[string, string[]]>) {
-  return { tablesByOperationKey: new Map(entries), readMappedOperationKeys: new Set<string>() };
+function effectScopeWith(
+  entries: Array<[string, string[]]>,
+  readSide?: {
+    readMappedKeys?: string[];
+    readTables?: Array<[string, string[]]>;
+  },
+) {
+  return {
+    tablesByOperationKey: new Map(entries),
+    readMappedOperationKeys: new Set<string>(readSide?.readMappedKeys ?? []),
+    ...(readSide?.readTables
+      ? { readTablesByOperationKey: new Map(readSide.readTables) }
+      : {}),
+  };
 }
 
 function buildSessionDto(): CaptureSessionDto {
@@ -227,9 +239,15 @@ function buildGatewayMock(operationId: string, method: string, opPath: string) {
 
 interface HarnessArgs {
   store: InstanceType<typeof FakeStore>;
-  effectScope: { tablesByOperationKey: Map<string, string[]>; readMappedOperationKeys: Set<string> };
+  effectScope: {
+    tablesByOperationKey: Map<string, string[]>;
+    readMappedOperationKeys: Set<string>;
+    readTablesByOperationKey?: Map<string, string[]>;
+  };
   operations?: OperationDto[];
   writeAdapter?: ReturnType<typeof fakeWriteAdapter>;
+  /** Model override (defaults to the pets-only MODEL). */
+  model?: unknown;
   /** What the "app" does when the LLM fires the request. */
   onRequest?: () => void;
 }
@@ -280,7 +298,7 @@ async function runHarness(args: HarnessArgs) {
     oasInventory: buildInventory(operations),
     persistedOperations: operations,
     compensationSeams: {
-      metadataFetcher: async () => buildCompensationMetadataIndex(MODEL),
+      metadataFetcher: async () => buildCompensationMetadataIndex(args.model ?? MODEL),
       effectScopeFetcher: async () => args.effectScope,
       writeAdapterFactory: () => writeAdapter,
       // Quiet-window guardrail (Oracle Nine item 5) runs BEFORE scenarios
@@ -399,5 +417,159 @@ test('end-of-job fingerprint FAILS the session when the DB diverged from a pinne
   expect(outcome.errorMessage).toContain('fingerprint MISMATCH');
   expect(
     archMock.diagnostics.some((d) => d.diagnostic_type === 's0_fingerprint_mismatch'),
+  ).toBe(true);
+});
+
+// ---------------------------------------------------------------------------
+// Defensive bracket scope (2026-08-26): the bracket snapshots the READ∪WRITE
+// union, so a mis-mined write edge (read-then-write idiom whose INSERT the
+// mining lost -> table marked READ on an op that writes it) is caught and
+// reverted PER SCENARIO instead of leaking to the end-of-job fingerprint and
+// discarding a multi-hour run.
+// ---------------------------------------------------------------------------
+
+const WIDENED_MODEL = {
+  metaModel: {
+    entities: {
+      physical_data_entities: [
+        {
+          id: 'e-pets',
+          name: 'pets',
+          constraints_metadata: { primary_key: { name: 'pk', columns: ['id'] } },
+        },
+        {
+          id: 'e-ftag',
+          name: 'filter_tag',
+          constraints_metadata: { primary_key: { name: 'pk_ft', columns: ['id'] } },
+        },
+      ],
+      physical_data_attributes: [
+        { physical_entity_id: 'e-pets', name: 'id', is_identity: true, is_primary_key: true, source_type: 'int', ordinal: 1 },
+        { physical_entity_id: 'e-pets', name: 'name', source_type: 'varchar', ordinal: 2 },
+        { physical_entity_id: 'e-ftag', name: 'id', is_primary_key: true, source_type: 'int', ordinal: 1 },
+        { physical_entity_id: 'e-ftag', name: 'tag_name', source_type: 'varchar', ordinal: 2 },
+      ],
+    },
+  },
+};
+
+function widenedStore() {
+  const store = seededStore();
+  store.tables.set('filter_tag', [{ id: 10, tag_name: 'starred' }]);
+  return store;
+}
+
+test('union bracket: a stray write on a READ-mapped table is reverted (leak mode 2 closed)', async () => {
+  const store = widenedStore();
+  const pristine = store.snapshotJson();
+  const { outcome } = await runHarness({
+    store,
+    model: WIDENED_MODEL,
+    effectScope: effectScopeWith([['POST /pets', ['pets']]], {
+      readTables: [['POST /pets', ['filter_tag']]],
+    }),
+    onRequest: () => {
+      store.tables.get('pets')!.push({ id: 3, name: 'created-by-app' });
+      // The mis-mined write: the map says READ, the app actually inserts.
+      store.tables.get('filter_tag')!.push({ id: 11, tag_name: 'fav-row' });
+    },
+  });
+
+  expect(outcome.finalStatus).toBe('completed');
+  // BOTH writes reverted -- the read-mapped table rode in the bracket scope.
+  expect(store.snapshotJson()).toBe(pristine);
+});
+
+test('defensive read bracket: a proven-read op with read tables is bracketed, its stray write reverted (leak mode 1 closed)', async () => {
+  const store = widenedStore();
+  const pristine = store.snapshotJson();
+  const { outcome, archMock } = await runHarness({
+    store,
+    model: WIDENED_MODEL,
+    // NO write map at all; the op is corpus-proven read with a resolvable
+    // read table. Previously this fired completely unbracketed.
+    effectScope: effectScopeWith([], {
+      readMappedKeys: ['POST /pets'],
+      readTables: [['POST /pets', ['filter_tag']]],
+    }),
+    onRequest: () => {
+      store.tables.get('filter_tag')!.push({ id: 12, tag_name: 'leaked' });
+    },
+  });
+
+  expect(outcome.finalStatus).toBe('completed');
+  expect(store.snapshotJson()).toBe(pristine);
+  const proven = archMock.diagnostics.find((d) => d.diagnostic_type === 'proven_read_only');
+  expect(proven).toBeDefined();
+  expect(proven!.message).toContain('DEFENSIVE');
+});
+
+test('proven-read with NO resolvable read tables still fires unbracketed (unchanged)', async () => {
+  const store = seededStore();
+  const { outcome, archMock } = await runHarness({
+    store,
+    effectScope: effectScopeWith([], { readMappedKeys: ['POST /pets'] }),
+  });
+
+  expect(outcome.finalStatus).toBe('completed');
+  const proven = archMock.diagnostics.find((d) => d.diagnostic_type === 'proven_read_only');
+  expect(proven).toBeDefined();
+  expect(proven!.message).toContain('WITHOUT a bracket');
+});
+
+test('keyless zero-delta guard: a genuinely-READ keyless table in the bracket scope is never recorded as keyless-written', async () => {
+  const keylessModel = {
+    metaModel: {
+      entities: {
+        physical_data_entities: [
+          {
+            id: 'e-pets',
+            name: 'pets',
+            constraints_metadata: { primary_key: { name: 'pk', columns: ['id'] } },
+          },
+          { id: 'e-sink', name: 'event_sink', constraints_metadata: { key_policy: 'keyless_multiset' } },
+        ],
+        physical_data_attributes: [
+          { physical_entity_id: 'e-pets', name: 'id', is_identity: true, is_primary_key: true, source_type: 'int', ordinal: 1 },
+          { physical_entity_id: 'e-pets', name: 'name', source_type: 'varchar', ordinal: 2 },
+          { physical_entity_id: 'e-sink', name: 'detail', source_type: 'varchar', ordinal: 1 },
+        ],
+      },
+    },
+  };
+  const store = seededStore();
+  store.tables.set('event_sink', [{ detail: 'existing' }]);
+
+  // Run 1: the app READS event_sink only (no write) -- zero count delta.
+  const first = await runHarness({
+    store,
+    model: keylessModel,
+    effectScope: effectScopeWith([['POST /pets', ['pets']]], {
+      readTables: [['POST /pets', ['event_sink']]],
+    }),
+    onRequest: () => {
+      store.tables.get('pets')!.push({ id: 3, name: 'created-by-app' });
+    },
+  });
+  expect(first.outcome.finalStatus).toBe('completed');
+  expect(
+    first.archMock.diagnostics.some((d) => d.diagnostic_type === 'keyless_write_recorded'),
+  ).toBe(false);
+
+  // Run 2: the app actually WRITES the keyless table -- the observation is
+  // still recorded (the guard skips only zero-delta reads).
+  const second = await runHarness({
+    store,
+    model: keylessModel,
+    effectScope: effectScopeWith([['POST /pets', ['pets']]], {
+      readTables: [['POST /pets', ['event_sink']]],
+    }),
+    onRequest: () => {
+      store.tables.get('event_sink')!.push({ detail: 'written-by-app' });
+    },
+  });
+  expect(second.outcome.finalStatus).toBe('completed');
+  expect(
+    second.archMock.diagnostics.some((d) => d.diagnostic_type === 'keyless_write_recorded'),
   ).toBe(true);
 });

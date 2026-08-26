@@ -60,7 +60,12 @@ import {
 } from './captureCompensation';
 import { runCompensationBracket } from './compensation/compensationRunner';
 import { fetchCompensationMetadataIndex } from './compensation/compensationMetadata';
-import { effectTablesFor, fetchEffectScopeIndex, isReadMappedOperation } from './stateDelta';
+import {
+  effectTablesFor,
+  fetchEffectScopeIndex,
+  isReadMappedOperation,
+  readTablesFor,
+} from './stateDelta';
 
 // Haikai workflow trace logger (OFF by default; no-op unless HAIKAI_TRACE is
 // set). See docs/trace-logging.md. The corr bag always carries project + arch
@@ -2031,26 +2036,71 @@ export async function orchestrateCaptureSession(
         let outcome: Awaited<ReturnType<typeof runScenarioLoop>> | null = null;
         const isBracketedScenario =
           compensation !== null && COMPENSATED_VERBS.has(op.method.toLowerCase());
-        // Proven-read classification (2026-08-20): a write-verb endpoint whose
-        // committed effect edges are READ-only is a corpus-proven query — it
-        // fires WITHOUT a bracket (nothing to compensate) instead of being
-        // refused. The end-of-job S0 fingerprint remains the safety net.
+        // Defensive bracket scope (2026-08-26): the bracket snapshots the
+        // READ∪WRITE union, not write tables alone. Static mining routinely
+        // loses the write half of the legacy read-then-write idiom (SELECT
+        // seen, INSERT lost → the table is marked READ on an op that writes
+        // it); with a write-only scope that stray write escaped the snapshot
+        // and surfaced only as an end-of-job fingerprint failure — one
+        // mis-mined edge discarding a multi-hour run. For genuine reads the
+        // extra snapshot is a no-op restore.
+        const scenarioWriteTables =
+          compensation !== null && isBracketedScenario
+            ? effectTablesFor(compensation.effectScope, op.method, op.path)
+            : [];
+        const scenarioReadTables =
+          compensation !== null && isBracketedScenario
+            ? readTablesFor(compensation.effectScope, op.method, op.path)
+            : [];
+        // Proven-read classification (2026-08-20, narrowed 2026-08-26): a
+        // write-verb endpoint whose committed effect edges are READ-only is a
+        // corpus-proven query — but it fires completely UNBRACKETED only when
+        // there is literally nothing to snapshot (no write tables AND no
+        // resolvable read tables). With read tables in hand it runs under a
+        // DEFENSIVE bracket over them instead: a genuine query's before/after
+        // delta is empty (no-op restore), while a mis-mined write is reverted
+        // per-scenario instead of escaping to the fingerprint.
         const provenReadOnly =
           compensation !== null &&
           isBracketedScenario &&
-          effectTablesFor(compensation.effectScope, op.method, op.path).length === 0 &&
+          scenarioWriteTables.length === 0 &&
+          scenarioReadTables.length === 0 &&
+          isReadMappedOperation(compensation.effectScope, op.method, op.path);
+        const defensiveReadBracket =
+          compensation !== null &&
+          isBracketedScenario &&
+          scenarioWriteTables.length === 0 &&
+          scenarioReadTables.length > 0 &&
           isReadMappedOperation(compensation.effectScope, op.method, op.path);
         if (provenReadOnly) {
           await writeDiag(
             'proven_read_only',
             `Mutating-verb scenario '${scenario.name}' on ${op.method.toUpperCase()} ${op.path} ` +
               'fires WITHOUT a bracket: the committed effect edges are READ-only ' +
-              '(corpus-proven query); the end-of-run S0 fingerprint is the safety net.',
+              '(corpus-proven query) and resolve no snapshot tables; the ' +
+              'end-of-run S0 fingerprint is the safety net.',
+            { operation_id: op.operation_id, scenario: scenario.name },
+          );
+        }
+        if (defensiveReadBracket) {
+          await writeDiag(
+            'proven_read_only',
+            `Mutating-verb scenario '${scenario.name}' on ${op.method.toUpperCase()} ${op.path} ` +
+              'is a corpus-proven query firing under a DEFENSIVE bracket over its ' +
+              `READ table(s) (${scenarioReadTables.join(', ')}): a genuine read is a ` +
+              'no-op restore, while a mis-mined write is reverted per-scenario ' +
+              'instead of escaping to the end-of-job S0 fingerprint.',
             { operation_id: op.operation_id, scenario: scenario.name },
           );
         }
         if (compensation && isBracketedScenario && !provenReadOnly) {
-          const bracketTables = effectTablesFor(compensation.effectScope, op.method, op.path);
+          // READ∪WRITE union. `bracketTables` is empty exactly when the op
+          // has no write map AND is not read-mapped — the refuse branches
+          // below are byte-for-byte the pre-widening set (read tables only
+          // exist on read-mapped ops, and those peeled off above).
+          const bracketTables = Array.from(
+            new Set([...scenarioWriteTables, ...scenarioReadTables]),
+          );
           if (bracketTables.length === 0) {
             // Foundations Spec 3 (2026-08-22): the whole map was scoped away
             // by foundation decisions — refuse WITH the receipts (a decision,
@@ -2157,6 +2207,13 @@ export async function orchestrateCaptureSession(
           // delta; updates are not detectable without a key) and tolerate
           // the table in the end-of-job fingerprint. S0 restore resets.
           for (const obs of bracket.outcome.keylessObservations ?? []) {
+            // 2026-08-26 (defensive bracket): read-mapped keyless tables now
+            // ride in the bracket scope, so a GENUINELY READ keyless table
+            // produces a zero-delta observation — recording it as
+            // "keyless-written" would tolerate it in the fingerprint
+            // (masking real writes) and spam diagnostics. Only a count
+            // CHANGE is evidence of a write.
+            if ((obs.countBefore ?? null) === (obs.countAfter ?? null)) continue;
             keylessWrittenTables.add(obs.table.toLowerCase());
             await writeDiag(
               'keyless_write_recorded',

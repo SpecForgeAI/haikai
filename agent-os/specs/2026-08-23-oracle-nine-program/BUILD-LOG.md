@@ -482,6 +482,39 @@ vs FQN); (e) fresh project = fresh model, no carried edges. Fixes:
     collapses; scenario candidates persist; supply the read-only login in
     the wizard to clear the advisory; "endpoint skipped" splits honestly.
 
+23. **Defensive bracket scope — READ∪WRITE union (Kiro replication,
+    2026-08-26)** — the bracket only ever snapshotted WRITE-mapped tables,
+    so a mis-mined write edge (read-then-write idiom whose INSERT the
+    mining lost → table marked READ on an op that writes it) leaked two
+    ways: (1) proven-read-only ops fired with NO bracket at all; (2)
+    bracketed ops' read-marked tables escaped the snapshot — no residue
+    reported, one leaked row failed the END-OF-JOB fingerprint and
+    discarded the whole run (411/417 scenarios, ~3h). Now: new
+    `readTablesFor(index, method, path)` (stateDelta, template-matched
+    mirror of effectTablesFor, [] on older index shapes); orchestrator
+    computes both sets once and brackets the UNION; provenReadOnly
+    narrowed to require read tables EMPTY too — a proven-read op WITH
+    resolvable read tables runs under a DEFENSIVE bracket over them
+    (genuine query = no-op restore; mis-mined write reverted
+    per-scenario), reworded proven_read_only diagnostic; refuse semantics
+    byte-for-byte unchanged (read tables only exist on read-mapped ops,
+    which peel off before the refuse branches). Keyless guard: zero-delta
+    keyless observations are SKIPPED (a genuinely-read keyless table in
+    the widened scope must not be recorded keyless-written — that
+    tolerates it in the fingerprint, masking real writes). Mirrored in
+    logReplayCaptureRunner (union only; skip semantics unchanged). DELTA
+    from Kiro's version: the read-side builder SKIPS scope-excluded/
+    volatile entities exactly like the write side — policy says those
+    tables drift, and imaging them per scenario would turn legitimate
+    concurrent drift into false residue halts. Cost for genuine reads:
+    two lightweight snapshots per read table per bracket. Pins: union
+    revert, defensive-read revert + DEFENSIVE diagnostic, unbracketed
+    unchanged when nothing resolves, keyless zero-delta both branches,
+    readTablesFor template/absent-map, volatile-read exclusion. AMVS full
+    121 suites / 796 green + tsc. Restart: AMVS only (work machine
+    already carries Kiro's version; canonical adds the volatile filter —
+    next clone).
+
 Pickup: discovery-service restart only. OPEN: transfer-proc invocation shape
 (estate grep), Blocked-101 breakdown, FindingEmitter persist errors (~476).
 
