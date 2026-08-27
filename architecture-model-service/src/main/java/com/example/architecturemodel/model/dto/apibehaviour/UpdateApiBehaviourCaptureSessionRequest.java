@@ -103,7 +103,9 @@ public record UpdateApiBehaviourCaptureSessionRequest(
      * (PATCH-no-op), never "clear the config"; null-guarded in the service
      * update per the PATCH rule above. JSONB; snake_case wire (AMS default).
      */
-    Map<String, Object> behaviourSemanticsConfigJson
+    Map<String, Object> behaviourSemanticsConfigJson,
+    /** Per-session capture tuning (Item #5/S-1, 2026-08-27); null = leave unchanged. */
+    Map<String, Object> captureTuningJson
 ) {
 
     /**
@@ -150,7 +152,7 @@ public record UpdateApiBehaviourCaptureSessionRequest(
             coverageOverrideAt,
             coverageSummaryJson,
             dataTypeDefaultsJson,
-            null);
+            null, null);
     }
 
     /**
@@ -194,7 +196,7 @@ public record UpdateApiBehaviourCaptureSessionRequest(
             coverageOverrideAt,
             coverageSummaryJson,
             null,
-            null);
+            null, null);
     }
 
     /**
@@ -236,7 +238,7 @@ public record UpdateApiBehaviourCaptureSessionRequest(
             coverageOverrideAt,
             null,
             null,
-            null);
+            null, null);
     }
 
     /**
@@ -272,7 +274,7 @@ public record UpdateApiBehaviourCaptureSessionRequest(
             null, null, null, null,
             null,
             null,
-            null);
+            null, null);
     }
 
     /**

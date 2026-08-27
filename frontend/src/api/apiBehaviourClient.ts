@@ -246,6 +246,10 @@ export interface UpdateApiBehaviourCaptureSessionRequest {
   default_headers_redacted_json?: Record<string, unknown> | null;
   oas_spec_refs_json?: Record<string, unknown> | null;
   db_config_redacted_json?: Record<string, unknown> | null;
+  /** Per-session capture tuning (Item #5/S-1, 2026-08-27, AMS changeset
+   *  227): { llm_tool_call_timeout_ms, max_response_body_bytes }. Omit for
+   *  the validation service's env defaults. */
+  capture_tuning_json?: Record<string, unknown> | null;
   mutating_calls_confirmed?: boolean | null;
   started_at?: string | null;
   completed_at?: string | null;

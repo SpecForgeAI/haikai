@@ -101,6 +101,18 @@ export const LLM_SCENARIO_RESEARCH_ROUND_CEILING: number =
   parseInt(process.env.LLM_SCENARIO_RESEARCH_ROUND_CEILING || '60', 10);
 
 /**
+ * Response-body storage cap (state-discipline remediation Item #5,
+ * 2026-08-27). Bodies at or under the cap are stored IN FULL; larger bodies
+ * become a truncation marker. The old hardcoded 256KB turned the largest
+ * responses into markers that compared marker-to-marker at reconciliation —
+ * vacuous matches on exactly the payloads that matter most. Default 8MB
+ * (owner confirmed storage is not a concern); per-session override via the
+ * wizard's Capture tuning (capture_tuning_json.max_response_body_bytes).
+ */
+export const MAX_RESPONSE_BODY_BYTES: number =
+  parseInt(process.env.MAX_RESPONSE_BODY_BYTES || String(8 * 1024 * 1024), 10);
+
+/**
  * Hard timeout (ms) for any single tool-call execution. Breaching this limit
  * emits an `llm_generation_failure` diagnostic and marks the scenario
  * `executed_error`. Spec-fixed limit.

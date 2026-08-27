@@ -187,6 +187,7 @@ public class ApiBehaviourCaptureSessionService {
             .defaultHeadersRedactedJson(request.defaultHeadersRedactedJson())
             .oasSpecRefsJson(request.oasSpecRefsJson())
             .dbConfigRedactedJson(request.dbConfigRedactedJson())
+            .captureTuningJson(request.captureTuningJson())
             .mutatingCallsConfirmed(request.mutatingCallsConfirmed() == null
                 ? Boolean.FALSE : request.mutatingCallsConfirmed())
             .kind(kind)
@@ -316,6 +317,9 @@ public class ApiBehaviourCaptureSessionService {
         // never wipes a previously-recorded config back to null.
         if (request.behaviourSemanticsConfigJson() != null) {
             entity.setBehaviourSemanticsConfigJson(request.behaviourSemanticsConfigJson());
+        }
+        if (request.captureTuningJson() != null) {
+            entity.setCaptureTuningJson(request.captureTuningJson());
         }
 
         // Kind + pairing invariant — null-guarded per PATCH semantics. If

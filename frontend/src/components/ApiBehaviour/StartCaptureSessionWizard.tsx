@@ -139,6 +139,9 @@ interface Step2Config {
   headerValue: string;
   defaultHeadersText: string; // one "Name: Value" per line
   mutatingCallsConfirmed: boolean;
+  /** Capture tuning (Item #5/S-1, 2026-08-27) — blank = env defaults. */
+  tuningLlmTimeoutSeconds: string;
+  tuningMaxBodyMb: string;
 }
 
 interface Step3Config {
@@ -187,6 +190,8 @@ const DEFAULT_STEP2: Step2Config = {
   headerValue: '',
   defaultHeadersText: '',
   mutatingCallsConfirmed: false,
+  tuningLlmTimeoutSeconds: '',
+  tuningMaxBodyMb: '',
 };
 
 const DEFAULT_STEP3: Step3Config = {
@@ -776,6 +781,20 @@ export function StartCaptureSessionWizard({
         auth_config_redacted_json: buildAuthConfigRedacted(),
         default_headers_redacted_json: parseHeadersText(step2.defaultHeadersText),
         db_config_redacted_json: buildDbConfigRedacted(),
+        // Capture tuning (Item #5/S-1): only sent when the operator set a
+        // value; blank fields keep the service env defaults.
+        capture_tuning_json: (() => {
+          const tuning: Record<string, number> = {};
+          const timeoutS = Number(step2.tuningLlmTimeoutSeconds);
+          if (Number.isFinite(timeoutS) && timeoutS > 0) {
+            tuning.llm_tool_call_timeout_ms = Math.round(timeoutS * 1000);
+          }
+          const bodyMb = Number(step2.tuningMaxBodyMb);
+          if (Number.isFinite(bodyMb) && bodyMb > 0) {
+            tuning.max_response_body_bytes = Math.round(bodyMb * 1024 * 1024);
+          }
+          return Object.keys(tuning).length > 0 ? tuning : null;
+        })(),
         mutating_calls_confirmed: step2.mutatingCallsConfirmed,
       });
       draftSessionRef.current = created;
@@ -1802,6 +1821,38 @@ export function StartCaptureSessionWizard({
                   I confirm this is a non-prod migration-test environment and
                   mutating API calls are allowed.
                 </label>
+              </div>
+
+              {/* Capture tuning (Item #5/S-1, 2026-08-27): optional per-run
+                  overrides for the knobs that bite on research-heavy legacy
+                  APIs. Blank = the validation service's env defaults. */}
+              <div className={styles.fieldGroup}>
+                <label className={styles.label}>Capture tuning (optional)</label>
+                <input
+                  className={styles.input}
+                  placeholder="LLM per-round timeout, seconds (default 180)"
+                  value={step2.tuningLlmTimeoutSeconds}
+                  onChange={(e) =>
+                    setStep2((s) => ({ ...s, tuningLlmTimeoutSeconds: e.target.value }))
+                  }
+                  data-testid="start-capture-session-wizard-tuning-timeout"
+                />
+                <input
+                  className={styles.input}
+                  placeholder="Max stored response body, MB (default 8)"
+                  value={step2.tuningMaxBodyMb}
+                  onChange={(e) =>
+                    setStep2((s) => ({ ...s, tuningMaxBodyMb: e.target.value }))
+                  }
+                  data-testid="start-capture-session-wizard-tuning-body-cap"
+                  style={{ marginTop: 6 }}
+                />
+                <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
+                  Responses over the body cap are stored as truncation markers
+                  and cannot be strictly compared at reconciliation — raise it
+                  for endpoints with very large payloads. Attempt budgets stay
+                  env-only.
+                </div>
               </div>
 
               {/* In-wizard "Test API connection" probe (Fix C 2026-06-02).

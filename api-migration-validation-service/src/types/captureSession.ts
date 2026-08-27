@@ -128,6 +128,10 @@ export interface CaptureSession {
    * (the valid empty state; forward-only, no backfill on legacy sessions).
    */
   behaviourSemanticsConfigJson?: ResponseSemanticsConfig | null;
+  /** Per-session capture tuning (Item #5/S-1, 2026-08-27): operator
+   *  overrides { llm_tool_call_timeout_ms, max_response_body_bytes };
+   *  null/absent = env defaults. */
+  captureTuningJson?: Record<string, unknown> | null;
 }
 
 export type ScenarioType =
