@@ -20,6 +20,14 @@ export interface ApiAuthSecret {
   /** Basic-auth username + password (for type=basic). */
   username?: string;
   password?: string;
+  /**
+   * Optional SECOND identity value (four-eyes endpoints, Item #4
+   * 2026-08-27): same auth type + header name as the primary, different
+   * value (a different human's token). Consumed only by
+   * `execute_http_request`'s `useSecondIdentity` per-call override; absent
+   * = those scenarios record `manual_rec_required` instead of firing.
+   */
+  secondaryValue?: string;
 }
 
 export interface DbSecret {

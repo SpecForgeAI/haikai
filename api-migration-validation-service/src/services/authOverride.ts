@@ -31,6 +31,27 @@ export const BAD_TOKEN_VALUE = 'invalid-bad-token-for-auth-negative-probe';
  *
  * Pure -- inputs in, value out; no I/O, no mutation.
  */
+/**
+ * Second-identity override (four-eyes endpoints, Item #4 2026-08-27): the
+ * SAME auth shape as the session's primary with the secondary value swapped
+ * in. Null when no secondary value is loaded or the auth type cannot carry
+ * one — the caller surfaces `manual_rec_required` instead of firing.
+ * Pure — inputs in, value out.
+ */
+export function resolveSecondIdentityOverride(api: ApiAuthSecret): ApiAuthSecret | null {
+  const secondary = api.secondaryValue?.trim();
+  if (!secondary) return null;
+  switch (api.type) {
+    case 'bearer':
+      return { ...api, bearerToken: secondary };
+    case 'custom_header':
+    case 'api_key_header':
+      return { ...api, headerValue: secondary };
+    default:
+      return null;
+  }
+}
+
 export function resolveAuthOverride(mode: AuthMode | undefined | null): ApiAuthSecret | null {
   switch (mode) {
     case 'none':

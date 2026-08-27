@@ -142,6 +142,10 @@ interface Step2Config {
   /** Capture tuning (Item #5/S-1, 2026-08-27) — blank = env defaults. */
   tuningLlmTimeoutSeconds: string;
   tuningMaxBodyMb: string;
+  /** Optional SECOND identity token (four-eyes endpoints, Item #4
+   *  2026-08-27): a DIFFERENT human's token, same auth shape. Blank =
+   *  four-eyes scenarios record manual_rec_required. */
+  secondIdentityValue: string;
 }
 
 interface Step3Config {
@@ -192,6 +196,7 @@ const DEFAULT_STEP2: Step2Config = {
   mutatingCallsConfirmed: false,
   tuningLlmTimeoutSeconds: '',
   tuningMaxBodyMb: '',
+  secondIdentityValue: '',
 };
 
 const DEFAULT_STEP3: Step3Config = {
@@ -708,6 +713,14 @@ export function StartCaptureSessionWizard({
     if (step2.authType === 'header') {
       apiAuth.headerName = step2.headerName;
       apiAuth.headerValue = step2.headerValue;
+    }
+    // Second identity (Item #4): rides the same auth shape with a different
+    // value; the capture service swaps it in per-call for four-eyes ops.
+    if (
+      step2.secondIdentityValue.trim() &&
+      (step2.authType === 'sso_token' || step2.authType === 'header' || step2.authType === 'bearer')
+    ) {
+      apiAuth.secondaryValue = step2.secondIdentityValue.trim();
     }
     return {
       apiAuth: apiAuth as { type: string },
@@ -1822,6 +1835,33 @@ export function StartCaptureSessionWizard({
                   mutating API calls are allowed.
                 </label>
               </div>
+
+              {(step2.authType === 'sso_token' ||
+                step2.authType === 'header' ||
+                step2.authType === 'bearer') && (
+                <div className={styles.fieldGroup}>
+                  <label className={styles.label}>
+                    Second identity token (optional — four-eyes endpoints)
+                  </label>
+                  <input
+                    type="password"
+                    className={styles.input}
+                    placeholder="A DIFFERENT user's token (same auth shape)"
+                    value={step2.secondIdentityValue}
+                    onChange={(e) =>
+                      setStep2((s) => ({ ...s, secondIdentityValue: e.target.value }))
+                    }
+                    data-testid="start-capture-session-wizard-second-identity"
+                  />
+                  <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
+                    Endpoints enforcing a four-eyes control (a user cannot
+                    approve/reject their own resource) can only reach their
+                    happy path as a second identity. Without this token those
+                    scenarios are recorded as manual-reconciliation todos —
+                    never fake failures.
+                  </div>
+                </div>
+              )}
 
               {/* Capture tuning (Item #5/S-1, 2026-08-27): optional per-run
                   overrides for the knobs that bite on research-heavy legacy
