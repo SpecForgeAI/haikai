@@ -583,3 +583,37 @@ test('keyless zero-delta guard: a genuinely-READ keyless table in the bracket sc
     second.archMock.diagnostics.some((d) => d.diagnostic_type === 'keyless_write_recorded'),
   ).toBe(false);
 });
+
+test('Item #7 symmetry (2026-08-27): capture-side residue is HEALED from the pinned S0 and the run continues', async () => {
+  const store = seededStore();
+  const pristine = store.snapshotJson();
+  // Pin S0 from the pristine store so the heal has a source...
+  await runS0Snapshot({
+    adapter: fakeReadAdapter(store),
+    metadata: buildCompensationMetadataIndex(MODEL),
+    projectId: PROJECT_ID,
+    architectureId: ARCH_ID,
+    sourceDbType: 'sybase',
+    snapshotId: 's0-heal-001',
+  });
+  // ...then sabotage the undo (DELETE dropped) — pre-heal this halted the
+  // session FAILED with the guided-restore message.
+  const { outcome, archMock } = await runHarness({
+    store,
+    effectScope: effectScopeWith([['POST /pets', ['pets']]]),
+    writeAdapter: fakeWriteAdapter(store, { dropMatching: /^DELETE FROM pets/ }),
+    onRequest: () => {
+      store.tables.get('pets')!.push({ id: 3, name: 'created-by-app' });
+    },
+  });
+
+  expect(outcome.finalStatus).toBe('completed_with_findings');
+  expect(store.snapshotJson()).toBe(pristine);
+  const heal = archMock.diagnostics.find((d) => d.diagnostic_type === 'state_healed');
+  expect(heal).toBeDefined();
+  expect(heal!.message).toContain('pets');
+  // No residue halt was recorded — the run continued.
+  expect(
+    archMock.diagnostics.some((d) => d.diagnostic_type === 'compensation_residue'),
+  ).toBe(false);
+});

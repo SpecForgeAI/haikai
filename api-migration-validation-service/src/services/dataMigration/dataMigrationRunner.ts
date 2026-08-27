@@ -74,7 +74,17 @@ async function safeCount(
   }
 }
 
-async function migrateOneTable(
+/**
+ * Single-table migration (prepare/truncate + paged load + verify) — the
+ * loader's natural granularity. EXPORTED (Item #7, 2026-08-27) as the
+ * documented FALLBACK seam for the one honest heal-don't-halt stop case: a
+ * non-snapshotted table (huge, batch-owned) drifted during reconciliation
+ * and only a truncate-and-load from the live source can reset it. Callers
+ * must supply the SOURCE adapter + load plan + pair ruleset — that plumbing
+ * is deliberately NOT added to the replay session (the pre-rec write-surface
+ * snapshot covers every reachable case without new credentials).
+ */
+export async function migrateOneTable(
   source: DbAdapter,
   target: DbAdapter,
   loader: TargetLoader,

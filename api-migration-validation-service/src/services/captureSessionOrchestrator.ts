@@ -66,6 +66,10 @@ import {
   isReadMappedOperation,
   readTablesFor,
 } from './stateDelta';
+// Item #7 symmetry (2026-08-27): capture-side heal from the pinned S0
+// snapshot on bracket residue (minimal-diff single-table restore).
+import { latestSnapshotId, readManifest, snapshotDirFor } from './s0/manifest';
+import { restoreSingleTableFromSnapshot } from './s0/restoreRunner';
 
 // Haikai workflow trace logger (OFF by default; no-op unless HAIKAI_TRACE is
 // set). See docs/trace-logging.md. The corr bag always carries project + arch
@@ -2225,23 +2229,83 @@ export async function orchestrateCaptureSession(
           }
           outcome = bracket.fireResult?.outcome ?? null;
           if (bracket.outcome.kind === 'residue') {
-            // HALT (design ruling): the DB is no longer S0. Everything after
-            // this point would sample a corrupted state. Guided restore, then
-            // resume.
-            stateResidueError =
-              `S0 residue after scenario '${scenario.name}' on ` +
-              `${op.method.toUpperCase()} ${op.path}: compensation could not prove ` +
-              `restoration (${bracket.outcome.residue.length} residue item(s)). The DB ` +
-              'is NO LONGER S0 — restore via POST /api/s0-snapshot/restore, then re-run.';
-            await writeDiag('compensation_residue', stateResidueError, {
-              residue: bracket.outcome.residue as unknown as Record<string, unknown>,
-              statements_applied: bracket.outcome.statementsApplied.length,
-            });
-            trace.fail(
-              `compensation residue — halting session (${bracket.outcome.residue.length} items)`,
-              corr,
-            );
-            break;
+            // Item #7 symmetry (2026-08-27): HEAL from the pinned S0
+            // snapshot instead of halting — the same minimal-diff
+            // single-table restore the rec side uses. Quarantine/halt
+            // survives ONLY for tables the snapshot never dumped.
+            const residueTables = [
+              ...new Set(
+                bracket.outcome.residue
+                  .flatMap((r) => r.table.split(','))
+                  .map((t) => t.trim())
+                  .filter(Boolean),
+              ),
+            ];
+            const healed: string[] = [];
+            const unhealable: Array<{ table: string; reason: string }> = [];
+            const pinnedSnapshotId = latestSnapshotId(session.projectId, session.architectureId);
+            const pinnedDir = pinnedSnapshotId
+              ? snapshotDirFor(session.projectId, session.architectureId, pinnedSnapshotId)
+              : null;
+            const pinnedManifest = pinnedDir ? readManifest(pinnedDir) : null;
+            if (pinnedManifest && pinnedDir) {
+              for (const table of residueTables) {
+                const result = await restoreSingleTableFromSnapshot({
+                  writeAdapter: compensation.writeAdapter,
+                  metadata: compensation.metadata,
+                  manifest: pinnedManifest,
+                  dir: pinnedDir,
+                  engine: compensation.engine,
+                  schema: compensation.schema,
+                  table,
+                });
+                if (result.status === 'restored') healed.push(table);
+                else unhealable.push({ table, reason: result.detail ?? result.status });
+              }
+            } else {
+              for (const table of residueTables) {
+                unhealable.push({ table, reason: 'no S0 snapshot pinned — nothing to heal from' });
+              }
+            }
+            if (unhealable.length === 0 && healed.length > 0) {
+              await writeDiag(
+                'state_healed',
+                `Residue after scenario '${scenario.name}' on ` +
+                  `${op.method.toUpperCase()} ${op.path}; healed ${healed.join(', ')} ` +
+                  `from S0 snapshot ${pinnedSnapshotId} — the source is back at S0; ` +
+                  'capture continues.',
+                {
+                  operation_id: op.operation_id,
+                  scenario: scenario.name,
+                  tables: healed,
+                  snapshot_id: pinnedSnapshotId,
+                },
+              );
+              trace.step(
+                `residue HEALED from S0 (${healed.join(', ')}) — capture continues`,
+                corr,
+              );
+            } else {
+              // HALT (design ruling): the DB is no longer S0 and cannot be
+              // healed. Everything after this point would sample corrupted
+              // state. Guided restore, then resume.
+              stateResidueError =
+                `S0 residue after scenario '${scenario.name}' on ` +
+                `${op.method.toUpperCase()} ${op.path}: compensation could not prove ` +
+                `restoration (${bracket.outcome.residue.length} residue item(s)); ` +
+                `unhealable: ${unhealable.map((u) => `${u.table} (${u.reason})`).join('; ')}. ` +
+                'The DB is NO LONGER S0 — restore via POST /api/s0-snapshot/restore, then re-run.';
+              await writeDiag('compensation_residue', stateResidueError, {
+                residue: bracket.outcome.residue as unknown as Record<string, unknown>,
+                statements_applied: bracket.outcome.statementsApplied.length,
+                unhealable: unhealable as unknown as Record<string, unknown>,
+              });
+              trace.fail(
+                `compensation residue — halting session (${bracket.outcome.residue.length} items)`,
+                corr,
+              );
+              break;
+            }
           }
           trace.detail(
             'capture.compensation.bracket',

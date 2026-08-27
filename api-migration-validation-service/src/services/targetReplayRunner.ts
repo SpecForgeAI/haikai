@@ -47,6 +47,14 @@ import {
   type CaptureCompensationContext,
 } from './captureCompensation';
 import { runCompensationBracket } from './compensation/compensationRunner';
+// Item #7 (2026-08-27): heal-don't-halt — pre-rec write-surface snapshot,
+// single-table repair on residue, start/end receipts.
+import {
+  healTablesFromSnapshot,
+  takeRecWriteSurfaceSnapshot,
+  verifyRecWriteSurface,
+  type RecWriteSurfaceSnapshot,
+} from './s0/recStateDiscipline';
 import { fetchCompensationMetadataIndex } from './compensation/compensationMetadata';
 import type { DbConnectionConfig } from '../types/db';
 import { createTracer } from '../trace';
@@ -163,7 +171,14 @@ export type TargetReplayDiagnosticType =
   | 'compensation_refused'
   | 'compensation_residue'
   // Proven-read classification (2026-08-20): unbracketed corpus-proven query.
-  | 'proven_read_only';
+  | 'proven_read_only'
+  // Item #7 (2026-08-27) heal-don't-halt: a drifted table was repaired from
+  // the pre-rec write-surface snapshot and the replay continued.
+  | 'state_healed'
+  // Item #7: the pre-rec snapshot could not be taken (heal unavailable) /
+  // the rec END write-surface receipt did not match.
+  | 's0_snapshot_missing'
+  | 's0_fingerprint_mismatch';
 
 export interface TargetReplayDiagnostic {
   diagnosticType: TargetReplayDiagnosticType;
@@ -175,6 +190,19 @@ export interface TargetReplayDiagnostic {
   errorCode?: string | null;
 }
 
+/** Replay-local diagnostic types that persist to AMS under their OWN name
+ *  (all AMS-allowlisted). Everything else maps to endpoint_skipped /
+ *  failed_request as before. */
+const AMS_PASSTHROUGH_DIAGNOSTIC_TYPES: ReadonlySet<TargetReplayDiagnosticType> = new Set<TargetReplayDiagnosticType>([
+  'compensation_inactive',
+  'compensation_refused',
+  'compensation_residue',
+  'proven_read_only',
+  'state_healed',
+  's0_snapshot_missing',
+  's0_fingerprint_mismatch',
+]);
+
 export interface TargetReplayOutcome {
   sessionId: string;
   targetBaselineId: string;
@@ -182,7 +210,7 @@ export interface TargetReplayOutcome {
   itemsReplayed: number;
   itemsSkipped: number;
   itemsFailed: number;
-  finalStatus: 'completed' | 'failed' | 'cancelled';
+  finalStatus: 'completed' | 'completed_with_findings' | 'failed' | 'cancelled';
   errorMessage: string | null;
   diagnostics: TargetReplayDiagnostic[];
 }
@@ -427,12 +455,11 @@ export async function runTargetReplay(
       await archModelClient.createDiagnostic(sessionRow.project_id, {
         session_id: sessionRow.id,
         diagnostic_type:
-          // CSD Spec 4: compensation diagnostics persist under their OWN
-          // AMS-allowlisted types (never masked as failed_request).
-          diag.diagnosticType === 'compensation_inactive' ||
-          diag.diagnosticType === 'compensation_refused' ||
-          diag.diagnosticType === 'compensation_residue'
-            ? diag.diagnosticType
+          // Diagnostics with their OWN AMS-allowlisted types persist as
+          // themselves (CSD Spec 4 compensation types; proven-read; Item #7
+          // heal receipts, 2026-08-27) — never masked as failed_request.
+          AMS_PASSTHROUGH_DIAGNOSTIC_TYPES.has(diag.diagnosticType)
+            ? (diag.diagnosticType as never)
             : diag.diagnosticType === 'mutating_skipped' ||
                 diag.diagnosticType === 'sequence_skipped'
               ? 'endpoint_skipped'
@@ -626,6 +653,78 @@ export async function runTargetReplay(
         session,
       );
     }
+
+    // ---- Item #7 (2026-08-27): pre-rec write-surface snapshot -----------
+    // Snapshot every bracket-scope table small enough to dump (the API's
+    // write surface is small by construction). It is BOTH the heal source
+    // (residue -> repair the drifted table, continue) and the rec START
+    // receipt (the END verify below proves the run did not drift the
+    // target). Fail-soft: no snapshot = heal unavailable, halts stay halts
+    // — said loudly, never silently.
+    let recSnapshot: RecWriteSurfaceSnapshot | null = null;
+    let healedTableCount = 0;
+    if (compensation) {
+      recSnapshot = await takeRecWriteSurfaceSnapshot({
+        adapter: compensation.readAdapter,
+        metadata: compensation.metadata,
+        effectScope: compensation.effectScope,
+        projectId,
+        architectureId: session.architecture_id,
+        sessionId,
+        engine: compensation.engine,
+        schema: compensation.schema,
+      });
+      if (recSnapshot) {
+        trace.step(
+          `pre-rec write-surface snapshot ${recSnapshot.snapshotId}: ` +
+            `${recSnapshot.tableSet.size} table(s) dumped` +
+            (recSnapshot.overCapTables.length > 0
+              ? `; over-cap (unhealable, honest stop set): ${recSnapshot.overCapTables.join(', ')}`
+              : ''),
+          { project: projectId, arch: session.architecture_id, session: sessionId },
+        );
+      } else {
+        await emitDiagnostic(
+          {
+            diagnosticType: 's0_snapshot_missing',
+            message:
+              'Pre-rec write-surface snapshot could not be taken — heal-on-residue is ' +
+              'UNAVAILABLE for this run; a bracket residue will halt the replay as before.',
+          },
+          session,
+        );
+      }
+    }
+
+    /** Item #7: repair residue tables from the pre-rec snapshot. All-healed
+     *  = continue (with receipts); anything unhealable = the honest halt. */
+    const attemptHeal = async (
+      residueTables: string[],
+    ): Promise<{ healedAll: boolean; healed: string[]; unhealable: Array<{ table: string; reason: string }> }> => {
+      if (!recSnapshot || !compensation) {
+        return {
+          healedAll: false,
+          healed: [],
+          unhealable: residueTables.map((table) => ({
+            table,
+            reason: 'no pre-rec write-surface snapshot',
+          })),
+        };
+      }
+      const result = await healTablesFromSnapshot({
+        snapshot: recSnapshot,
+        writeAdapter: compensation.writeAdapter,
+        metadata: compensation.metadata,
+        engine: compensation.engine,
+        schema: compensation.schema,
+        tables: residueTables,
+      });
+      return {
+        healedAll: result.unhealable.length === 0 && result.healed.length > 0,
+        healed: result.healed,
+        unhealable: result.unhealable,
+      };
+    };
 
     console.log(
       `[targetReplayRunner] op=start session=${sessionId.slice(0, 8)} ` +
@@ -861,22 +960,53 @@ export async function runTargetReplay(
             continue;
           }
           if (bracket.outcome.kind === 'residue') {
-            itemsFailed += 1;
-            await emitDiagnostic(
-              {
-                diagnosticType: 'compensation_residue',
-                message:
-                  `Sequence item ${req.method} ${req.path} left RESIDUE the bracket ` +
-                  `could not undo (${bracket.outcome.residue.length} item(s)).`,
-                itemId: item.id,
-                method: req.method,
-                path: req.path,
-              },
-              session,
-            );
-            throw new CompensationResidueHaltError(
-              `${req.method} ${req.path} (${bracket.outcome.residue.length} residue item(s))`,
-            );
+            // Item #7 (2026-08-27): HEAL, don't halt. Repair the drifted
+            // table(s) from the pre-rec snapshot and continue; halt ONLY
+            // when something is honestly unhealable (never snapshotted).
+            const residueTables = [
+              ...new Set(
+                bracket.outcome.residue.flatMap((r) => r.table.split(',')).map((t) => t.trim()),
+              ),
+            ].filter(Boolean);
+            const heal = await attemptHeal(residueTables);
+            if (heal.healedAll) {
+              healedTableCount += heal.healed.length;
+              await emitDiagnostic(
+                {
+                  diagnosticType: 'state_healed',
+                  message:
+                    `Sequence item ${req.method} ${req.path} left residue; healed ` +
+                    `${heal.healed.join(', ')} from pre-rec snapshot ` +
+                    `${recSnapshot?.snapshotId ?? '?'} — target back at its ` +
+                    'freshly-migrated state; replay continues.',
+                  itemId: item.id,
+                  method: req.method,
+                  path: req.path,
+                },
+                session,
+              );
+            } else {
+              itemsFailed += 1;
+              await emitDiagnostic(
+                {
+                  diagnosticType: 'compensation_residue',
+                  message:
+                    `Sequence item ${req.method} ${req.path} left RESIDUE the bracket ` +
+                    `could not undo (${bracket.outcome.residue.length} item(s)); ` +
+                    'UNHEALABLE: ' +
+                    heal.unhealable.map((u) => `${u.table} (${u.reason})`).join('; ') +
+                    '. Remedy: re-run the migration load for the drifted table(s) ' +
+                    '(truncate-and-load from the live source; migrateOneTable is the seam).',
+                  itemId: item.id,
+                  method: req.method,
+                  path: req.path,
+                },
+                session,
+              );
+              throw new CompensationResidueHaltError(
+                `${req.method} ${req.path} (${bracket.outcome.residue.length} residue item(s), unhealable)`,
+              );
+            }
           }
           if (bracket.fireError) throw bracket.fireError;
           seqResult = bracket.fireResult as Awaited<ReturnType<typeof replaySequenceItem>>;
@@ -1094,22 +1224,53 @@ export async function runTargetReplay(
             continue;
           }
           if (bracket.outcome.kind === 'residue') {
-            itemsFailed += 1;
-            await emitDiagnostic(
-              {
-                diagnosticType: 'compensation_residue',
-                message:
-                  `Mutating item ${req.method} ${req.path} left RESIDUE the bracket ` +
-                  `could not undo (${bracket.outcome.residue.length} item(s)).`,
-                itemId: item.id,
-                method: req.method,
-                path: req.path,
-              },
-              session,
-            );
-            throw new CompensationResidueHaltError(
-              `${req.method} ${req.path} (${bracket.outcome.residue.length} residue item(s))`,
-            );
+            // Item #7 (2026-08-27): HEAL, don't halt. Repair the drifted
+            // table(s) from the pre-rec snapshot and continue; halt ONLY
+            // when something is honestly unhealable (never snapshotted).
+            const residueTables = [
+              ...new Set(
+                bracket.outcome.residue.flatMap((r) => r.table.split(',')).map((t) => t.trim()),
+              ),
+            ].filter(Boolean);
+            const heal = await attemptHeal(residueTables);
+            if (heal.healedAll) {
+              healedTableCount += heal.healed.length;
+              await emitDiagnostic(
+                {
+                  diagnosticType: 'state_healed',
+                  message:
+                    `Mutating item ${req.method} ${req.path} left residue; healed ` +
+                    `${heal.healed.join(', ')} from pre-rec snapshot ` +
+                    `${recSnapshot?.snapshotId ?? '?'} — target back at its ` +
+                    'freshly-migrated state; replay continues.',
+                  itemId: item.id,
+                  method: req.method,
+                  path: req.path,
+                },
+                session,
+              );
+            } else {
+              itemsFailed += 1;
+              await emitDiagnostic(
+                {
+                  diagnosticType: 'compensation_residue',
+                  message:
+                    `Mutating item ${req.method} ${req.path} left RESIDUE the bracket ` +
+                    `could not undo (${bracket.outcome.residue.length} item(s)); ` +
+                    'UNHEALABLE: ' +
+                    heal.unhealable.map((u) => `${u.table} (${u.reason})`).join('; ') +
+                    '. Remedy: re-run the migration load for the drifted table(s) ' +
+                    '(truncate-and-load from the live source; migrateOneTable is the seam).',
+                  itemId: item.id,
+                  method: req.method,
+                  path: req.path,
+                },
+                session,
+              );
+              throw new CompensationResidueHaltError(
+                `${req.method} ${req.path} (${bracket.outcome.residue.length} residue item(s), unhealable)`,
+              );
+            }
           }
           // A transport-level throw from the send surfaces AFTER the bracket
           // finished its undo — rethrow into the SAME catch so transport
@@ -1265,11 +1426,56 @@ export async function runTargetReplay(
       }
     }
 
+    // ---- Item #7 (2026-08-27): rec END write-surface receipt ------------
+    // Fingerprint the snapshot scope against the pre-rec manifest: matching
+    // (modulo tolerated classes) is positive proof the replay did not drift
+    // the target. A mismatch here — after per-scenario verify + healing —
+    // means something the brackets never covered moved: honest halt with
+    // the documented remedy.
+    if (recSnapshot && compensation) {
+      const receipt = await verifyRecWriteSurface({
+        snapshot: recSnapshot,
+        readAdapter: compensation.readAdapter,
+        metadata: compensation.metadata,
+        schema: compensation.schema,
+      });
+      if (!receipt.matches) {
+        const drifted = receipt.mismatches.map((m) => m.table).join(', ');
+        await emitDiagnostic(
+          {
+            diagnosticType: 's0_fingerprint_mismatch',
+            message:
+              `Rec END write-surface receipt FAILED: ${receipt.mismatches.length} table(s) ` +
+              `drifted from the pre-rec snapshot [${drifted}]. Remedy: re-run the ` +
+              'migration load for the drifted table(s) (truncate-and-load from the ' +
+              'live source) before trusting the diff.',
+          },
+          session,
+        );
+        throw new CompensationResidueHaltError(
+          `end-of-rec write-surface receipt failed on: ${drifted}`,
+        );
+      }
+      trace.ok(
+        `rec write-surface receipt VERIFIED against ${recSnapshot.snapshotId} ` +
+          `(${recSnapshot.tableSet.size} table(s)` +
+          (receipt.tolerated_mismatches.length > 0
+            ? `; ${receipt.tolerated_mismatches.length} tolerated`
+            : '') +
+          ')',
+        { project: projectId, arch: session.architecture_id, session: sessionId },
+      );
+    }
+
     // ------------------------------------------------------------------
     // 6) Mark session completed + finalise target baseline to active.
+    // §6 reclassification: a replay that healed drifted tables and finished
+    // is `completed_with_findings` — the receipts are in diagnostics.
     // ------------------------------------------------------------------
+    const replayFinalStatus =
+      healedTableCount > 0 ? ('completed_with_findings' as const) : ('completed' as const);
     await archModelClient.patchCaptureSession(projectId, sessionId, {
-      status: 'completed',
+      status: replayFinalStatus,
       completed_at: new Date(now()).toISOString(),
       error_message: null,
     });
@@ -1389,7 +1595,7 @@ export async function runTargetReplay(
       itemsReplayed,
       itemsSkipped,
       itemsFailed,
-      finalStatus: 'completed',
+      finalStatus: replayFinalStatus,
       errorMessage: null,
       diagnostics,
     };

@@ -336,8 +336,15 @@ test('mutating item with NO effect map is REFUSED â€” never sent', async ()
   ).toBe(true);
 });
 
-test('sabotaged undo -> RESIDUE fails the run with the re-run-data-migration remedy', async () => {
+test('Item #7 (re-pinned 2026-08-27): sabotaged undo -> residue is HEALED from the pre-rec snapshot and the replay CONTINUES', async () => {
+  // Pre-heal this pinned "failed + re-run-the-data-migration" — the
+  // overnight-stop problem. Now the pre-rec write-surface snapshot repairs
+  // the drifted table (truncate + reload, unaffected by the DELETE
+  // sabotage), the run finishes as completed_with_findings, and nobody is
+  // woken up. The receipts are the state_healed diagnostic + the verified
+  // END write-surface fingerprint.
   const store = seededStore();
+  const pristine = store.snapshotJson();
   const { mock, state } = buildArchClientMock({
     session: buildSession(),
     items: [buildItem(1, 'POST', '/pets')],
@@ -354,11 +361,46 @@ test('sabotaged undo -> RESIDUE fails the run with the re-run-data-migration rem
 
   const outcome = await runTargetReplay(SESSION_ID, deps);
 
+  expect(outcome.finalStatus).toBe('completed_with_findings');
+  expect(store.snapshotJson()).toBe(pristine);
+  const healDiag = state.diagnosticsCreated.find(
+    (d) => d.body.diagnostic_type === 'state_healed',
+  );
+  expect(healDiag).toBeTruthy();
+  expect(String(healDiag!.body.message)).toContain('pets');
+  const patch = state.sessionPatches.find(
+    (p) => p.body.status === 'completed_with_findings',
+  );
+  expect(patch).toBeTruthy();
+});
+
+test('Item #7: an UNHEALABLE residue (no pre-rec snapshot) still fails with the re-run-data-migration remedy', async () => {
+  // Force the snapshot to be unavailable by pointing the run's metadata at a
+  // model whose tables cannot be counted... simplest honest lever: sabotage
+  // BOTH the undo and the heal (TRUNCATE dropped too) — the heal claims
+  // nothing it cannot do, the store stays wrong, and the END write-surface
+  // receipt catches it: the run fails with the documented remedy.
+  const store = seededStore();
+  const { mock, state } = buildArchClientMock({
+    session: buildSession(),
+    items: [buildItem(1, 'POST', '/pets')],
+  });
+  const writeAdapter = fakeWriteAdapter(store, {
+    dropMatching: /^(DELETE FROM pets|TRUNCATE TABLE pets|INSERT INTO pets)/,
+  });
+  const { deps } = buildDeps({
+    archMock: mock,
+    store,
+    writeAdapter,
+    onRequest: () => {
+      store.tables.get('pets')!.push({ id: 3, name: 'sticky' });
+    },
+  });
+
+  const outcome = await runTargetReplay(SESSION_ID, deps);
+
   expect(outcome.finalStatus).toBe('failed');
   expect(outcome.errorMessage).toContain('Re-run the data migration');
-  expect(
-    state.diagnosticsCreated.some((d) => d.body.diagnostic_type === 'compensation_residue'),
-  ).toBe(true);
   const failPatch = state.sessionPatches.find((p) => p.body.status === 'failed');
   expect(failPatch).toBeTruthy();
 });

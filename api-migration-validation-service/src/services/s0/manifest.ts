@@ -66,7 +66,10 @@ export function readManifest(dir: string): S0Manifest | null {
   }
 }
 
-/** Snapshot ids are timestamp-prefixed, so the lexicographic max is latest. */
+/** Snapshot ids are timestamp-prefixed, so the lexicographic max is latest.
+ *  `rec-*` snapshots (Item #7 pre-rec TARGET write-surface snapshots) live
+ *  in the same tree but are NEVER the pinned source S0 — a capture restore
+ *  resolving one would compare the source DB against target data. */
 export function latestSnapshotId(projectId: string, architectureId: string): string | null {
   const root = snapshotRootFor(projectId, architectureId);
   if (!fs.existsSync(root)) return null;
@@ -74,6 +77,7 @@ export function latestSnapshotId(projectId: string, architectureId: string): str
     .readdirSync(root, { withFileTypes: true })
     .filter((e) => e.isDirectory())
     .map((e) => e.name)
+    .filter((name) => !name.startsWith('rec-'))
     .filter((name) => readManifest(path.join(root, name)) !== null)
     .sort();
   return candidates.length > 0 ? candidates[candidates.length - 1] : null;

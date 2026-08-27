@@ -138,3 +138,21 @@ one impossible-format op → contract_gap label).
 ## BUILD-LOG
 
 (One entry per merged phase, appended below.)
+
+- **Phase 1 merged `16c9b4c3`** — taxonomy (captured_ok / contract_gap /
+  manual_rec_required / state_healed / s0_restore_recorded) in AMS allowlist
+  + AMVS union + note tool + system-prompt steer; `completed_with_findings`
+  in AMS ALLOWED/TERMINAL/transitions + AMVS `resolveFinalStatus` (pure,
+  pinned) fed by the shared findingsTally (writeDiag + note tool); FE
+  severity map (manual_rec_required/state_healed → warning), status
+  chip/label/gates; `.gitignore` s0-snapshots. Coverage-score exclusion for
+  manual_rec_required lands with phase 6 (where it is first emitted).
+- **Phase 2 merged `e86c4cdd`** — scoped-row imaging: runner plans per
+  (table, role): write≤cap full image (unchanged); over-cap write w/ single
+  numeric PK → per-call scoped images (BracketCallHooks → orchestrator →
+  execute_http_request param bag, first-touch-wins) + max(PK) sweep + reseed
+  to max-before; read-mapped never imaged → scoped/sweep revert + count+max
+  guard, `read_guard_moved` residue names mis-mined writes (policy classes
+  skipped); over-cap w/o sweepable PK still refuses. DELIBERATE re-pins:
+  over-cap-with-PK fires now; read-mapped keyless real write = attributed
+  residue, not keyless tolerance. logReplay mirrored. AMVS 808 green.
