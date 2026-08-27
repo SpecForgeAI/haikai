@@ -92,9 +92,41 @@ export type BracketOutcomeKind = 'clean' | 'compensated' | 'residue' | 'refused'
 
 export interface ResidueDetail {
   table: string;
-  kind: 'row_missing' | 'row_extra' | 'row_changed' | 'reimage_failed';
+  kind:
+    | 'row_missing'
+    | 'row_extra'
+    | 'row_changed'
+    | 'reimage_failed'
+    // Scoped-row imaging (2026-08-27): a READ-planned table's count/max(PK)
+    // guard moved beyond what the scoped/sweep undo reverted — a mis-mined
+    // write the bracket could not revert. The heal path (Item #7) repairs
+    // it from the snapshot; without a snapshot it is an honest halt.
+    | 'read_guard_moved';
   pkKey: string | null;
   detail: string;
+}
+
+/**
+ * Per-call hooks the bracket hands to `fire()` (scoped-row imaging,
+ * 2026-08-27). `execute_http_request` calls `beforeMutatingCall` with the
+ * concrete path/query parameter bag BEFORE firing each mutating call inside
+ * the bracket, letting the runner take scoped before-images (WHERE pk =
+ * value) for tables whose single PK column matches a parameter name —
+ * first-touch-wins, so the earliest image of a key is the true "before".
+ */
+export interface BracketCallHooks {
+  beforeMutatingCall(args: { params: Record<string, unknown> }): Promise<void>;
+}
+
+/** Tier-3 guard observation for a READ-planned table (never imaged). */
+export interface ReadGuardObservation {
+  table: string;
+  countBefore: number | null;
+  countAfter: number | null;
+  maxPkBefore: number | null;
+  maxPkAfter: number | null;
+  /** TRUE when the movement was fully explained + reverted by the sweep. */
+  revertedBySweep: boolean;
 }
 
 export interface BracketOutcome {
@@ -112,6 +144,9 @@ export interface BracketOutcome {
   /** Foundations Spec 3 (2026-08-22): detect-only observations for
    *  keyless_multiset tables in this bracket (no undo possible). */
   keylessObservations?: KeylessObservation[];
+  /** Scoped-row imaging (2026-08-27): Tier-3 guard observations for
+   *  READ-planned tables (informational; violations land in `residue`). */
+  readGuardObservations?: ReadGuardObservation[];
 }
 
 /** Engine flavour for literal / statement rendering. */

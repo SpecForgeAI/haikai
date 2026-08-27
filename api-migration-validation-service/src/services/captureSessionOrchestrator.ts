@@ -2135,14 +2135,14 @@ export async function orchestrateCaptureSession(
           );
         }
         if (compensation && isBracketedScenario && !provenReadOnly) {
-          // READ∪WRITE union. `bracketTables` is empty exactly when the op
-          // has no write map AND is not read-mapped — the refuse branches
-          // below are byte-for-byte the pre-widening set (read tables only
-          // exist on read-mapped ops, and those peeled off above).
-          const bracketTables = Array.from(
-            new Set([...scenarioWriteTables, ...scenarioReadTables]),
-          );
-          if (bracketTables.length === 0) {
+          // Scoped-row imaging (Item #1, 2026-08-27): write and read tables
+          // are passed SEPARATELY — the runner full-images small write
+          // tables (exact undo, unchanged), scoped-images over-cap write
+          // tables per call, and GUARDS read-mapped tables (count + max(PK)
+          // + scoped/sweep revert) instead of imaging them. The empty case
+          // is exactly the pre-widening refuse set (read tables only exist
+          // on read-mapped ops, peeled off above).
+          if (scenarioWriteTables.length === 0 && scenarioReadTables.length === 0) {
             // Foundations Spec 3 (2026-08-22): the whole map was scoped away
             // by foundation decisions — refuse WITH the receipts (a decision,
             // not a gap), separately from missing maps.
@@ -2184,9 +2184,20 @@ export async function orchestrateCaptureSession(
             writeAdapter: compensation.writeAdapter,
             engine: compensation.engine,
             schema: compensation.schema,
-            tables: bracketTables,
+            tables: scenarioWriteTables,
+            readTables: scenarioReadTables,
             metadata: compensation.metadata,
-            fire: scenarioFire,
+            // Thread the scoped-imaging hooks into the tool context for the
+            // duration of the fire — `execute_http_request` reports each
+            // mutating call's concrete params through them.
+            fire: async (hooks) => {
+              ctx.bracketHooks = hooks ?? null;
+              try {
+                return await scenarioFire();
+              } finally {
+                ctx.bracketHooks = null;
+              }
+            },
           });
           if (bracket.outcome.kind === 'refused') {
             scenariosErrored += 1;

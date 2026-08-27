@@ -294,23 +294,19 @@ export async function runLogReplayCurrentCapture(
             );
             continue;
           }
-          // Defensive bracket scope (2026-08-26, orchestrator mirror): the
-          // READ∪WRITE union, so a mis-mined write on a read-marked table is
-          // reverted per item instead of leaking to the end-of-job
-          // fingerprint. Skip semantics above are UNCHANGED — only what gets
-          // snapshotted expanded.
-          const tables = Array.from(
-            new Set([
-              ...writeTables,
-              ...readTablesFor(compensation.effectScope, item.method, item.path_template),
-            ]),
-          );
+          // Scoped-row imaging (Item #1, 2026-08-27, orchestrator mirror):
+          // write tables imaged/scoped, read-mapped tables guarded (count +
+          // max(PK) + sweep revert) — a mis-mined write on a read-marked
+          // table is reverted or surfaces as read_guard_moved residue
+          // instead of leaking to the end-of-job fingerprint. Skip semantics
+          // above are UNCHANGED.
           const bracket = await runCompensationBracket({
             readAdapter: compensation.readAdapter,
             writeAdapter: compensation.writeAdapter,
             engine: compensation.engine,
             schema: compensation.schema,
-            tables,
+            tables: writeTables,
+            readTables: readTablesFor(compensation.effectScope, item.method, item.path_template),
             metadata: compensation.metadata,
             fire: fireItem,
           });

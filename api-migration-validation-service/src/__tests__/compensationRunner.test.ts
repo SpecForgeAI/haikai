@@ -194,15 +194,21 @@ describe('COMPENSATION_FULL_IMAGE_MAX_ROWS cap', () => {
     jest.resetModules();
   });
 
-  it('refuses table_too_large without firing when the live count exceeds the cap', async () => {
+  it('an over-cap table with a sweepable PK is SCOPED, not refused (re-pinned 2026-08-27, Item #1)', async () => {
+    // Pre-scoped-imaging this refused `table_too_large` and the scenario was
+    // never fired — the exact behaviour that zeroed out capture coverage on
+    // endpoints whose READ tables are huge. With a single numeric PK the
+    // runner now plans the scoped tier (per-call images + max(PK) sweep) and
+    // fires. The fail-closed refusal survives ONLY for over-cap tables with
+    // no sweepable PK — pinned in scopedRowImaging.test.ts.
     jest.resetModules();
     process.env.COMPENSATION_FULL_IMAGE_MAX_ROWS = '1';
     /* eslint-disable @typescript-eslint/no-var-requires */
     const freshRunner = require('../services/compensation/compensationRunner');
     const freshMetadata = require('../services/compensation/compensationMetadata');
     /* eslint-enable @typescript-eslint/no-var-requires */
-    const store = seededStore(); // orders has 2 rows > cap 1
-    const fire = jest.fn(async () => 'never');
+    const store = seededStore(); // orders has 2 rows > cap 1, single int PK
+    const fire = jest.fn(async () => 'fired');
     const run = await freshRunner.runCompensationBracket({
       readAdapter: fakeReadAdapter(store),
       writeAdapter: fakeWriteAdapter(store),
@@ -211,8 +217,8 @@ describe('COMPENSATION_FULL_IMAGE_MAX_ROWS cap', () => {
       metadata: freshMetadata.buildCompensationMetadataIndex(MODEL),
       fire,
     });
-    expect(run.outcome.kind).toBe('refused');
-    expect(run.outcome.refusals[0].reason).toBe('table_too_large');
-    expect(fire).not.toHaveBeenCalled();
+    expect(run.outcome.kind).toBe('clean');
+    expect(run.outcome.refusals).toEqual([]);
+    expect(fire).toHaveBeenCalledTimes(1);
   });
 });

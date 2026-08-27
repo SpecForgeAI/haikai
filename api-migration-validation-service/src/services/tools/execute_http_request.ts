@@ -306,6 +306,31 @@ async function safeRecordFailedRequest(
   }
 }
 
+/**
+ * Concrete path-parameter bag (scoped-row imaging, Item #1 2026-08-27):
+ * aligns the operation's path TEMPLATE against the concrete request path and
+ * returns `{param: value}` for every `{param}` segment. Numeric-looking
+ * values are coerced so scoped predicates render as numeric literals.
+ */
+export function pathParamsFromTemplate(
+  template: string | null | undefined,
+  concrete: string,
+): Record<string, unknown> {
+  if (!template) return {};
+  const t = template.split('?')[0].replace(/\/+$/, '').split('/');
+  const c = concrete.split('?')[0].replace(/\/+$/, '').split('/');
+  if (t.length !== c.length) return {};
+  const out: Record<string, unknown> = {};
+  for (let i = 0; i < t.length; i++) {
+    const m = t[i].match(/^\{(.+)\}$/);
+    if (!m) continue;
+    const raw = decodeURIComponent(c[i]);
+    const n = Number(raw);
+    out[m[1]] = Number.isFinite(n) && String(n) === raw ? n : raw;
+  }
+  return out;
+}
+
 const handler: ToolHandler = async (args, ctx) => {
   // Stable corr bag for every trace call: project + arch are the
   // workflow-spanning key, session is this capture's sub-thread.
@@ -551,6 +576,31 @@ const handler: ToolHandler = async (args, ctx) => {
         snapErr instanceof Error ? snapErr.message : String(snapErr),
       );
       preStateSnapshot = null;
+    }
+  }
+
+  // ---- Scoped-row imaging (Item #1, 2026-08-27): hand the bracket the
+  // concrete parameters of every mutating call BEFORE it fires so over-cap
+  // and read-mapped tables can be scoped-imaged (first-touch-wins on each
+  // key). Hook failures must never block the call — the bracket's guard and
+  // verify remain the safety net.
+  if (ctx.bracketHooks && STATE_DELTA_VERBS.has(method) && !authOverride) {
+    try {
+      await ctx.bracketHooks.beforeMutatingCall({
+        params: {
+          ...pathParamsFromTemplate(persisted.path, path),
+          ...(queryParams && typeof queryParams === 'object'
+            ? (queryParams as Record<string, unknown>)
+            : {}),
+        },
+      });
+    } catch (hookErr) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `execute_http_request: bracket scoped-imaging hook failed for ` +
+          `${method.toUpperCase()} ${path} — continuing (guard/verify remain)`,
+        hookErr instanceof Error ? hookErr.message : String(hookErr),
+      );
     }
   }
 

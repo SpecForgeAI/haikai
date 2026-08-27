@@ -117,6 +117,15 @@ export interface ToolExecutionContext {
    * diagnostic types; only finding-class types are consulted.
    */
   findingsTally?: Record<string, number>;
+  /**
+   * Scoped-row imaging hooks (Item #1, 2026-08-27): set per-scenario by the
+   * orchestrator when the compensation bracket hands them to fire().
+   * `execute_http_request` calls `beforeMutatingCall` with the concrete
+   * path/query parameter bag before firing each mutating call so the
+   * bracket can take scoped before-images for over-cap and read-mapped
+   * tables whose PK matches a parameter name.
+   */
+  bracketHooks?: import('../compensation/types').BracketCallHooks | null;
 }
 
 /**
