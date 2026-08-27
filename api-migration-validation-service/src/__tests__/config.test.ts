@@ -17,6 +17,7 @@ const ENV_KEYS = [
   'OAS_SPECS_DIR',
   'LLM_SCENARIO_ROUND_LIMIT',
   'LLM_SCENARIO_RESEARCH_ROUND_CEILING',
+  'MAX_RESPONSE_BODY_BYTES',
   'LLM_TOOL_CALL_TIMEOUT_MS',
   'LLM_SCENARIO_WALL_CLOCK_MS',
 ] as const;
@@ -54,6 +55,9 @@ describe('api-migration-validation-service config defaults', () => {
       expect(config.OAS_SPECS_DIR).toBe('./oas-specs');
       expect(config.LLM_SCENARIO_ROUND_LIMIT).toBe(12);
       expect(config.LLM_SCENARIO_RESEARCH_ROUND_CEILING).toBe(60);
+      // Item #5 (2026-08-27): 8MB default so full bodies are stored and
+      // reconciliation never compares marker-to-marker.
+      expect(config.MAX_RESPONSE_BODY_BYTES).toBe(8 * 1024 * 1024);
       // 180s since the LLM rate-limit program (Spec 2026-07-22): the 30s
       // default starved tool calls queued behind the shared 429 cool-down.
       expect(config.LLM_TOOL_CALL_TIMEOUT_MS).toBe(180000);
@@ -68,6 +72,7 @@ describe('api-migration-validation-service config defaults', () => {
     process.env.OAS_SPECS_DIR = '/tmp/oas';
     process.env.LLM_SCENARIO_ROUND_LIMIT = '24';
     process.env.LLM_SCENARIO_RESEARCH_ROUND_CEILING = '120';
+    process.env.MAX_RESPONSE_BODY_BYTES = '1048576';
     process.env.LLM_TOOL_CALL_TIMEOUT_MS = '60000';
     process.env.LLM_SCENARIO_WALL_CLOCK_MS = '600000';
 
@@ -81,6 +86,7 @@ describe('api-migration-validation-service config defaults', () => {
       expect(config.OAS_SPECS_DIR).toBe('/tmp/oas');
       expect(config.LLM_SCENARIO_ROUND_LIMIT).toBe(24);
       expect(config.LLM_SCENARIO_RESEARCH_ROUND_CEILING).toBe(120);
+      expect(config.MAX_RESPONSE_BODY_BYTES).toBe(1048576);
       expect(config.LLM_TOOL_CALL_TIMEOUT_MS).toBe(60000);
       expect(config.LLM_SCENARIO_WALL_CLOCK_MS).toBe(600000);
     });

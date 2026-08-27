@@ -150,6 +150,8 @@ export interface CaptureSessionDto {
    * and consumed by the orchestrator's `classifyObservedBehaviour`.
    */
   behaviour_semantics_config_json?: Record<string, unknown> | null;
+  /** Per-session capture tuning (Item #5/S-1, 2026-08-27, changeset 227). */
+  capture_tuning_json?: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
 }
@@ -2206,5 +2208,7 @@ export function toCaptureSession(dto: CaptureSessionDto): CaptureSession {
     // (the valid empty state; no backfill).
     behaviourSemanticsConfigJson:
       (dto.behaviour_semantics_config_json as CaptureSession["behaviourSemanticsConfigJson"]) ?? null,
+    // Capture tuning (Item #5/S-1, 2026-08-27): operator knob overrides.
+    captureTuningJson: dto.capture_tuning_json ?? null,
   };
 }

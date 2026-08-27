@@ -38,7 +38,9 @@ public record CreateApiBehaviourCaptureSessionRequest(
     Map<String, Object> dbConfigRedactedJson,
     Boolean mutatingCallsConfirmed,
     String kind,
-    UUID sourceBaselineId
+    UUID sourceBaselineId,
+    /** Per-session capture tuning (Item #5/S-1, 2026-08-27); null = defaults. */
+    Map<String, Object> captureTuningJson
 ) {
 
     /**
@@ -62,6 +64,6 @@ public record CreateApiBehaviourCaptureSessionRequest(
         this(architectureId, name, status, environmentName, apiBaseUrl, authType,
             authConfigRedactedJson, defaultHeadersRedactedJson,
             oasSpecRefsJson, dbConfigRedactedJson, mutatingCallsConfirmed,
-            null, null);
+            null, null, null);
     }
 }

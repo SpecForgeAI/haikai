@@ -1,3 +1,4 @@
+import { MAX_RESPONSE_BODY_BYTES } from '../config';
 import axios, {
   AxiosError,
   AxiosInstance,
@@ -50,7 +51,10 @@ export interface ResponseTruncationMarker {
   preview: string;
 }
 
-const DEFAULT_MAX_RESPONSE_BYTES = 256 * 1024;
+// Item #5 (2026-08-27): the cap is CONFIG (default 8MB), no longer a
+// hardcoded 256KB — full bodies below the cap are stored so reconciliation
+// compares real content, never marker-to-marker.
+const DEFAULT_MAX_RESPONSE_BYTES = MAX_RESPONSE_BODY_BYTES;
 
 /**
  * Mutate-in-place auth injection on an axios InternalAxiosRequestConfig --

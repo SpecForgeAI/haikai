@@ -323,6 +323,16 @@ public class ApiBehaviourCaptureSessionEntity {
     @Column(name = "behaviour_semantics_config_json", columnDefinition = "jsonb")
     private Map<String, Object> behaviourSemanticsConfigJson;
 
+    /**
+     * Per-session capture tuning (state-discipline remediation Item #5/S-1,
+     * 2026-08-27, changeset 227): operator overrides for capture knobs, e.g.
+     * { llm_tool_call_timeout_ms, max_response_body_bytes }. NULL = use the
+     * validation service's env defaults. JSONB; snake_case wire.
+     */
+    @Type(JsonType.class)
+    @Column(name = "capture_tuning_json", columnDefinition = "jsonb")
+    private Map<String, Object> captureTuningJson;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

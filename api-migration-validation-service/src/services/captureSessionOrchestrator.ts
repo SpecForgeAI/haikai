@@ -1619,12 +1619,27 @@ export async function orchestrateCaptureSession(
     };
   }
 
+  // ---- Per-session capture tuning (Item #5/S-1, 2026-08-27): operator
+  // overrides from the wizard's Capture tuning section; anything absent or
+  // non-positive falls back to the env defaults.
+  const tuningRaw = (session.captureTuningJson ?? {}) as {
+    llm_tool_call_timeout_ms?: unknown;
+    max_response_body_bytes?: unknown;
+  };
+  const tunedNumber = (v: unknown): number | undefined => {
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? n : undefined;
+  };
+  const tunedToolCallTimeoutMs = tunedNumber(tuningRaw.llm_tool_call_timeout_ms);
+  const tunedMaxResponseBytes = tunedNumber(tuningRaw.max_response_body_bytes);
+
   // ---- Build per-session live handles
   const httpExecutor = createSessionHttpExecutor({
     auth: secrets.api,
     baseURL: session.apiBaseUrl ?? undefined,
     timeoutMs: 30_000,
     defaultHeaders: session.defaultHeadersRedactedJson ?? {},
+    maxResponseBytes: tunedMaxResponseBytes,
   });
 
   // Credential-role split (CSD Spec 3): when a READONLY login rides in the
@@ -2072,6 +2087,7 @@ export async function orchestrateCaptureSession(
               tools: ALL_TOOLS,
               gatewayClient: gateway,
               archModelClient: archClient,
+              toolCallTimeoutMs: tunedToolCallTimeoutMs,
               abortSignal: runManager.get(session.id)?.abortController.signal,
             });
           }

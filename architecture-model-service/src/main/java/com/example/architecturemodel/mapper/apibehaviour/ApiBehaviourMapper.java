@@ -81,6 +81,7 @@ public final class ApiBehaviourMapper {
             entity.getCoverageSummaryJson(),
             entity.getDataTypeDefaultsJson(),
             entity.getBehaviourSemanticsConfigJson(),
+            entity.getCaptureTuningJson(),
             entity.getCreatedAt(),
             entity.getUpdatedAt()
         );

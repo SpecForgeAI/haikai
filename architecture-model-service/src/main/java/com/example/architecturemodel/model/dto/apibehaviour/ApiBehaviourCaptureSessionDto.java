@@ -119,6 +119,13 @@ public record ApiBehaviourCaptureSessionDto(
      * NO {@code @CamelCaseWire}).
      */
     Map<String, Object> behaviourSemanticsConfigJson,
+    /**
+     * Per-session capture tuning (Item #5/S-1, 2026-08-27, changeset 227):
+     * operator overrides for capture knobs ({@code llm_tool_call_timeout_ms},
+     * {@code max_response_body_bytes}). {@code null} = env defaults. JSONB;
+     * snake_case wire (AMS default -- NO {@code @CamelCaseWire}).
+     */
+    Map<String, Object> captureTuningJson,
     Instant createdAt,
     Instant updatedAt
 ) {
@@ -171,6 +178,7 @@ public record ApiBehaviourCaptureSessionDto(
             coverageSummaryJson,
             null,
             null,
+            null,
             createdAt, updatedAt);
     }
 
@@ -220,6 +228,7 @@ public record ApiBehaviourCaptureSessionDto(
             null,
             null,
             null,
+            null,
             createdAt, updatedAt);
     }
 
@@ -260,6 +269,7 @@ public record ApiBehaviourCaptureSessionDto(
             kind, sourceBaselineId,
             scenariosAttempted, scenariosCompleted, scenariosErrored,
             null, null, null, null,
+            null,
             null,
             null,
             null,
@@ -306,6 +316,7 @@ public record ApiBehaviourCaptureSessionDto(
             null,
             null,
             null,
+            null,
             createdAt, updatedAt);
     }
 
@@ -343,6 +354,7 @@ public record ApiBehaviourCaptureSessionDto(
             kind, sourceBaselineId,
             null, null, null,
             null, null, null, null,
+            null,
             null,
             null,
             null,

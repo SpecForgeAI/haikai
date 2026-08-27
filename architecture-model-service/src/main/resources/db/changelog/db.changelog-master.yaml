@@ -5282,3 +5282,15 @@ databaseChangeLog:
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: true
+  # 227: state-discipline remediation Item #5 / S-1 (2026-08-27). Per-session
+  # capture tuning overrides (wizard "Capture tuning" section): one nullable
+  # JSONB column on api_behaviour_capture_sessions.
+  - changeSet:
+      id: 227-capture-tuning
+      author: architecture-tool
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/227-capture-tuning.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
