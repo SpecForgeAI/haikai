@@ -29,6 +29,7 @@ import {
   fetchEffectScopeIndex,
   isReadMappedOperation,
   keyHintFromResponse,
+  readTablesFor,
   snapshotEffectTables,
   type StateSnapshot,
 } from './stateDelta';
@@ -755,20 +756,56 @@ export async function runTargetReplay(
         // bracket unit — cleanup best-effort no longer matters for state
         // (the bracket undoes whatever the chain left behind, verified).
         let seqResult: Awaited<ReturnType<typeof replaySequenceItem>>;
-        // Proven-read classification (2026-08-20): READ-only committed
-        // effects = corpus-proven query — replay WITHOUT a bracket instead
-        // of refusing (the end-of-run fingerprint stays the safety net).
+        // Proven-read classification (2026-08-20, narrowed 2026-08-27 —
+        // Item #8, the capture-side mirror): unbracketed ONLY when there is
+        // literally nothing to snapshot (no write tables AND no resolvable
+        // read tables). With read tables the sequence replays under a
+        // defensive bracket over them — a mis-mined write against the
+        // TARGET is reverted/attributed instead of firing with no bracket
+        // at all.
+        const seqWriteTables =
+          compensation !== null
+            ? effectTablesFor(compensation.effectScope, req.method, req.path)
+            : [];
+        const seqReadTables = compensation
+          ? readTablesFor(compensation.effectScope, req.method, req.path)
+          : [];
+        const seqReadMapped =
+          compensation !== null &&
+          isReadMappedOperation(compensation.effectScope, req.method, req.path);
         const seqProvenRead =
           compensation !== null &&
-          effectTablesFor(compensation.effectScope, req.method, req.path).length === 0 &&
-          isReadMappedOperation(compensation.effectScope, req.method, req.path);
+          seqWriteTables.length === 0 &&
+          seqReadTables.length === 0 &&
+          seqReadMapped;
         if (seqProvenRead) {
           await emitDiagnostic(
             {
               diagnosticType: 'proven_read_only',
               message:
                 `Sequence item ${req.method} ${req.path} replays WITHOUT a bracket: ` +
-                'committed effect edges are READ-only (corpus-proven query).',
+                'committed effect edges are READ-only (corpus-proven query) and ' +
+                'resolve no snapshot tables.',
+              itemId: item.id,
+              method: req.method,
+              path: req.path,
+            },
+            session,
+          );
+        }
+        if (
+          compensation !== null &&
+          seqWriteTables.length === 0 &&
+          seqReadMapped &&
+          seqReadTables.length > 0
+        ) {
+          await emitDiagnostic(
+            {
+              diagnosticType: 'proven_read_only',
+              message:
+                `Sequence item ${req.method} ${req.path} is a corpus-proven query ` +
+                `replaying under a DEFENSIVE bracket over its READ table(s) ` +
+                `(${seqReadTables.join(', ')}).`,
               itemId: item.id,
               method: req.method,
               path: req.path,
@@ -777,8 +814,7 @@ export async function runTargetReplay(
           );
         }
         if (compensation && !seqProvenRead) {
-          const seqTables = effectTablesFor(compensation.effectScope, req.method, req.path);
-          if (seqTables.length === 0) {
+          if (seqWriteTables.length === 0 && seqReadTables.length === 0) {
             itemsSkipped += 1;
             await emitDiagnostic(
               {
@@ -800,7 +836,8 @@ export async function runTargetReplay(
             writeAdapter: compensation.writeAdapter,
             engine: compensation.engine,
             schema: compensation.schema,
-            tables: seqTables,
+            tables: seqWriteTables,
+            readTables: seqReadTables,
             metadata: compensation.metadata,
             fire: () =>
               replaySequenceItem(item, session as CaptureSessionDto, targetBaseline as BaselineDto, executor as SessionHttpExecutor, seqDeps),
@@ -952,22 +989,57 @@ export async function runTargetReplay(
       let capture: CaptureDto | null = null;
       try {
         let fired: Awaited<ReturnType<typeof fireItem>>;
-        // Proven-read classification (2026-08-20): READ-only committed
-        // effects = corpus-proven query — fire WITHOUT a bracket, never
-        // refuse (the end-of-run fingerprint stays the safety net).
+        // Proven-read classification (2026-08-20, narrowed 2026-08-27 —
+        // Item #8): unbracketed ONLY when nothing resolves; read tables get
+        // the defensive bracket, mirroring the capture side.
+        const itemWriteTables =
+          compensation !== null
+            ? effectTablesFor(compensation.effectScope, req.method, req.path)
+            : [];
+        const itemReadTables =
+          compensation !== null
+            ? readTablesFor(compensation.effectScope, req.method, req.path)
+            : [];
+        const itemReadMapped =
+          compensation !== null &&
+          isReadMappedOperation(compensation.effectScope, req.method, req.path);
         const itemProvenRead =
           compensation !== null &&
           isMutating &&
           mutatingConfirmed &&
-          effectTablesFor(compensation.effectScope, req.method, req.path).length === 0 &&
-          isReadMappedOperation(compensation.effectScope, req.method, req.path);
+          itemWriteTables.length === 0 &&
+          itemReadTables.length === 0 &&
+          itemReadMapped;
         if (itemProvenRead) {
           await emitDiagnostic(
             {
               diagnosticType: 'proven_read_only',
               message:
                 `Mutating-verb item ${req.method} ${req.path} fires WITHOUT a bracket: ` +
-                'committed effect edges are READ-only (corpus-proven query).',
+                'committed effect edges are READ-only (corpus-proven query) and ' +
+                'resolve no snapshot tables.',
+              itemId: item.id,
+              method: req.method,
+              path: req.path,
+            },
+            session,
+          );
+        }
+        if (
+          compensation !== null &&
+          isMutating &&
+          mutatingConfirmed &&
+          itemWriteTables.length === 0 &&
+          itemReadMapped &&
+          itemReadTables.length > 0
+        ) {
+          await emitDiagnostic(
+            {
+              diagnosticType: 'proven_read_only',
+              message:
+                `Mutating-verb item ${req.method} ${req.path} is a corpus-proven query ` +
+                `firing under a DEFENSIVE bracket over its READ table(s) ` +
+                `(${itemReadTables.join(', ')}).`,
               itemId: item.id,
               method: req.method,
               path: req.path,
@@ -976,8 +1048,7 @@ export async function runTargetReplay(
           );
         }
         if (compensation && isMutating && mutatingConfirmed && !itemProvenRead) {
-          const bracketTables = effectTablesFor(compensation.effectScope, req.method, req.path);
-          if (bracketTables.length === 0) {
+          if (itemWriteTables.length === 0 && itemReadTables.length === 0) {
             itemsSkipped += 1;
             await emitDiagnostic(
               {
@@ -999,7 +1070,8 @@ export async function runTargetReplay(
             writeAdapter: compensation.writeAdapter,
             engine: compensation.engine,
             schema: compensation.schema,
-            tables: bracketTables,
+            tables: itemWriteTables,
+            readTables: itemReadTables,
             metadata: compensation.metadata,
             fire: fireItem,
           });

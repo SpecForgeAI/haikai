@@ -199,6 +199,8 @@ function buildDeps(opts: {
   store: InstanceType<typeof FakeStore>;
   writeAdapter?: ReturnType<typeof fakeWriteAdapter>;
   effectScopeEntries?: Array<[string, string[]]>;
+  /** Item #8 (2026-08-27): read-mapped side of the replay effect scope. */
+  readScope?: { readMappedKeys?: string[]; readTables?: Array<[string, string[]]> };
   onRequest?: () => void;
 }): { deps: TargetReplayDeps; writeAdapter: ReturnType<typeof fakeWriteAdapter> } {
   const secretsStore = new SecretsStore();
@@ -248,7 +250,11 @@ function buildDeps(opts: {
     compensationSeams: {
       metadataFetcher: async () => buildCompensationMetadataIndex(MODEL),
       effectScopeFetcher: async () => ({
-        tablesByOperationKey: new Map(opts.effectScopeEntries ?? [['POST /pets', ['pets']]]), readMappedOperationKeys: new Set<string>(),
+        tablesByOperationKey: new Map(opts.effectScopeEntries ?? [['POST /pets', ['pets']]]),
+        readMappedOperationKeys: new Set<string>(opts.readScope?.readMappedKeys ?? []),
+        ...(opts.readScope?.readTables
+          ? { readTablesByOperationKey: new Map(opts.readScope.readTables) }
+          : {}),
       }),
       writeAdapterFactory: () => writeAdapter,
     },
@@ -355,4 +361,37 @@ test('sabotaged undo -> RESIDUE fails the run with the re-run-data-migration rem
   ).toBe(true);
   const failPatch = state.sessionPatches.find((p) => p.body.status === 'failed');
   expect(failPatch).toBeTruthy();
+});
+
+test('Item #8 (2026-08-27): a proven-read item WITH read tables replays under a defensive bracket — a mis-mined write against the target is reverted', async () => {
+  // Pre-fix: seqProvenRead/itemProvenRead consulted the WRITE map only, so a
+  // zero-write-map read-mapped item fired against the target with NO bracket
+  // at all — asymmetric with the capture side.
+  const store = seededStore();
+  const pristine = store.snapshotJson();
+  const { mock } = buildArchClientMock({
+    session: buildSession(),
+    items: [buildItem(1, 'POST', '/pets')],
+  });
+  const { deps } = buildDeps({
+    archMock: mock,
+    store,
+    effectScopeEntries: [['PUT /other', ['other_table']]],
+    readScope: {
+      readMappedKeys: ['POST /pets'],
+      readTables: [['POST /pets', ['pets']]],
+    },
+    onRequest: () => {
+      // The mis-mined write: the map says READ, the target actually inserts.
+      store.tables.get('pets')!.push({ id: 9, name: 'leaked-on-target' });
+    },
+  });
+
+  const outcome = await runTargetReplay(SESSION_ID, deps);
+
+  expect(outcome.finalStatus).toBe('completed');
+  expect(outcome.itemsReplayed).toBe(1);
+  // The defensive bracket's sweep deleted the leak — target back at its
+  // freshly-migrated state.
+  expect(store.snapshotJson()).toBe(pristine);
 });
