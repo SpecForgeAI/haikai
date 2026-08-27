@@ -53,7 +53,21 @@ public class ApiBehaviourDiagnosticService {
         // 200-with-business-error-code (the legacy negative idiom) is a
         // successful capture, not a skip — distinct type so the 100+
         // "endpoint skipped" rows stop mislabelling captured negatives.
-        "captured_as_business_error"
+        "captured_as_business_error",
+        // State-discipline remediation (2026-08-27): the taxonomy stops
+        // forcing the LLM to mislabel successes. captured_ok = clean
+        // successful capture; contract_gap = the endpoint structurally
+        // cannot produce the intended scenario (reason in detail_json:
+        // no_negative_available | format_variant_impossible) — a fact, not
+        // a failure; manual_rec_required = cannot be auto-captured or
+        // auto-reconciled (e.g. four-eyes without a second identity) —
+        // excluded from the coverage score, surfaced as a human todo;
+        // state_healed = orchestrator receipt that a drifted table was
+        // healed back to its snapshot mid-run; s0_restore_recorded = a
+        // post-capture S0 restore receipt (the migrate/reconcile gate
+        // reads it).
+        "captured_ok", "contract_gap", "manual_rec_required",
+        "state_healed", "s0_restore_recorded"
     );
 
     private final ApiBehaviourDiagnosticRepository repository;

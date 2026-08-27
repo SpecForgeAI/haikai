@@ -109,6 +109,14 @@ export interface ToolExecutionContext {
    * as learned facts. Optional so existing tests/contexts are unaffected.
    */
   compensationActive?: boolean;
+  /**
+   * Shared per-session findings tally (state-discipline remediation,
+   * 2026-08-27): bumped by every diagnostic write — the orchestrator's own
+   * and the LLM's `record_capture_note` — so run finalisation can decide
+   * `completed_with_findings` without a finalise-time AMS fetch. Keys are
+   * diagnostic types; only finding-class types are consulted.
+   */
+  findingsTally?: Record<string, number>;
 }
 
 /**

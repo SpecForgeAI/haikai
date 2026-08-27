@@ -29,6 +29,13 @@ const VALID_DIAGNOSTIC_TYPES: ReadonlySet<DiagnosticType> = new Set<DiagnosticTy
   // 2026-08-26: captured-as-200-with-business-error-code — a SUCCESSFUL
   // negative capture; `endpoint_skipped` on these mislabelled 108 rows.
   'captured_as_business_error',
+  // State-discipline taxonomy (2026-08-27): the LLM finally has a plain
+  // success value plus honest non-failure labels. (`state_healed` and
+  // `s0_restore_recorded` are orchestrator-emitted receipts — deliberately
+  // NOT offered to the LLM.)
+  'captured_ok',
+  'contract_gap',
+  'manual_rec_required',
   'retry_exhausted',
 ]);
 
@@ -72,6 +79,10 @@ const handler: ToolHandler = async (args, ctx) => {
     detail_json: detail,
   });
 
+  if (ctx.findingsTally) {
+    ctx.findingsTally[diagnosticType] = (ctx.findingsTally[diagnosticType] ?? 0) + 1;
+  }
+
   // DETAIL: the terminal note the LLM used to close the scenario, tagged with
   // the diagnostic type so a "completed-but-no-capture" close is auditable.
   trace.detail(
@@ -105,7 +116,7 @@ export const recordCaptureNoteTool: ToolRegistryEntry = {
     type: 'object',
     properties: {
       message: { type: 'string', description: 'Free-text note describing the scenario outcome.' },
-      diagnosticType: { type: 'string', description: 'One of failed_request, auth_failure, db_sample_failure, llm_generation_failure, redaction_warning, endpoint_skipped, captured_as_business_error, retry_exhausted. Defaults to endpoint_skipped. Use captured_as_business_error when the scenario behaviour WAS captured but the API answered with the legacy 200-plus-business-error-code idiom (or another captured negative outcome); reserve endpoint_skipped for scenarios you did NOT capture.' },
+      diagnosticType: { type: 'string', description: 'One of captured_ok, captured_as_business_error, contract_gap, manual_rec_required, failed_request, auth_failure, db_sample_failure, llm_generation_failure, redaction_warning, endpoint_skipped, retry_exhausted. Pick honestly: captured_ok = the scenario was captured cleanly (plain success); captured_as_business_error = captured, but the API answered with the legacy 200-plus-business-error-code idiom (a successful negative capture); contract_gap = the endpoint STRUCTURALLY cannot produce the intended scenario (put reason in detail: no_negative_available or format_variant_impossible) — a contract fact, not a failure; manual_rec_required = this scenario cannot be auto-captured (e.g. it needs a second human identity that is not loaded) — a standing human todo; endpoint_skipped ONLY when you did not capture the scenario at all. Defaults to endpoint_skipped.' },
       detail: { description: 'Optional JSON detail bag (auto-redacted).' },
       operationId: { type: 'string', description: 'Optional OAS operationId for FK linkage.' },
       scenarioId: { type: 'string', description: 'Optional scenario id (defaults to the runner-set current scenario).' },

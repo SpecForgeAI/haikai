@@ -108,6 +108,10 @@ export type CaptureSessionStatus =
   // scenarios; Foundations Spec 0, 2026-08-22). Re-enter secrets, then
   // resume via "Retry uncovered APIs".
   | 'paused_auth_expired'
+  // Terminal (state-discipline remediation, 2026-08-27): the run FINISHED,
+  // healed what it could, and flagged the rest (manual-rec todos / healed
+  // receipts). NOT a failure.
+  | 'completed_with_findings'
   | 'cancelled';
 
 export interface ApiBehaviourCaptureSessionDto {

@@ -85,3 +85,6 @@ scratch-*
 # Haikai trace logging — host trace dir created by the docker-compose mount
 /.haikai-trace/
 .haikai/
+
+# AMVS S0 snapshots hold dumped source-DB rows (real business data) -- never committable.
+api-migration-validation-service/s0-snapshots/

@@ -88,13 +88,18 @@ public class ApiBehaviourCaptureSessionService {
     // credential expired mid-run (consecutive all-401 scenarios). Same
     // resume semantics as `paused_rate_limited`: re-enter secrets, then
     // "Retry uncovered APIs".
+    // `completed_with_findings` (state-discipline remediation, 2026-08-27):
+    // the run FINISHED, healed what it could, and flagged the rest
+    // (manual_rec_required / state_healed findings). NOT a failure — without
+    // this status the heal-and-continue posture lands honest runs as failed.
     public static final Set<String> ALLOWED_STATUSES = Set.of(
         "draft", "configured", "running", "completed", "failed", "cancelled",
-        "paused_rate_limited", "paused_auth_expired"
+        "paused_rate_limited", "paused_auth_expired", "completed_with_findings"
     );
     public static final Set<String> ALLOWED_KINDS = Set.of("current", "target");
     private static final Set<String> TERMINAL_STATUSES = Set.of(
-        "completed", "failed", "cancelled", "paused_rate_limited", "paused_auth_expired"
+        "completed", "failed", "cancelled", "paused_rate_limited", "paused_auth_expired",
+        "completed_with_findings"
     );
 
     /**
@@ -105,7 +110,7 @@ public class ApiBehaviourCaptureSessionService {
         "draft",      Set.of("configured", "cancelled"),
         "configured", Set.of("running", "cancelled", "draft"),
         "running",    Set.of("completed", "failed", "cancelled", "paused_rate_limited",
-                              "paused_auth_expired")
+                              "paused_auth_expired", "completed_with_findings")
     );
 
     private final ApiBehaviourCaptureSessionRepository repository;
