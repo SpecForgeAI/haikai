@@ -6,7 +6,7 @@ import { rawBodyOf } from '../httpExecutor';
 import { persistableRawBody } from '../rawBodyPolicy';
 import { HttpMethod } from '../../types/oas';
 import { runManager } from '../runManager';
-import { LLM_HTTP_ATTEMPTS_PER_SCENARIO } from '../../config';
+import { LLM_HTTP_ATTEMPTS_PER_SCENARIO, LLM_SETUP_ATTEMPTS_PER_SCENARIO } from '../../config';
 import {
   runVolatilityProbe,
   volatilityEnvelopeToWire,
@@ -397,11 +397,6 @@ const handler: ToolHandler = async (args, ctx) => {
     }
   }
 
-  // ---- Attempt counter: increment FIRST so every entry (even ones that
-  // fail at a gate) consumes a slot. Source of truth is `runManager`; the
-  // legacy `ctx.retryCount` field is no longer read here.
-  const attemptNumber = runManager.incrementHttpAttempts(ctx.session.id);
-
   // ---- Gate 1: operation must be persisted for this session
   const persisted = ctx.operationsByOasId.get(operationId);
   if (!persisted) {
@@ -418,6 +413,19 @@ const handler: ToolHandler = async (args, ctx) => {
       `operationId='${operationId}' is not marked included for this session.`,
     );
   }
+
+  // ---- Attempt counter (Item #3 budget split, 2026-08-27): calls at the
+  // scenario's TARGET operation consume the target budget; setup calls at
+  // OTHER endpoints (create-then-act prerequisites) consume their own,
+  // separate budget — a two-call setup can never leave the target one
+  // attempt short of its format fallback. Incremented before the remaining
+  // gates so every entry consumes a slot. No threaded target (older
+  // contexts/tests) = everything counts as a target attempt (pre-split).
+  const isTargetAttempt =
+    !ctx.currentTargetOperationRowId || persisted.id === ctx.currentTargetOperationRowId;
+  const attemptNumber = isTargetAttempt
+    ? runManager.incrementHttpAttempts(ctx.session.id)
+    : runManager.incrementSetupAttempts(ctx.session.id);
 
   // ---- Gate 2 (combined): the operation must be executable, either
   // because it's marked `safe_to_execute = TRUE` (non-mutating verb under
@@ -451,9 +459,19 @@ const handler: ToolHandler = async (args, ctx) => {
     );
   }
 
-  // ---- Gate 3: retry budget. Use the freshly-incremented counter so the
-  // 4th attempt is the one that trips the cap, not the 3rd.
-  if (attemptNumber > LLM_HTTP_ATTEMPTS_PER_SCENARIO) {
+  // ---- Gate 3: retry budgets. Use the freshly-incremented counter so the
+  // over-cap attempt is the one that trips. Setup and target budgets are
+  // SEPARATE (Item #3); each refusal names its own knob.
+  if (!isTargetAttempt && attemptNumber > LLM_SETUP_ATTEMPTS_PER_SCENARIO) {
+    throw new ToolValidationError(
+      'execute_http_request',
+      'setup_budget_exhausted',
+      `Maximum of ${LLM_SETUP_ATTEMPTS_PER_SCENARIO} SETUP attempts per scenario reached ` +
+        `(attempt ${attemptNumber} at non-target ${method.toUpperCase()} ${path}). ` +
+        'Raise LLM_SETUP_ATTEMPTS_PER_SCENARIO if scenarios legitimately need deeper setup chains.',
+    );
+  }
+  if (isTargetAttempt && attemptNumber > LLM_HTTP_ATTEMPTS_PER_SCENARIO) {
     // Best-effort diagnostic so the operator-facing review surface shows
     // why this scenario halted. Failure to write the diagnostic must NOT
     // mask the budget-exhausted error to the LLM, so swallow + log.

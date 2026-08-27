@@ -2016,6 +2016,9 @@ export async function orchestrateCaptureSession(
           ...baseContext,
           currentScenarioId: scenarioRow.id,
           noteTypeSink: noteSink,
+          // Item #3: calls at THIS op consume the target budget; setup
+          // calls at other endpoints consume their own budget.
+          currentTargetOperationRowId: op.id,
           // `retryCount` removed: source of truth is now
           // `runManager.scenarioHttpAttempts`. Field is retained as
           // optional on `ToolExecutionContext` for backwards compatibility

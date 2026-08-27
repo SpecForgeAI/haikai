@@ -100,7 +100,13 @@ export function shouldOfferS0Restore(session: {
   status?: string | null;
   error_message?: string | null;
 }): boolean {
-  return session.status === 'failed' && /\bS0\b/.test(session.error_message ?? '');
+  const status = (session.status ?? '').toLowerCase();
+  // Item #6 (2026-08-27): the post-capture restore is a GATE, not a
+  // courtesy — offer it on SUCCESSFUL completion too (capture shares the
+  // UAT env with migration + reconciliation; drift left behind would be
+  // migrated and then reconciled against a baseline from another state).
+  if (status === 'completed' || status === 'completed_with_findings') return true;
+  return status === 'failed' && /\bS0\b/.test(session.error_message ?? '');
 }
 
 export interface GroupedDiagnosticLine {

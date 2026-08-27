@@ -357,6 +357,79 @@ export function buildTargetCaptureSessionActionsRouter(
             { currentStatus: session.status },
           );
         }
+
+        // ---- Post-capture restore GATE (Item #6, 2026-08-27). The capture
+        // and the migration/reconciliation share the UAT environment: if the
+        // capture left the source drifted, replaying compares the migrated
+        // target against a baseline from a DIFFERENT state — silent false ID
+        // breaks. The gate requires an s0_restore_recorded receipt on the
+        // SOURCE capture session dated after its completion. Never a dead
+        // button (standing staleness-is-a-signal ruling): the caller may
+        // proceed with confirm_no_restore: true, and that override is itself
+        // recorded on THIS replay session. The gate CHECK is fail-soft — an
+        // AMS hiccup logs and proceeds rather than blocking on infra.
+        try {
+          const sourceBaseline = await archModelClient.getBaseline(
+            projectId,
+            session.source_baseline_id as string,
+          );
+          const sourceSessionId = sourceBaseline.session_id;
+          if (sourceSessionId) {
+            const sourceSession = await archModelClient.getCaptureSession(
+              projectId,
+              sourceSessionId,
+            );
+            const diags = await archModelClient.listDiagnosticsBySession(
+              projectId,
+              sourceSessionId,
+            );
+            const completedAt = sourceSession.completed_at ?? null;
+            const restoreRecorded = diags.some(
+              (d) =>
+                d.diagnostic_type === 's0_restore_recorded' &&
+                (d.detail_json as { proceeded_without_restore?: boolean } | null)
+                  ?.proceeded_without_restore !== true &&
+                (!completedAt || (d.created_at ?? '') >= completedAt),
+            );
+            if (!restoreRecorded && (req.body ?? {}).confirm_no_restore !== true) {
+              return fail(
+                res,
+                409,
+                'No post-capture S0 restore is recorded for the source capture ' +
+                  'session. Reconciling against a source left drifted by the ' +
+                  'capture produces FALSE ID breaks across the whole run. ' +
+                  'Restore S0 from the source session screen first, or resend ' +
+                  'with confirm_no_restore: true to proceed anyway (the override ' +
+                  'is recorded on the replay session).',
+                { gate: 'post_capture_restore_required', sourceSessionId },
+              );
+            }
+            if (!restoreRecorded) {
+              try {
+                await archModelClient.createDiagnostic(projectId, {
+                  session_id: sessionId,
+                  diagnostic_type: 's0_restore_recorded',
+                  message:
+                    'OVERRIDE: operator started reconciliation WITHOUT a recorded ' +
+                    'post-capture S0 restore on the source session — ID drift in ' +
+                    'the diff may be a run artefact, not a migration defect.',
+                  detail_json: {
+                    proceeded_without_restore: true,
+                    source_session_id: sourceSessionId,
+                  },
+                });
+              } catch {
+                // best-effort override receipt
+              }
+            }
+          }
+        } catch (gateErr) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            '[targetCaptureSessionActions] restore-gate check failed (proceeding):',
+            gateErr instanceof Error ? gateErr.message : String(gateErr),
+          );
+        }
         if (!secretsStore.has(sessionId)) {
           return fail(
             res,

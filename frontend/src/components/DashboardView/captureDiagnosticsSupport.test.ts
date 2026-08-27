@@ -81,20 +81,27 @@ describe('labelFor', () => {
 });
 
 describe('shouldOfferS0Restore', () => {
-  it('offers only for FAILED sessions whose error names S0', () => {
+  it('offers for S0-halted failures AND (Item #6 gate, 2026-08-27) for successful completions', () => {
     expect(
       shouldOfferS0Restore({
         status: 'failed',
         error_message: 'the database is NO LONGER S0 — restore, then re-run.',
       }),
     ).toBe(true);
+    // The post-capture restore is a GATE, not a courtesy: completed runs
+    // get the prominent restore CTA (the receipt unlocks migrate/reconcile).
     expect(
-      shouldOfferS0Restore({ status: 'completed', error_message: 'S0 fine' }),
-    ).toBe(false);
+      shouldOfferS0Restore({ status: 'completed', error_message: null }),
+    ).toBe(true);
+    expect(
+      shouldOfferS0Restore({ status: 'completed_with_findings', error_message: null }),
+    ).toBe(true);
+    // Non-S0 failures and running sessions still get no restore panel.
     expect(
       shouldOfferS0Restore({ status: 'failed', error_message: 'timeout talking to API' }),
     ).toBe(false);
     expect(shouldOfferS0Restore({ status: 'failed', error_message: null })).toBe(false);
+    expect(shouldOfferS0Restore({ status: 'running', error_message: null })).toBe(false);
   });
 });
 

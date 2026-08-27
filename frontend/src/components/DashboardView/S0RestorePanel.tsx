@@ -136,6 +136,9 @@ export const S0RestorePanel: React.FC<S0RestorePanelProps> = ({
         },
         snapshot_id: snapshot.snapshot_id,
         confirm: true,
+        // Item #6 (2026-08-27): record the restore receipt on THIS capture
+        // session — the migrate/reconcile gate reads it.
+        session_id: session.id,
       });
       setResult(response);
     } catch (err) {

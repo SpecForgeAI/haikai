@@ -353,7 +353,37 @@ export function StartTargetReplayWizard({
 
       await setTargetSessionSecrets(session.id, buildSecretsBundle());
 
-      const running = await startTargetCaptureSession(session.id, projectId);
+      // Item #6 restore gate (2026-08-27): a 409 naming the gate means no
+      // post-capture S0 restore is recorded on the source session. Never a
+      // dead button — the operator gets an explicit, scary, RECORDED
+      // proceed-anyway (window.confirm keeps it modal and blocking).
+      let running;
+      try {
+        running = await startTargetCaptureSession(session.id, projectId);
+      } catch (startErr) {
+        const message = describeError(startErr);
+        if (message.includes('post_capture_restore_required') || message.includes('No post-capture S0 restore')) {
+          const proceed = window.confirm(
+            'NO POST-CAPTURE S0 RESTORE IS RECORDED for the source capture ' +
+              'session.\n\nReconciling against a drifted source produces FALSE ' +
+              'ID breaks across the whole run. The safe path: restore S0 from ' +
+              'the source session screen first.\n\nProceed anyway? (The ' +
+              'override is recorded on the replay session.)',
+          );
+          if (!proceed) {
+            setError(
+              'Start blocked: restore S0 on the source capture session first ' +
+                '(the restore panel records the receipt this gate reads).',
+            );
+            return;
+          }
+          running = await startTargetCaptureSession(session.id, projectId, {
+            confirmNoRestore: true,
+          });
+        } else {
+          throw startErr;
+        }
+      }
       onStarted?.(running);
       onClose();
     } catch (err) {

@@ -99,6 +99,9 @@ export async function restoreS0Snapshot(body: {
   source_db: S0SourceDb;
   snapshot_id?: string;
   confirm: true;
+  /** Item #6 (2026-08-27): when set, a successful restore is RECORDED on
+   *  this capture session — the migrate/reconcile gate reads the receipt. */
+  session_id?: string;
 }): Promise<S0RestoreResponse> {
   const response = await fetch(
     `${GATEWAY_BASE}/api/v1/api-migration-validation/s0-snapshot/restore`,

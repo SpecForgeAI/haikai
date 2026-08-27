@@ -2367,13 +2367,17 @@ export async function testTargetConnection(
 export async function startTargetCaptureSession(
   sessionId: string,
   projectId: string,
+  /** Item #6 restore gate (2026-08-27): recorded proceed-anyway override. */
+  options?: { confirmNoRestore?: boolean },
 ): Promise<TargetCaptureStartResponse> {
   return jsonRequest<TargetCaptureStartResponse>(
     targetCaptureUrl(sessionId, 'start', projectId),
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
+      body: JSON.stringify(
+        options?.confirmNoRestore ? { confirm_no_restore: true } : {},
+      ),
     },
   );
 }
