@@ -24,6 +24,10 @@ export type CaptureSessionStatus =
   // scenarios mid-run — resume after re-entering secrets via "Retry
   // uncovered APIs".
   | 'paused_auth_expired'
+  // State-discipline remediation (2026-08-27): the run FINISHED, healed
+  // what it could, and flagged the rest (manual_rec_required /
+  // state_healed findings). Terminal, and NOT a failure.
+  | 'completed_with_findings'
   | 'cancelled';
 
 export type AuthType =
@@ -169,6 +173,25 @@ export type DiagnosticType =
   // business-error-code idiom — a successful negative capture, never a
   // skip (108 "endpoint skipped" rows were mislabelled captured negatives).
   | 'captured_as_business_error'
+  // State-discipline remediation taxonomy (2026-08-27): stop forcing the
+  // LLM to mislabel successes.
+  // captured_ok — a clean successful capture (plain success value).
+  | 'captured_ok'
+  // contract_gap — the endpoint structurally cannot produce the intended
+  // scenario; detail_json.reason ∈ no_negative_available (e.g. a GET that
+  // ignores its body) | format_variant_impossible (declared format cannot
+  // bind). A fact about the contract, never a failure.
+  | 'contract_gap'
+  // manual_rec_required — cannot be auto-captured/auto-reconciled (e.g.
+  // four-eyes without a second identity). Excluded from the coverage
+  // score; a standing human todo, not a fake failure.
+  | 'manual_rec_required'
+  // state_healed — orchestrator receipt: a drifted table was healed back
+  // to its snapshot mid-run and the run continued.
+  | 'state_healed'
+  // s0_restore_recorded — post-capture S0 restore receipt; the
+  // migrate/reconcile gate reads it.
+  | 's0_restore_recorded'
   | 'retry_exhausted'
   // Capture-State Discipline Spec 3 (2026-08-18): compensation-bracket and
   // S0-fingerprint session diagnostics (mirrored in the AMS allowlist).

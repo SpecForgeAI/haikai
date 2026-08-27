@@ -31,6 +31,12 @@ const WARNING_TYPES = new Set([
   // Foundations Spec 3 (2026-08-22): whole effect map removed by scope
   // decisions — a ruling to revisit, not a failure.
   'scope_conflict',
+  // State-discipline remediation (2026-08-27): standing human todo (cannot
+  // be auto-captured/auto-reconciled) and mid-run heal receipts — the
+  // operator should SEE both, but neither is a halt. `captured_ok` /
+  // `contract_gap` / `s0_restore_recorded` deliberately stay info-level.
+  'manual_rec_required',
+  'state_healed',
 ]);
 
 export function severityFor(diagnosticType: string | null): DiagnosticSeverity {

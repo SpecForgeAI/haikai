@@ -220,7 +220,12 @@ export interface OrchestratorOutcome {
   scenariosAttempted: number;
   scenariosCompleted: number;
   scenariosErrored: number;
-  finalStatus: 'completed' | 'failed' | 'paused_rate_limited' | 'paused_auth_expired';
+  finalStatus:
+    | 'completed'
+    | 'completed_with_findings'
+    | 'failed'
+    | 'paused_rate_limited'
+    | 'paused_auth_expired';
   errorMessage: string | null;
 }
 
@@ -547,7 +552,11 @@ export function buildScenarioPrompt(
         'Do NOT call `execute_http_request` until you have (a) fetched `get_oas_operation_detail` for the operation and (b) resolved real input values from the database where one is configured. ' +
         'After any non-2xx or error response, READ the error before retrying and change the specific value/field the API rejected -- never repeat an identical request. ' +
         'When you are satisfied that the scenario is captured (or determine it cannot be), call `record_capture_note` to end the loop. ' +
-        'In the closing note, pick the diagnosticType honestly: `captured_as_business_error` when the behaviour WAS captured but the API answered with a business-error outcome (e.g. HTTP 200 carrying an error code — the legacy negative idiom); `endpoint_skipped` ONLY when you did not capture the scenario at all.',
+        'In the closing note, pick the diagnosticType honestly: `captured_ok` when the scenario was captured cleanly (this is the plain success value — use it for ordinary 2xx successes); ' +
+        '`captured_as_business_error` when the behaviour WAS captured but the API answered with a business-error outcome (e.g. HTTP 200 carrying an error code — the legacy negative idiom); ' +
+        '`contract_gap` when the endpoint STRUCTURALLY cannot produce the intended scenario — e.g. a GET that ignores its body so no validation-negative exists (detail reason no_negative_available), or a declared format that cannot bind and always 415s (detail reason format_variant_impossible) — this is a contract fact, never a failure; ' +
+        '`manual_rec_required` when the scenario cannot be auto-captured with the loaded credentials (e.g. it needs a second, different human identity) — a standing human todo; ' +
+        '`endpoint_skipped` ONLY when you did not capture the scenario at all.',
     },
     {
       role: 'user',
@@ -945,6 +954,31 @@ function dimensionKindOf(scenario: GeneratedScenario): ScenarioDimensionKind {
  *
  * Exported for unit testing.
  */
+/**
+ * Terminal-status resolution (state-discipline remediation §6, 2026-08-27).
+ * A run that FINISHED, healed what it could, and flagged the rest is NOT a
+ * failure: `completed_with_findings` when any manual_rec_required /
+ * state_healed findings exist and nothing hard-failed. Hard failures and
+ * resumable pauses keep their existing precedence. Pure + exported for pins.
+ */
+export function resolveFinalStatus(args: {
+  infraError: string | null;
+  stateResidueError: string | null;
+  dailyLimitHit: boolean;
+  authExpiryHit: boolean;
+  findingsCount: number;
+}):
+  | 'completed'
+  | 'completed_with_findings'
+  | 'failed'
+  | 'paused_rate_limited'
+  | 'paused_auth_expired' {
+  if (args.infraError || args.stateResidueError) return 'failed';
+  if (args.dailyLimitHit) return 'paused_rate_limited';
+  if (args.authExpiryHit) return 'paused_auth_expired';
+  return args.findingsCount > 0 ? 'completed_with_findings' : 'completed';
+}
+
 export function assembleCoverageSummary(
   perEndpoint: ReadonlyArray<EndpointCoverageResult>,
   authCoverage: AuthCoverageResult,
@@ -1663,6 +1697,11 @@ export async function orchestrateCaptureSession(
     createCapture: archClient.createCapture.bind(archClient),
   };
 
+  // Shared findings tally (state-discipline remediation, 2026-08-27):
+  // bumped by every diagnostic write — orchestrator AND LLM note tool — so
+  // finalisation can decide `completed_with_findings` without an AMS fetch.
+  const findingsTally: Record<string, number> = {};
+
   const baseContext: Omit<ToolExecutionContext, 'currentScenarioId'> = {
     session,
     oasInventory: deps.oasInventory,
@@ -1678,6 +1717,7 @@ export async function orchestrateCaptureSession(
     // CSD Spec 3: tools suppress mutating-response id harvesting when the
     // bracket will undo the state those ids reference.
     compensationActive: compensation !== null,
+    findingsTally,
   };
 
   // ---- CSD Spec 3 session-start diagnostics (all best-effort): the
@@ -1695,6 +1735,7 @@ export async function orchestrateCaptureSession(
         message,
         detail_json: detailJson ?? undefined,
       });
+      findingsTally[diagnosticType] = (findingsTally[diagnosticType] ?? 0) + 1;
     } catch (diagErr) {
       // eslint-disable-next-line no-console
       console.warn(`orchestrator: failed to write ${diagnosticType} diagnostic`, diagErr);
@@ -2571,14 +2612,15 @@ export async function orchestrateCaptureSession(
   // `paused_rate_limited` (Spec 2026-07-22): the provider's per-day token quota
   // was reached mid-run. NOT a failure — everything captured so far is kept and
   // the operator resumes after reset via "Retry uncovered APIs".
-  const finalStatus: 'completed' | 'failed' | 'paused_rate_limited' | 'paused_auth_expired' =
-    infraError || stateResidueError
-      ? 'failed'
-      : dailyLimitHit
-        ? 'paused_rate_limited'
-        : authExpiryHit
-          ? 'paused_auth_expired'
-          : 'completed';
+  const findingsCount =
+    (findingsTally.manual_rec_required ?? 0) + (findingsTally.state_healed ?? 0);
+  const finalStatus = resolveFinalStatus({
+    infraError,
+    stateResidueError,
+    dailyLimitHit,
+    authExpiryHit,
+    findingsCount,
+  });
   const finalMessage: string | null =
     infraError ??
     stateResidueError ??
@@ -2586,7 +2628,11 @@ export async function orchestrateCaptureSession(
       ? 'stopped: LLM daily token quota reached — resume with "Retry uncovered APIs" after the quota resets'
       : authExpiryHit
         ? 'paused: session credential appears expired (consecutive all-401 scenarios) — re-enter secrets, then resume with "Retry uncovered APIs"'
-        : null);
+        : finalStatus === 'completed_with_findings'
+          ? `completed with ${findingsCount} finding(s) — ` +
+            `${findingsTally.manual_rec_required ?? 0} manual-reconciliation todo(s), ` +
+            `${findingsTally.state_healed ?? 0} healed-state receipt(s); see diagnostics`
+          : null);
   // Persist the per-run scenario tallies alongside the terminal status
   // (misleading-COMPLETED fix): `completed` only means "no INFRASTRUCTURE
   // error" — every scenario can have errored. `scenarios_completed` now

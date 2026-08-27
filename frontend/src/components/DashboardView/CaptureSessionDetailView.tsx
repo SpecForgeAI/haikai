@@ -157,6 +157,10 @@ function statusClass(status: string | null | undefined): string {
     case 'paused_auth_expired':
       // A resumable pause, not a failure — reuse the neutral "running" badge.
       return styles.statusRunning;
+    case 'completed_with_findings':
+      // Finished + flagged findings — NOT a failure; the neutral badge keeps
+      // it visually distinct from both green `completed` and red `failed`.
+      return styles.statusRunning;
     case 'cancelled':
       return styles.statusCancelled;
     default:
@@ -171,6 +175,9 @@ function statusLabel(status: string | null | undefined): string {
   }
   if ((status ?? '').toLowerCase() === 'paused_auth_expired') {
     return 'Paused — credential expired';
+  }
+  if ((status ?? '').toLowerCase() === 'completed_with_findings') {
+    return 'Completed — with findings';
   }
   return status ?? '';
 }
@@ -979,7 +986,7 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
           as "coverage not recorded" -- never an error. Reuses the existing
           banner/badge styling (secretsPrompt + statusBadge) -- no charting
           widget. */}
-      {(session.status === 'completed' || session.status === 'paused_rate_limited' || session.status === 'paused_auth_expired') && (
+      {(session.status === 'completed' || session.status === 'completed_with_findings' || session.status === 'paused_rate_limited' || session.status === 'paused_auth_expired') && (
         <CoverageSummaryPanel
           raw={session.coverage_summary_json}
           testId="capture-session-coverage-summary"
@@ -1035,7 +1042,7 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
           CC1). The user must not leave the capture screen until every included
           endpoint has its happy-path baseline. "Retry uncovered APIs" opens the
           closure modal; the deterministic + LLM run is wired in CC3. */}
-      {(session.status === 'completed' || session.status === 'paused_rate_limited' || session.status === 'paused_auth_expired') && (
+      {(session.status === 'completed' || session.status === 'completed_with_findings' || session.status === 'paused_rate_limited' || session.status === 'paused_auth_expired') && (
         <CoverageGateBanner
           raw={session.coverage_summary_json}
           testId="capture-session-coverage-gate"
@@ -1471,12 +1478,14 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
                 disabled={
                   guardActionsBehindSecrets ||
                   actionInFlight !== null ||
-                  session.status === 'completed'
+                  session.status === 'completed' ||
+                  session.status === 'completed_with_findings'
                 }
                 title={
                   guardActionsBehindSecrets
                     ? 'Re-enter secrets to enable this action - use the "Re-enter secrets" prompt above.'
-                    : session.status === 'completed'
+                    : session.status === 'completed' ||
+                        session.status === 'completed_with_findings'
                       ? 'This session has already completed'
                       : 'Start the capture run'
                 }
