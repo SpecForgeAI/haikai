@@ -151,6 +151,18 @@ export const LLM_HTTP_ATTEMPTS_PER_SCENARIO: number =
   parseInt(process.env.LLM_HTTP_ATTEMPTS_PER_SCENARIO || '5', 10);
 
 /**
+ * SETUP-call attempt budget per scenario (state-discipline remediation
+ * Item #3, 2026-08-27). Setup calls — create-then-act prerequisites at
+ * endpoints OTHER than the scenario's target — used to draw from the SAME
+ * budget as target attempts, so a two-call setup could leave the target one
+ * attempt short of its format fallback. Setup now has its own generous,
+ * env-tunable budget; the refusal names this knob.
+ * Default: 10.
+ */
+export const LLM_SETUP_ATTEMPTS_PER_SCENARIO: number =
+  parseInt(process.env.LLM_SETUP_ATTEMPTS_PER_SCENARIO || '10', 10);
+
+/**
  * Per-call token cap for the Workstream A `propose_endpoints_from_code`
  * LLM tool. Inputs (prompt + source-file payload) exceeding this cap are
  * TRUNCATED with a warning marker — never hard-failed (W-7).

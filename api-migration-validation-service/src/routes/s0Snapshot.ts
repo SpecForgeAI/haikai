@@ -268,6 +268,27 @@ export function buildS0SnapshotRouter(): Router {
         snapshotId: resolved.snapshotId,
         status: report.status,
       });
+      // Restore receipt (Item #6 gate, 2026-08-27): when the caller names a
+      // capture session, a successful restore is RECORDED on it — the
+      // migrate/reconcile gate reads these receipts. Best-effort: a receipt
+      // write failure never fails the restore itself.
+      const sessionId = (body as { session_id?: string }).session_id;
+      if (sessionId && report.status === 'restored') {
+        try {
+          const { archModelClient } = await import('../services/archModelClient');
+          await archModelClient.createDiagnostic(ctx.projectId, {
+            session_id: sessionId,
+            diagnostic_type: 's0_restore_recorded',
+            message:
+              `Post-capture S0 restore recorded (snapshot ${resolved.snapshotId}): ` +
+              'the source database is back at S0 — migrate/reconcile may proceed.',
+            detail_json: { snapshot_id: resolved.snapshotId, status: report.status },
+          });
+        } catch (receiptErr) {
+          // eslint-disable-next-line no-console
+          console.warn('s0 restore: failed to record restore receipt', receiptErr);
+        }
+      }
       return res.status(200).json({ snapshot_id: resolved.snapshotId, report });
     } catch (err) {
       return res.status(500).json({

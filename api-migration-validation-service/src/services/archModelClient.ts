@@ -1721,6 +1721,22 @@ class ArchModelClient {
     }
   }
 
+  /** Diagnostics for one session (Item #6 restore gate, 2026-08-27): the
+   *  gate reads the SOURCE session's s0_restore_recorded receipts. */
+  async listDiagnosticsBySession(
+    projectId: string,
+    sessionId: string,
+  ): Promise<DiagnosticDto[]> {
+    const endpoint =
+      `/api/projects/${projectId}/api-behaviour/diagnostics?sessionId=${encodeURIComponent(sessionId)}`;
+    try {
+      const res = await this.client.get<DiagnosticDto[]>(endpoint);
+      return res.data;
+    } catch (err) {
+      throw this.toClientError(err, endpoint, 'list diagnostics');
+    }
+  }
+
   async createDiagnostic(
     projectId: string,
     body: CreateDiagnosticRequest,

@@ -18,6 +18,7 @@ const ENV_KEYS = [
   'LLM_SCENARIO_ROUND_LIMIT',
   'LLM_SCENARIO_RESEARCH_ROUND_CEILING',
   'MAX_RESPONSE_BODY_BYTES',
+  'LLM_SETUP_ATTEMPTS_PER_SCENARIO',
   'LLM_TOOL_CALL_TIMEOUT_MS',
   'LLM_SCENARIO_WALL_CLOCK_MS',
 ] as const;
@@ -58,6 +59,8 @@ describe('api-migration-validation-service config defaults', () => {
       // Item #5 (2026-08-27): 8MB default so full bodies are stored and
       // reconciliation never compares marker-to-marker.
       expect(config.MAX_RESPONSE_BODY_BYTES).toBe(8 * 1024 * 1024);
+      // Item #3 (2026-08-27): setup calls have their own budget.
+      expect(config.LLM_SETUP_ATTEMPTS_PER_SCENARIO).toBe(10);
       // 180s since the LLM rate-limit program (Spec 2026-07-22): the 30s
       // default starved tool calls queued behind the shared 429 cool-down.
       expect(config.LLM_TOOL_CALL_TIMEOUT_MS).toBe(180000);
@@ -73,6 +76,7 @@ describe('api-migration-validation-service config defaults', () => {
     process.env.LLM_SCENARIO_ROUND_LIMIT = '24';
     process.env.LLM_SCENARIO_RESEARCH_ROUND_CEILING = '120';
     process.env.MAX_RESPONSE_BODY_BYTES = '1048576';
+    process.env.LLM_SETUP_ATTEMPTS_PER_SCENARIO = '25';
     process.env.LLM_TOOL_CALL_TIMEOUT_MS = '60000';
     process.env.LLM_SCENARIO_WALL_CLOCK_MS = '600000';
 
@@ -87,6 +91,7 @@ describe('api-migration-validation-service config defaults', () => {
       expect(config.LLM_SCENARIO_ROUND_LIMIT).toBe(24);
       expect(config.LLM_SCENARIO_RESEARCH_ROUND_CEILING).toBe(120);
       expect(config.MAX_RESPONSE_BODY_BYTES).toBe(1048576);
+      expect(config.LLM_SETUP_ATTEMPTS_PER_SCENARIO).toBe(25);
       expect(config.LLM_TOOL_CALL_TIMEOUT_MS).toBe(60000);
       expect(config.LLM_SCENARIO_WALL_CLOCK_MS).toBe(600000);
     });

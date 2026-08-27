@@ -120,6 +120,9 @@ export interface RunState {
    * Spec: 2026-05-16 API Behaviour Capture Fixes -- D4.
    */
   scenarioHttpAttempts: number;
+  /** Item #3 (2026-08-27): setup calls (non-target endpoints) count here,
+   *  never against the target-attempt budget. */
+  scenarioSetupAttempts: number;
   /**
    * Count of capture rows SUCCESSFULLY persisted for the CURRENT scenario.
    * Incremented by `execute_http_request` immediately after a `createCapture`
@@ -181,6 +184,7 @@ class RunManager {
       startedAt: now,
       currentScenarioRounds: 0,
       scenarioHttpAttempts: 0,
+      scenarioSetupAttempts: 0,
       scenarioCapturesPersisted: 0,
       scenarioCaptures: [],
       pinnedSequence: null,
@@ -206,6 +210,7 @@ class RunManager {
     if (!r) throw new Error(`runManager: no live run for session ${sessionId}`);
     r.currentScenarioRounds = 0;
     r.scenarioHttpAttempts = 0;
+    r.scenarioSetupAttempts = 0;
     r.scenarioCapturesPersisted = 0;
     // Canonical-capture selection is per-scenario, so the recorded capture
     // list starts empty at every scenario boundary alongside the counters.
@@ -247,6 +252,13 @@ class RunManager {
    *
    * Spec: 2026-05-16 API Behaviour Capture Fixes -- D4.
    */
+  incrementSetupAttempts(sessionId: string): number {
+    const r = this.runs.get(sessionId);
+    if (!r) return 0;
+    r.scenarioSetupAttempts += 1;
+    return r.scenarioSetupAttempts;
+  }
+
   incrementHttpAttempts(sessionId: string): number {
     const r = this.runs.get(sessionId);
     if (!r) throw new Error(`runManager: no live run for session ${sessionId}`);

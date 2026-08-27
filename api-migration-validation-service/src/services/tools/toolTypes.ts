@@ -134,6 +134,14 @@ export interface ToolExecutionContext {
    * score instead of counting them as misses.
    */
   noteTypeSink?: { last: string | null };
+  /**
+   * The AMS row id of the scenario's TARGET operation (Item #3, 2026-08-27):
+   * `execute_http_request` counts calls at this operation against the
+   * target-attempt budget and everything else against the SETUP budget.
+   * Absent (older tests/contexts) = every call counts as a target attempt,
+   * the pre-split behaviour.
+   */
+  currentTargetOperationRowId?: string | null;
 }
 
 /**
