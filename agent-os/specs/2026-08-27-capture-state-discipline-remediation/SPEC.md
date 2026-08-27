@@ -147,6 +147,60 @@ one impossible-format op → contract_gap label).
   severity map (manual_rec_required/state_healed → warning), status
   chip/label/gates; `.gitignore` s0-snapshots. Coverage-score exclusion for
   manual_rec_required lands with phase 6 (where it is first emitted).
+- **Phase 5 merged `e22671fc`** — MAX_RESPONSE_BODY_BYTES (default 8MB,
+  env) replaces the hardcoded 256KB; AMS `capture_tuning_json` (changeset
+  227, full entity/DTO/mapper/service wiring); wizard "Capture tuning"
+  section → per-session llm timeout + body cap threaded into the executor
+  and the loop. Strict compare; no canonicaliser; toggle/mask lists dropped.
+- **Phase 6 merged `cb444de7`** — second identity via tool affordance:
+  `useSecondIdentity` on execute_http_request (resolveSecondIdentityOverride,
+  same auth shape; snapshots/hooks stay active), prompt steer, wizard Step-2
+  optional token (`api.secondaryValue`); absent token ⇒
+  `second_identity_unavailable` ⇒ scenario closes `manual_rec_required`;
+  coverage EXCLUDES those dimensions (denominator + summary) via the
+  per-scenario noteTypeSink.
+- **Phase 7 merged `24cc6305`** — budget split: target-scoped
+  LLM_HTTP_ATTEMPTS_PER_SCENARIO + new LLM_SETUP_ATTEMPTS_PER_SCENARIO
+  (classification by threaded target op row; no target = pre-split).
+  Restore gate: restore route records `s0_restore_recorded` on the named
+  session (panel sends session_id; panel now offered on SUCCESSFUL
+  completion); replay start 409s without a post-completion receipt;
+  blocking confirm + recorded proceed-anyway override
+  (confirm_no_restore); fail-soft on AMS hiccups. NOTE: the MIGRATE-side
+  gate was consciously landed as the rec-side gate only — the doc's
+  "block migrate too" needs a gateway db-plane check; flagged as the one
+  open follow-up of this program.
+- **Phase 8 merged (this commit)** — S-2: not-found scenarios use
+  reserved/extreme-range ids (caches front reads; COUNT=0 ≠ API absence)
+  via prompt; S-3: a format variant whose every capture is HTTP 415 emits
+  deterministic `contract_gap` (reason format_variant_impossible).
+
+### PICKUP (work machine, fresh clone)
+- **AMS FULL REBUILD** (`mvn package`): changeset 227 applies on boot;
+  diagnostics + status allowlists; session DTO/entity changes.
+- Restart: AMVS, frontend, gateway (proxy only — no gateway code changed),
+  discovery unchanged this program.
+- Smoke (§11 of the design): ~3-endpoint capture — one keyed write op with
+  a huge read table (cap must NOT fire; scoped/guard plans in bracket
+  trace), one proven-read op (defensive bracket cheap), one impossible
+  format variant (contract_gap label). Then the overnight run.
+- Remaining open item: gateway migrate-entry restore gate (rec-side gate
+  is live); wall-clock-in-body check with the estate assistant (config-only
+  if found).
+
+- **Phase 3 merged `4b3855ac`** — replay proven-read (sequence + item sites)
+  narrowed to require read tables empty; brackets take write/read split;
+  defensive-bracket diagnostics; pin: mis-mined write vs target reverted.
+- **Phase 4 merged `9facb01a`** — recStateDiscipline.ts (pre-rec target
+  write-surface snapshot `rec-<sessionId>`, under-cap bracket-scope tables;
+  heal via new restoreSingleTableFromSnapshot; END receipt =
+  verifyRecWriteSurface); both replay residue sites heal-then-continue with
+  `state_healed`, halt only when unhealable (remedy names migrateOneTable —
+  now exported); healed runs = completed_with_findings; capture-side
+  symmetric heal from pinned S0; latestSnapshotId ignores rec-*; replay
+  diagnostics persist under their own AMS types (proven_read_only mislabel
+  fixed); jest tmp S0 dir. RE-PINNED: sabotaged-undo replay heals (was
+  failed); receipt catches an ineffective heal.
 - **Phase 2 merged `e86c4cdd`** — scoped-row imaging: runner plans per
   (table, role): write≤cap full image (unchanged); over-cap write w/ single
   numeric PK → per-call scoped images (BracketCallHooks → orchestrator →

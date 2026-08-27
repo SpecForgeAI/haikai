@@ -437,7 +437,8 @@ export function buildScenarioPrompt(
       '(5) if the response is non-2xx or an error, READ response.errorSummary / response.body, identify the ' +
       'rejected field, and issue ONE corrected request (limited attempts -- never repeat an identical request); ' +
       '(6) call record_capture_note to finish. ' +
-      'Only guess a value when no database is configured AND the contract gives no example or pattern.',
+      'Only guess a value when no database is configured AND the contract gives no example or pattern. ' +
+      'NOT-FOUND scenarios: do NOT trust a live COUNT=0 as proof an id is absent — caches can front every read, so DB absence does not imply API absence. Use a reserved/extreme-range id instead (e.g. 2147480000 and above) which reliably produces the intended not-found business outcome.',
   };
 
   // Seeded scenario inputs computed from the discovery model. Attached
@@ -2549,6 +2550,28 @@ export async function orchestrateCaptureSession(
             body: c.data?.responseBody,
           })),
         );
+
+        // S-3 (2026-08-27): a FORMAT VARIANT whose every attempt came back
+        // HTTP 415 is structurally impossible (the declared media type
+        // cannot bind to the handler's parameter type) — a contract FACT,
+        // not a capture failure. Deterministic, no LLM judgement.
+        if (
+          variantInfo &&
+          scenarioCaptures.length > 0 &&
+          scenarioCaptures.every((c) => c.status === 415)
+        ) {
+          await writeDiag(
+            'contract_gap',
+            `Format variant ${op.operation_id} is structurally impossible: every ` +
+              `attempt for scenario '${scenario.name}' returned HTTP 415 — the ` +
+              'declared media type cannot bind. Recorded as a contract gap, not a failure.',
+            {
+              operation_id: op.operation_id,
+              scenario: scenario.name,
+              reason: 'format_variant_impossible',
+            },
+          );
+        }
 
         let droppedCount = 0;
         if (canonical) {
