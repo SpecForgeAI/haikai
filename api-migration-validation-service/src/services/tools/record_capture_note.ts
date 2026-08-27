@@ -82,6 +82,7 @@ const handler: ToolHandler = async (args, ctx) => {
   if (ctx.findingsTally) {
     ctx.findingsTally[diagnosticType] = (ctx.findingsTally[diagnosticType] ?? 0) + 1;
   }
+  if (ctx.noteTypeSink) ctx.noteTypeSink.last = diagnosticType;
 
   // DETAIL: the terminal note the LLM used to close the scenario, tagged with
   // the diagnostic type so a "completed-but-no-capture" close is auditable.

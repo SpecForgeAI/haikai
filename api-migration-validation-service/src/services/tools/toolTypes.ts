@@ -126,6 +126,14 @@ export interface ToolExecutionContext {
    * tables whose PK matches a parameter name.
    */
   bracketHooks?: import('../compensation/types').BracketCallHooks | null;
+  /**
+   * Per-scenario closing-note channel (Item #4 coverage exclusion,
+   * 2026-08-27): the orchestrator resets `last` before each scenario;
+   * `record_capture_note` stamps the diagnosticType it recorded so the
+   * coverage scorer can EXCLUDE manual_rec_required dimensions from the
+   * score instead of counting them as misses.
+   */
+  noteTypeSink?: { last: string | null };
 }
 
 /**

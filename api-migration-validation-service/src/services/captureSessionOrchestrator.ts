@@ -555,6 +555,7 @@ export function buildScenarioPrompt(
         'You must use `execute_http_request` for any HTTP call (never describe one in prose) and `run_readonly_sql` for any DB read. ' +
         'Do NOT call `execute_http_request` until you have (a) fetched `get_oas_operation_detail` for the operation and (b) resolved real input values from the database where one is configured. ' +
         'After any non-2xx or error response, READ the error before retrying and change the specific value/field the API rejected -- never repeat an identical request. ' +
+        'FOUR-EYES: if a permission error shows the acting user cannot act on their OWN resource (e.g. approving/rejecting something they created), retry ONCE with useSecondIdentity=true on execute_http_request; if the tool answers second_identity_unavailable, end the scenario with record_capture_note diagnosticType manual_rec_required. ' +
         'When you are satisfied that the scenario is captured (or determine it cannot be), call `record_capture_note` to end the loop. ' +
         'In the closing note, pick the diagnosticType honestly: `captured_ok` when the scenario was captured cleanly (this is the plain success value — use it for ordinary 2xx successes); ' +
         '`captured_as_business_error` when the behaviour WAS captured but the API answered with a business-error outcome (e.g. HTTP 200 carrying an error code — the legacy negative idiom); ' +
@@ -745,6 +746,10 @@ export interface CoverageDimensionResult {
   /** REPORTED-only dimensions never block the floor (Spec K amendment). */
   reported_only: boolean;
   achieved: boolean;
+  /** Item #4 (2026-08-27): TRUE when the dimension is EXCLUDED from the
+   *  score (manual_rec_required — needs a second identity; a human todo,
+   *  not a miss). Excluded dimensions never enter the denominator. */
+  excluded?: boolean;
   /** The canonical capture id when achieved; null on a MISS. */
   canonical_capture_id: string | null;
   /** Honest human-readable reason on a MISS; null when achieved. */
@@ -869,8 +874,27 @@ export function scoreEndpointCoverage(
   scenarios: ReadonlyArray<GeneratedScenario>,
   outcomesByName: ScenarioOutcomesByName,
   config?: ResponseSemanticsConfig | null,
+  /** Scenario names whose loop closed manual_rec_required (Item #4):
+   *  excluded from the score, surfaced as standing human todos. */
+  manualRecScenarioNames?: ReadonlySet<string>,
 ): EndpointCoverageResult {
   const dimensions: CoverageDimensionResult[] = scenarios.map((scenario) => {
+    if (manualRecScenarioNames?.has(scenario.name)) {
+      return {
+        name: scenario.name,
+        type: scenario.type,
+        expected_status: scenario.expectedStatus,
+        dimension_kind: dimensionKindOf(scenario),
+        reported_only: scenario.reportedOnly === true,
+        achieved: false,
+        excluded: true,
+        canonical_capture_id: null,
+        reason:
+          'manual_rec_required — needs a second identity (four-eyes); ' +
+          'excluded from the coverage score, reconcile manually',
+        observation: null,
+      };
+    }
     const captures = outcomesByName.get(scenario.name) ?? [];
     const canonical = selectCanonicalCapture(captures, scenario.expectedStatus, config);
     if (canonical) {
@@ -922,8 +946,9 @@ export function scoreEndpointCoverage(
     };
   });
 
-  const total = dimensions.length;
-  const achieved = dimensions.filter((d) => d.achieved).length;
+  const scoring = dimensions.filter((d) => d.excluded !== true);
+  const total = scoring.length;
+  const achieved = scoring.filter((d) => d.achieved).length;
   return {
     operation_id: op.operation_id,
     method: op.method,
@@ -987,9 +1012,12 @@ export function assembleCoverageSummary(
   perEndpoint: ReadonlyArray<EndpointCoverageResult>,
   authCoverage: AuthCoverageResult,
 ): CoverageSummary {
-  const endpointTotal = perEndpoint.reduce((acc, e) => acc + e.dimensions.length, 0);
+  const endpointTotal = perEndpoint.reduce(
+    (acc, e) => acc + e.dimensions.filter((d) => d.excluded !== true).length,
+    0,
+  );
   const endpointAchieved = perEndpoint.reduce(
-    (acc, e) => acc + e.dimensions.filter((d) => d.achieved).length,
+    (acc, e) => acc + e.dimensions.filter((d) => d.excluded !== true && d.achieved).length,
     0,
   );
   // The auth dimension always contributes exactly 1 to the denominator.
@@ -1946,6 +1974,9 @@ export async function orchestrateCaptureSession(
       // scenario name, so the pure scorer can line each generated dimension up
       // with its outcome after this operation's scenarios finish.
       const outcomesByName = new Map<string, Array<{ captureId: string; status: number | null }>>();
+      // Item #4 (2026-08-27): scenarios whose loop closed manual_rec_required
+      // — excluded from the coverage score (human todos, not misses).
+      const manualRecScenarioNames = new Set<string>();
       for (const scenario of scenarios) {
         scenariosAttempted += 1;
         // Resets `scenarioHttpAttempts` AND `scenarioCapturesPersisted` to 0
@@ -1980,9 +2011,11 @@ export async function orchestrateCaptureSession(
           request_path: op.path,
         });
 
+        const noteSink = { last: null as string | null };
         const ctx: ToolExecutionContext = {
           ...baseContext,
           currentScenarioId: scenarioRow.id,
+          noteTypeSink: noteSink,
           // `retryCount` removed: source of truth is now
           // `runManager.scenarioHttpAttempts`. Field is retained as
           // optional on `ToolExecutionContext` for backwards compatibility
@@ -2579,6 +2612,9 @@ export async function orchestrateCaptureSession(
           }
         }
 
+        if (noteSink.last === 'manual_rec_required') {
+          manualRecScenarioNames.add(scenario.name);
+        }
         trace.detail(
           'capture.scenario.end',
           {
@@ -2597,7 +2633,13 @@ export async function orchestrateCaptureSession(
 
       // Operation finished: score its rubric from the accumulated per-scenario
       // outcomes (PURE scorer reads the SAME `scenarios` array generation used).
-      const endpointCoverage = scoreEndpointCoverage(op, scenarios, outcomesByName, semanticsConfig);
+      const endpointCoverage = scoreEndpointCoverage(
+        op,
+        scenarios,
+        outcomesByName,
+        semanticsConfig,
+        manualRecScenarioNames,
+      );
       perEndpointCoverage.push(endpointCoverage);
 
       // Register this endpoint as an auth-probe candidate when it is safe to

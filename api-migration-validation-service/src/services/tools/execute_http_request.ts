@@ -11,7 +11,7 @@ import {
   runVolatilityProbe,
   volatilityEnvelopeToWire,
 } from '../volatilityProbe';
-import { coerceAuthMode, resolveAuthOverride } from '../authOverride';
+import { coerceAuthMode, resolveAuthOverride, resolveSecondIdentityOverride } from '../authOverride';
 import { createTracer } from '../../trace';
 import { normaliseBodyForAms } from '../amsBodyEnvelope';
 import {
@@ -367,6 +367,36 @@ const handler: ToolHandler = async (args, ctx) => {
   const authMode = coerceAuthMode(args.authMode);
   const authOverride = resolveAuthOverride(authMode);
 
+  // ---- Second identity (four-eyes endpoints, Item #4 2026-08-27): a
+  // per-call swap to the OTHER human's token via the same scoped override
+  // seam. Unlike the auth-NEGATIVE overrides this is a REAL capture call —
+  // state snapshots and bracket hooks stay active. When no second token is
+  // loaded the call is refused with an explanation steering the LLM to
+  // record `manual_rec_required` (a standing human todo, never a silent
+  // gap or fake failure).
+  const useSecondIdentity = args.useSecondIdentity === true;
+  let identityOverride: ReturnType<typeof resolveSecondIdentityOverride> = null;
+  if (useSecondIdentity) {
+    if (authMode !== 'session') {
+      throw new ToolValidationError(
+        'execute_http_request',
+        'invalid_auth_combo',
+        '`useSecondIdentity` cannot be combined with an authMode override.',
+      );
+    }
+    identityOverride = resolveSecondIdentityOverride(ctx.secrets.api);
+    if (!identityOverride) {
+      throw new ToolValidationError(
+        'execute_http_request',
+        'second_identity_unavailable',
+        'No second identity token is loaded for this session, so this ' +
+          'four-eyes scenario cannot be auto-captured. Do NOT retry with the ' +
+          'primary identity; end the scenario with record_capture_note using ' +
+          "diagnosticType 'manual_rec_required'.",
+      );
+    }
+  }
+
   // ---- Attempt counter: increment FIRST so every entry (even ones that
   // fail at a gate) consumes a slot. Source of truth is `runManager`; the
   // legacy `ctx.retryCount` field is no longer read here.
@@ -620,8 +650,9 @@ const handler: ToolHandler = async (args, ctx) => {
     // (swap session auth for this single call, restore immediately after) so
     // the no-auth / bad-token state can never leak onto a later normal
     // capture. The normal (`session`) path is byte-for-byte unchanged.
-    response = authOverride
-      ? await ctx.httpExecutor.requestWithAuthOverride(requestConfig, authOverride)
+    const scopedOverride = identityOverride ?? authOverride;
+    response = scopedOverride
+      ? await ctx.httpExecutor.requestWithAuthOverride(requestConfig, scopedOverride)
       : await ctx.httpExecutor.request(requestConfig);
   } catch (err) {
     const axiosErr = err as AxiosError;
@@ -1107,6 +1138,11 @@ export const executeHttpRequestTool: ToolRegistryEntry = {
           "operation's request content-type is XML (see get_oas_operation_detail " +
           'requestBody.content), pass the body as ONE raw XML string instead — ' +
           'it is sent verbatim with the XML Content-Type.',
+      },
+      useSecondIdentity: {
+        type: 'boolean',
+        description:
+          'Optional, SCOPED to this single call: fire as the SECOND loaded identity (a different human). Use when a permission error shows the acting user cannot act on their OWN resource (a four-eyes control, e.g. approving/rejecting something they created): retry ONCE with useSecondIdentity=true. If the tool answers second_identity_unavailable, end the scenario with record_capture_note diagnosticType manual_rec_required instead of retrying.',
       },
       authMode: {
         type: 'string',
