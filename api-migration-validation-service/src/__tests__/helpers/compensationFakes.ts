@@ -73,6 +73,25 @@ export function fakeReadAdapter(store: FakeStore): DbAdapter {
           .map((r) => ({ ...r }));
         return { rows, rowCount: rows.length, truncated: false };
       }
+      // Scoped-row imaging primitives (Item #1, 2026-08-27): new-row sweep
+      // (`pk > max-before`) and max(PK) aggregate.
+      const mAbove = sql.match(/^SELECT \* FROM (\S+) WHERE (\S+) > (.+)$/i);
+      if (mAbove) {
+        const threshold = Number(parseLiteral(mAbove[3]));
+        const rows = (store.tables.get(mAbove[1]) ?? [])
+          .filter((r) => Number(r[mAbove[2]] ?? NaN) > threshold)
+          .map((r) => ({ ...r }));
+        return { rows, rowCount: rows.length, truncated: false };
+      }
+      const mMax = sql.match(/^SELECT MAX\((\S+)\) AS max_val FROM (\S+)$/i);
+      if (mMax) {
+        let max: number | null = null;
+        for (const r of store.tables.get(mMax[2]) ?? []) {
+          const n = Number(r[mMax[1]] ?? NaN);
+          if (Number.isFinite(n) && (max === null || n > max)) max = n;
+        }
+        return { rows: [{ max_val: max }], rowCount: 1, truncated: false };
+      }
       throw new Error(`fake runReadonlySelect cannot interpret: ${sql}`);
     },
     async sampleValues(): Promise<DbReadResult> {

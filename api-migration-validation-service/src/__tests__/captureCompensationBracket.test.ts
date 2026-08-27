@@ -556,8 +556,13 @@ test('keyless zero-delta guard: a genuinely-READ keyless table in the bracket sc
     first.archMock.diagnostics.some((d) => d.diagnostic_type === 'keyless_write_recorded'),
   ).toBe(false);
 
-  // Run 2: the app actually WRITES the keyless table -- the observation is
-  // still recorded (the guard skips only zero-delta reads).
+  // Run 2 (re-pinned 2026-08-27, scoped-row imaging): a REAL write to a
+  // READ-mapped keyless table is a mis-mined write the bracket can neither
+  // revert (no key) nor heal (keyless tables are never dumped) — the Tier-3
+  // guard now surfaces it as read_guard_moved residue with the table named,
+  // instead of tolerating it into the fingerprint as "keyless-written"
+  // (which masked exactly this class of leak). keyless detect-only
+  // tolerance remains for WRITE-mapped keyless tables.
   const second = await runHarness({
     store,
     model: keylessModel,
@@ -568,8 +573,13 @@ test('keyless zero-delta guard: a genuinely-READ keyless table in the bracket sc
       store.tables.get('event_sink')!.push({ detail: 'written-by-app' });
     },
   });
-  expect(second.outcome.finalStatus).toBe('completed');
+  expect(second.outcome.finalStatus).toBe('failed');
+  const residueDiag = second.archMock.diagnostics.find(
+    (d) => d.diagnostic_type === 'compensation_residue',
+  );
+  expect(residueDiag).toBeDefined();
+  expect(JSON.stringify(residueDiag!.detail_json ?? {})).toContain('event_sink');
   expect(
     second.archMock.diagnostics.some((d) => d.diagnostic_type === 'keyless_write_recorded'),
-  ).toBe(true);
+  ).toBe(false);
 });
