@@ -368,3 +368,24 @@ describe('restore guard grammar', () => {
     expect(checkRestoreStatement('ALTER TABLE orders ADD c INT').allowed).toBe(false);
   });
 });
+
+describe('latestSnapshotId vs rec-* snapshots (Item #7, 2026-08-27)', () => {
+  it('a pre-rec TARGET write-surface snapshot is never resolved as the pinned source S0', async () => {
+    const store = seededStore();
+    await takeSnapshot(store, 's0-test-040');
+    // A rec snapshot lands in the same tree ('rec-' sorts before 's0-' but
+    // the filter must hold even when it is the ONLY snapshot).
+    const { runS0Snapshot } = require('../services/s0/snapshotRunner');
+    await runS0Snapshot({
+      adapter: fakeReadAdapter(store),
+      metadata: METADATA,
+      projectId: 'p-rec-only',
+      architectureId: 'a-rec-only',
+      sourceDbType: 'sybase',
+      snapshotId: 'rec-session-1',
+    });
+    expect(latestSnapshotId('p-rec-only', 'a-rec-only')).toBeNull();
+    // With both present, the s0-* snapshot wins.
+    expect(latestSnapshotId('p1', 'a1')).toContain('s0-');
+  });
+});

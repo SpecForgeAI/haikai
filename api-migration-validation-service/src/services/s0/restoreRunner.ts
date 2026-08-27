@@ -151,71 +151,7 @@ export async function runS0Restore(args: S0RestoreArgs): Promise<S0RestoreReport
       });
       continue;
     }
-    const meta = metadataForTable(args.metadata, entry.table);
-    if (!meta) {
-      tables.push({
-        table: entry.table,
-        status: 'failed',
-        rows_inserted: 0,
-        detail: 'table no longer in the committed model — cannot resolve columns/identity',
-      });
-      continue;
-    }
-
-    const target = qualifyForEngine(meta.table, args.schema ?? null, args.engine);
-    const identity = meta.columns.find((c) => c.isIdentity);
-    let inserted = 0;
-    try {
-      const rows = await readRows(path.join(args.dir, entry.file));
-
-      // Truncate first — its own restore batch so a later insert failure
-      // leaves an OBVIOUSLY empty table, not a half-merged one.
-      await args.writeAdapter.executeRestoreBatch([`TRUNCATE TABLE ${target}`], {
-        transactional: true,
-      });
-
-      for (let i = 0; i < rows.length; i += S0_RESTORE_INSERTS_PER_BATCH) {
-        const chunk = rows.slice(i, i + S0_RESTORE_INSERTS_PER_BATCH);
-        const statements: string[] = [];
-        const wrap = args.engine === 'sybase' && identity !== undefined;
-        if (wrap) statements.push(`SET IDENTITY_INSERT ${target} ON`);
-        for (const row of chunk) {
-          const statement = insertFor(row, meta, target, args.engine);
-          if (statement) statements.push(statement);
-        }
-        if (wrap) statements.push(`SET IDENTITY_INSERT ${target} OFF`);
-        if (statements.length > 0) {
-          await args.writeAdapter.executeRestoreBatch(statements, { transactional: true });
-          inserted += chunk.length;
-        }
-      }
-
-      if (identity) {
-        let max = 0;
-        for (const row of rows) {
-          const v = valueForColumn(row, identity.name);
-          const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN;
-          if (Number.isFinite(n) && n > max) max = n;
-        }
-        const reseed = buildReseedStatements(
-          meta,
-          identity.name,
-          args.engine,
-          args.schema ?? null,
-          max,
-        );
-        await args.writeAdapter.executeRestoreBatch(reseed, { transactional: false });
-      }
-
-      tables.push({ table: entry.table, status: 'restored', rows_inserted: inserted, detail: null });
-    } catch (err) {
-      tables.push({
-        table: entry.table,
-        status: 'failed',
-        rows_inserted: inserted,
-        detail: err instanceof Error ? err.message : String(err),
-      });
-    }
+    tables.push(await restoreManifestEntry(args, entry));
   }
 
   const anyFailed = tables.some((t) => t.status === 'failed');
@@ -241,4 +177,112 @@ export async function runS0Restore(args: S0RestoreArgs): Promise<S0RestoreReport
     tables,
     verification,
   };
+}
+
+/** Truncate + reload + reseed ONE dumped manifest entry (shared by the full
+ *  restore loop and the single-table heal seam). */
+async function restoreManifestEntry(
+  args: Pick<S0RestoreArgs, 'writeAdapter' | 'metadata' | 'dir' | 'engine' | 'schema'>,
+  entry: S0Manifest['tables'][number],
+): Promise<S0RestoreTableResult> {
+  const meta = metadataForTable(args.metadata, entry.table);
+  if (!meta) {
+    return {
+      table: entry.table,
+      status: 'failed',
+      rows_inserted: 0,
+      detail: 'table no longer in the committed model — cannot resolve columns/identity',
+    };
+  }
+
+  const target = qualifyForEngine(meta.table, args.schema ?? null, args.engine);
+  const identity = meta.columns.find((c) => c.isIdentity);
+  let inserted = 0;
+  try {
+    const rows = await readRows(path.join(args.dir, entry.file as string));
+
+    // Truncate first — its own restore batch so a later insert failure
+    // leaves an OBVIOUSLY empty table, not a half-merged one.
+    await args.writeAdapter.executeRestoreBatch([`TRUNCATE TABLE ${target}`], {
+      transactional: true,
+    });
+
+    for (let i = 0; i < rows.length; i += S0_RESTORE_INSERTS_PER_BATCH) {
+      const chunk = rows.slice(i, i + S0_RESTORE_INSERTS_PER_BATCH);
+      const statements: string[] = [];
+      const wrap = args.engine === 'sybase' && identity !== undefined;
+      if (wrap) statements.push(`SET IDENTITY_INSERT ${target} ON`);
+      for (const row of chunk) {
+        const statement = insertFor(row, meta, target, args.engine);
+        if (statement) statements.push(statement);
+      }
+      if (wrap) statements.push(`SET IDENTITY_INSERT ${target} OFF`);
+      if (statements.length > 0) {
+        await args.writeAdapter.executeRestoreBatch(statements, { transactional: true });
+        inserted += chunk.length;
+      }
+    }
+
+    if (identity) {
+      let max = 0;
+      for (const row of rows) {
+        const v = valueForColumn(row, identity.name);
+        const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN;
+        if (Number.isFinite(n) && n > max) max = n;
+      }
+      const reseed = buildReseedStatements(
+        meta,
+        identity.name,
+        args.engine,
+        args.schema ?? null,
+        max,
+      );
+      await args.writeAdapter.executeRestoreBatch(reseed, { transactional: false });
+    }
+
+    return { table: entry.table, status: 'restored', rows_inserted: inserted, detail: null };
+  } catch (err) {
+    return {
+      table: entry.table,
+      status: 'failed',
+      rows_inserted: inserted,
+      detail: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+/**
+ * Single-table heal seam (Item #7, 2026-08-27): truncate + reload + reseed
+ * exactly ONE table from a snapshot — the row-scoped repair the
+ * heal-don't-halt path uses after a bracket residue. Honest failures:
+ * a table the snapshot never dumped (count-only) or never contained cannot
+ * be healed and says so.
+ */
+export async function restoreSingleTableFromSnapshot(
+  args: Pick<S0RestoreArgs, 'writeAdapter' | 'metadata' | 'dir' | 'engine' | 'schema'> & {
+    manifest: S0Manifest;
+    table: string;
+  },
+): Promise<S0RestoreTableResult> {
+  const entry = args.manifest.tables.find(
+    (t) => t.table.toLowerCase() === args.table.toLowerCase(),
+  );
+  if (!entry) {
+    return {
+      table: args.table,
+      status: 'failed',
+      rows_inserted: 0,
+      detail: 'table is not in the snapshot manifest — cannot heal from this snapshot',
+    };
+  }
+  if (!entry.file) {
+    return {
+      table: args.table,
+      status: 'failed',
+      rows_inserted: 0,
+      detail:
+        entry.note ?? 'snapshot holds no data file for this table (count-only) — cannot heal',
+    };
+  }
+  return restoreManifestEntry(args, entry);
 }

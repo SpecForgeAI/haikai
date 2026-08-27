@@ -40,6 +40,13 @@ export interface S0SnapshotArgs {
   schema?: string | null;
   /** Injectable for tests; defaults to a timestamp id. */
   snapshotId?: string;
+  /**
+   * Optional subset filter (rec write-surface snapshots, Item #7
+   * 2026-08-27): only tables for which this returns TRUE are dumped. The
+   * manifest then scopes exactly what the snapshot can restore — absent
+   * filter = the whole committed model, unchanged.
+   */
+  tableFilter?: (table: string) => boolean;
 }
 
 export interface S0SnapshotResult {
@@ -66,6 +73,7 @@ export async function runS0Snapshot(args: S0SnapshotArgs): Promise<S0SnapshotRes
   const tableNames = [...args.metadata.byTable.keys()].sort();
   for (const key of tableNames) {
     const meta = args.metadata.byTable.get(key)!;
+    if (args.tableFilter && !args.tableFilter(meta.table)) continue;
 
     if (meta.pkColumns.length === 0) {
       const count = await args.adapter.countRows({
