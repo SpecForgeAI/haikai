@@ -109,6 +109,53 @@ public record UpdateApiBehaviourCaptureSessionRequest(
 ) {
 
     /**
+     * Backward-compatible 25-arg constructor preserving the pre-capture-
+     * tuning canonical signature (through
+     * {@code behaviourSemanticsConfigJson}). Delegates with
+     * {@code captureTuningJson=null} (PATCH-no-op).
+     */
+    public UpdateApiBehaviourCaptureSessionRequest(
+            String name,
+            String status,
+            String environmentName,
+            String apiBaseUrl,
+            String authType,
+            Map<String, Object> authConfigRedactedJson,
+            Map<String, Object> defaultHeadersRedactedJson,
+            Map<String, Object> oasSpecRefsJson,
+            Map<String, Object> dbConfigRedactedJson,
+            Boolean mutatingCallsConfirmed,
+            Instant startedAt,
+            Instant completedAt,
+            String errorMessage,
+            String kind,
+            UUID sourceBaselineId,
+            Integer scenariosAttempted,
+            Integer scenariosCompleted,
+            Integer scenariosErrored,
+            List<String> scopeInterfaceIdsJson,
+            String coverageOverrideJustification,
+            Integer coverageOverrideUnaccountedCount,
+            Instant coverageOverrideAt,
+            Map<String, Object> coverageSummaryJson,
+            Map<String, String> dataTypeDefaultsJson,
+            Map<String, Object> behaviourSemanticsConfigJson) {
+        this(name, status, environmentName, apiBaseUrl, authType,
+            authConfigRedactedJson, defaultHeadersRedactedJson,
+            oasSpecRefsJson, dbConfigRedactedJson, mutatingCallsConfirmed,
+            startedAt, completedAt, errorMessage,
+            kind, sourceBaselineId,
+            scenariosAttempted, scenariosCompleted, scenariosErrored,
+            scopeInterfaceIdsJson,
+            coverageOverrideJustification, coverageOverrideUnaccountedCount,
+            coverageOverrideAt,
+            coverageSummaryJson,
+            dataTypeDefaultsJson,
+            behaviourSemanticsConfigJson,
+            null);
+    }
+
+    /**
      * Backward-compatible constructor preserving the pre-behaviour-semantics
      * canonical signature (ends at {@code dataTypeDefaultsJson}; no
      * {@code behaviourSemanticsConfigJson}). Delegates to the canonical
