@@ -44,6 +44,31 @@ public record CreateApiBehaviourCaptureSessionRequest(
 ) {
 
     /**
+     * Backward-compatible 13-arg constructor preserving the pre-capture-
+     * tuning canonical signature (through {@code sourceBaselineId}).
+     * Delegates with {@code captureTuningJson=null} (env defaults).
+     */
+    public CreateApiBehaviourCaptureSessionRequest(
+            UUID architectureId,
+            String name,
+            String status,
+            String environmentName,
+            String apiBaseUrl,
+            String authType,
+            Map<String, Object> authConfigRedactedJson,
+            Map<String, Object> defaultHeadersRedactedJson,
+            Map<String, Object> oasSpecRefsJson,
+            Map<String, Object> dbConfigRedactedJson,
+            Boolean mutatingCallsConfirmed,
+            String kind,
+            UUID sourceBaselineId) {
+        this(architectureId, name, status, environmentName, apiBaseUrl, authType,
+            authConfigRedactedJson, defaultHeadersRedactedJson,
+            oasSpecRefsJson, dbConfigRedactedJson, mutatingCallsConfirmed,
+            kind, sourceBaselineId, null);
+    }
+
+    /**
      * Backward-compatible 11-arg constructor preserving the pre-Target-Side-
      * Capture signature. Delegates to the canonical 13-arg constructor with
      * {@code kind=null} (defaults to {@code "current"} at the service layer)
