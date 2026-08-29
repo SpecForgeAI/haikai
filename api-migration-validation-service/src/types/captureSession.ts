@@ -190,6 +190,11 @@ export type DiagnosticType =
   // four-eyes without a second identity). Excluded from the coverage
   // score; a standing human todo, not a fake failure.
   | 'manual_rec_required'
+  // irreversible_drift — orchestrator finding (2026-08-29): a residue
+  // table could not be healed (keyless / never-dumped); the capture
+  // CONTINUED and the end-of-job fingerprint tolerates exactly these
+  // known tables. S0 restore is the reset lever.
+  | 'irreversible_drift'
   // state_healed — orchestrator receipt: a drifted table was healed back
   // to its snapshot mid-run and the run continued.
   | 'state_healed'

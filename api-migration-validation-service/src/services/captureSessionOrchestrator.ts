@@ -1616,6 +1616,11 @@ export async function orchestrateCaptureSession(
   // run — tolerated by the end-of-job S0 fingerprint (the S0 restore is the
   // reset lever; a keyless write cannot be undone row-wise).
   const keylessWrittenTables = new Set<string>();
+  // Irreversible-drift accounting (2026-08-29): tables a bracket residue
+  // could NOT heal (keyless / never-dumped). The capture CONTINUES — halting
+  // is reserved for the UNEXPECTED; these are flagged loudly per scenario
+  // and tolerated (as known findings) by the end-of-job fingerprint.
+  const irreversiblyDriftedTables = new Set<string>();
   // CSD Spec 3: set when a compensation bracket reports RESIDUE (the DB is
   // provably no longer S0) or the end-of-job fingerprint mismatches. Halts
   // the run and finalises as FAILED with the guided-restore message.
@@ -2320,7 +2325,7 @@ export async function orchestrateCaptureSession(
                 unhealable.push({ table, reason: 'no S0 snapshot pinned — nothing to heal from' });
               }
             }
-            if (unhealable.length === 0 && healed.length > 0) {
+            if (healed.length > 0) {
               await writeDiag(
                 'state_healed',
                 `Residue after scenario '${scenario.name}' on ` +
@@ -2338,26 +2343,37 @@ export async function orchestrateCaptureSession(
                 `residue HEALED from S0 (${healed.join(', ')}) — capture continues`,
                 corr,
               );
-            } else {
-              // HALT (design ruling): the DB is no longer S0 and cannot be
-              // healed. Everything after this point would sample corrupted
-              // state. Guided restore, then resume.
-              stateResidueError =
-                `S0 residue after scenario '${scenario.name}' on ` +
-                `${op.method.toUpperCase()} ${op.path}: compensation could not prove ` +
-                `restoration (${bracket.outcome.residue.length} residue item(s)); ` +
-                `unhealable: ${unhealable.map((u) => `${u.table} (${u.reason})`).join('; ')}. ` +
-                'The DB is NO LONGER S0 — restore via POST /api/s0-snapshot/restore, then re-run.';
-              await writeDiag('compensation_residue', stateResidueError, {
-                residue: bracket.outcome.residue as unknown as Record<string, unknown>,
-                statements_applied: bracket.outcome.statementsApplied.length,
-                unhealable: unhealable as unknown as Record<string, unknown>,
-              });
-              trace.fail(
-                `compensation residue — halting session (${bracket.outcome.residue.length} items)`,
+            }
+            if (unhealable.length > 0) {
+              // CONTINUE on irreversible drift (2026-08-29): a table the
+              // snapshot cannot repair (keyless / never-dumped) is flagged
+              // LOUDLY and recorded; the run keeps going — halting is
+              // reserved for the UNEXPECTED. The end-of-job fingerprint
+              // tolerates exactly these known tables and still fails on
+              // anything else.
+              for (const u of unhealable) {
+                irreversiblyDriftedTables.add(u.table.toLowerCase());
+              }
+              await writeDiag(
+                'irreversible_drift',
+                `Residue after scenario '${scenario.name}' on ` +
+                  `${op.method.toUpperCase()} ${op.path} could not be healed: ` +
+                  `${unhealable.map((u) => `${u.table} (${u.reason})`).join('; ')}. ` +
+                  'Capture CONTINUES; the drift is recorded as a finding. ' +
+                  'S0 restore is the reset lever after the run.',
+                {
+                  operation_id: op.operation_id,
+                  scenario: scenario.name,
+                  tables: unhealable.map((u) => u.table),
+                  reasons: unhealable as unknown as Record<string, unknown>,
+                  residue_items: bracket.outcome.residue.length,
+                },
+              );
+              trace.step(
+                `irreversible drift on ${unhealable.map((u) => u.table).join(', ')} — ` +
+                  'flagged, capture continues',
                 corr,
               );
-              break;
             }
           }
           trace.detail(
@@ -2726,16 +2742,38 @@ export async function orchestrateCaptureSession(
         corr,
       );
       if (fingerprint.status === 'mismatch') {
-        stateResidueError =
-          `end-of-job S0 fingerprint MISMATCH vs snapshot ${fingerprint.snapshotId}: ` +
-          (fingerprint.detail ?? 'tables diverged');
-        await writeDiag('s0_fingerprint_mismatch', stateResidueError, {
-          snapshot_id: fingerprint.snapshotId,
-          mismatches: (fingerprint.report?.mismatches ?? []) as unknown as Record<
-            string,
-            unknown
-          >,
-        });
+        // Halt only on the UNEXPECTED (2026-08-29): divergence on tables the
+        // run already flagged irreversible is a KNOWN finding, not a new
+        // failure — downgrade when every diverged table was flagged.
+        const mismatches = fingerprint.report?.mismatches ?? [];
+        const unexpected = mismatches.filter(
+          (m) => !irreversiblyDriftedTables.has(m.table.toLowerCase()),
+        );
+        if (unexpected.length > 0) {
+          stateResidueError =
+            `end-of-job S0 fingerprint MISMATCH vs snapshot ${fingerprint.snapshotId}: ` +
+            (fingerprint.detail ?? 'tables diverged');
+          await writeDiag('s0_fingerprint_mismatch', stateResidueError, {
+            snapshot_id: fingerprint.snapshotId,
+            mismatches: mismatches as unknown as Record<string, unknown>,
+            unexpected_tables: unexpected.map((m) => m.table) as unknown as Record<
+              string,
+              unknown
+            >,
+          });
+        } else {
+          await writeDiag(
+            'irreversible_drift',
+            `End-of-job fingerprint diverged ONLY on the known irreversible ` +
+              `table(s) [${mismatches.map((m) => m.table).join(', ')}] — already ` +
+              'flagged during the run; the capture is NOT failed. S0 restore ' +
+              'resets them.',
+            {
+              snapshot_id: fingerprint.snapshotId,
+              tables: mismatches.map((m) => m.table),
+            },
+          );
+        }
       } else if (fingerprint.status === 'no_snapshot') {
         await writeDiag('s0_snapshot_missing', fingerprint.detail ?? 'no S0 snapshot pinned', null);
       } else if (fingerprint.status === 'check_failed') {
@@ -2772,7 +2810,9 @@ export async function orchestrateCaptureSession(
   // was reached mid-run. NOT a failure — everything captured so far is kept and
   // the operator resumes after reset via "Retry uncovered APIs".
   const findingsCount =
-    (findingsTally.manual_rec_required ?? 0) + (findingsTally.state_healed ?? 0);
+    (findingsTally.manual_rec_required ?? 0) +
+    (findingsTally.state_healed ?? 0) +
+    (findingsTally.irreversible_drift ?? 0);
   const finalStatus = resolveFinalStatus({
     infraError,
     stateResidueError,
@@ -2790,7 +2830,8 @@ export async function orchestrateCaptureSession(
         : finalStatus === 'completed_with_findings'
           ? `completed with ${findingsCount} finding(s) — ` +
             `${findingsTally.manual_rec_required ?? 0} manual-reconciliation todo(s), ` +
-            `${findingsTally.state_healed ?? 0} healed-state receipt(s); see diagnostics`
+            `${findingsTally.state_healed ?? 0} healed-state receipt(s), ` +
+            `${findingsTally.irreversible_drift ?? 0} irreversible-drift flag(s); see diagnostics`
           : null);
   // Persist the per-run scenario tallies alongside the terminal status
   // (misleading-COMPLETED fix): `completed` only means "no INFRASTRUCTURE

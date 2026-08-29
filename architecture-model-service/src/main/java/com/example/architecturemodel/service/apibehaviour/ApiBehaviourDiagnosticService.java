@@ -67,7 +67,11 @@ public class ApiBehaviourDiagnosticService {
         // post-capture S0 restore receipt (the migrate/reconcile gate
         // reads it).
         "captured_ok", "contract_gap", "manual_rec_required",
-        "state_healed", "s0_restore_recorded"
+        "state_healed", "s0_restore_recorded",
+        // 2026-08-29: an unhealable residue table (keyless / never-dumped)
+        // flagged as a finding while the capture CONTINUES — halting is
+        // reserved for unexpected drift.
+        "irreversible_drift"
     );
 
     private final ApiBehaviourDiagnosticRepository repository;

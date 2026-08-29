@@ -7,10 +7,14 @@
  * its verbatim `source_type`, and the `is_identity` flags (identity reseed +
  * IDENTITY_INSERT handling).
  *
- * FAIL-CLOSED: a table without a resolvable primary key is entered into the
- * map with `pkColumns: []` — the runner turns that into a `missing_pk`
- * refusal; the mutating call is never fired uncompensated. Silent inference
- * of a "probably unique" key is deliberately NOT attempted.
+ * FAIL-CLOSED: a table without a resolvable key is entered into the map with
+ * `pkColumns: []` — the runner turns that into a `missing_pk` refusal; the
+ * mutating call is never fired uncompensated. Silent inference of a
+ * "probably unique" key is deliberately NOT attempted — but a DECLARED
+ * unique constraint / unique index (2026-08-29) IS a declared key, not
+ * inference: estates routinely enforce the primary key as a unique index,
+ * and treating those tables as keyless made them count-only → unhealable →
+ * a halt on every mis-mined write.
  */
 
 import { ARCHITECTURE_MODEL_SERVICE_BASE_URL } from '../../config';
@@ -33,6 +37,13 @@ interface RawPhysicalEntity {
   scope_decision_ref?: string | null;
   constraints_metadata?: {
     primary_key?: { name?: string; columns?: string[] } | null;
+    unique_constraints?: Array<{ name?: string; columns?: string[] } | null> | null;
+    indexes?: Array<{
+      name?: string;
+      columns?: string[];
+      is_unique?: boolean;
+      is_clustered?: boolean;
+    } | null> | null;
     key_policy?: string | null;
   } | null;
 }
@@ -98,12 +109,17 @@ export function buildCompensationMetadataIndex(model: unknown): CompensationMeta
       }));
 
     const declaredPk = entity.constraints_metadata?.primary_key?.columns;
-    const pkColumns =
+    let pkColumns =
       Array.isArray(declaredPk) && declaredPk.length > 0
         ? declaredPk.filter((c): c is string => typeof c === 'string' && c.length > 0)
         : attrs
             .filter((a) => a.is_primary_key === true && (a.name ?? '').length > 0)
             .map((a) => a.name as string);
+    if (pkColumns.length === 0) {
+      // Unique-key fallback (2026-08-29): no declared PK, but discovery
+      // captured a UNIQUE constraint/index — that IS the table's key.
+      pkColumns = deriveUniqueKeyColumns(entity.constraints_metadata, attrs);
+    }
 
     // Foundations Spec 3 (2026-08-22): scope + key policy ride the entity —
     // a FOUNDATION-PROMOTED primary key lands in constraints_metadata and is
@@ -141,6 +157,49 @@ export function buildCompensationMetadataIndex(model: unknown): CompensationMeta
     }
   }
   return { byTable, volatileTables, auditSinkTables, sequenceGeneratorTables };
+}
+
+/**
+ * Unique-key fallback (2026-08-29): tables whose uniqueness is enforced by a
+ * UNIQUE constraint or unique index rather than a declared PRIMARY KEY. The
+ * estate's whole API write surface does this — those tables became keyless →
+ * count-only in S0 → unhealable → a halt on every mis-mined write. Discovery
+ * already captures `unique_constraints[]` and `indexes[].is_unique`; picking
+ * a DECLARED unique key is not inference. Preference: a single identity
+ * column (8) > a clustered unique index (4) > any unique constraint/index
+ * (2); ties broken by fewest columns then lexical (code-unit) — the SAME key
+ * every run, deterministically.
+ */
+function deriveUniqueKeyColumns(
+  cm: RawPhysicalEntity['constraints_metadata'],
+  attrs: RawAttribute[],
+): string[] {
+  const identityNames = new Set(
+    attrs
+      .filter((a) => a.is_identity === true && (a.name ?? '').length > 0)
+      .map((a) => (a.name as string).toLowerCase()),
+  );
+  const candidates: Array<{ columns: string[]; score: number }> = [];
+  const push = (columns: unknown, clustered: boolean) => {
+    if (!Array.isArray(columns)) return;
+    const cols = columns.filter((c): c is string => typeof c === 'string' && c.length > 0);
+    if (cols.length === 0) return;
+    let score = 2;
+    if (clustered) score = 4;
+    if (cols.length === 1 && identityNames.has(cols[0].toLowerCase())) score = 8;
+    candidates.push({ columns: cols, score });
+  };
+  for (const uc of cm?.unique_constraints ?? []) push(uc?.columns, false);
+  for (const ix of cm?.indexes ?? []) {
+    if (ix?.is_unique === true) push(ix?.columns, ix?.is_clustered === true);
+  }
+  candidates.sort(
+    (a, b) =>
+      b.score - a.score ||
+      a.columns.length - b.columns.length ||
+      (a.columns.join(',') < b.columns.join(',') ? -1 : 1),
+  );
+  return candidates[0]?.columns ?? [];
 }
 
 /**
