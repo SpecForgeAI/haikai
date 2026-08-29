@@ -668,7 +668,17 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
   const showReviewPanel = useMemo(() => {
     if (!session) return false;
     const s = (session.status ?? '').toLowerCase();
-    return s === 'running' || s === 'completed' || s === 'failed';
+    // completed_with_findings (2026-08-29, Kiro replication): the phase-1
+    // status sweep retrofitted the coverage summary, gate banner and Start
+    // disable but missed THIS gate — hiding the whole review panel (Accept
+    // controls + "Save as Baseline" + Append) for finished-with-findings
+    // runs, which are exactly the runs that need baselining.
+    return (
+      s === 'running' ||
+      s === 'completed' ||
+      s === 'completed_with_findings' ||
+      s === 'failed'
+    );
   }, [session]);
   const reviewPanelReadOnly = (session?.status ?? '').toLowerCase() === 'running';
 
