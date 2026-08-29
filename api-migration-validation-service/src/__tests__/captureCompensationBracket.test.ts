@@ -369,7 +369,11 @@ test('write endpoint with NO effect map: aggregate warning + scenario refused, n
   expect(byType.has('compensation_refused')).toBe(true);
 });
 
-test('sabotaged undo -> RESIDUE halts the session as FAILED with the guided-restore message', async () => {
+test('sabotaged undo -> irreversible drift is FLAGGED and the capture CONTINUES (re-pinned 2026-08-29)', async () => {
+  // Pre-fix this halted the whole session FAILED. Halting is now reserved
+  // for the UNEXPECTED: an unhealable residue table (here: no S0 snapshot
+  // pinned yet, so nothing to heal from) is recorded as an
+  // irreversible_drift finding and the run keeps going.
   const store = seededStore();
   const writeAdapter = fakeWriteAdapter(store, { dropMatching: /^DELETE FROM pets/ });
   const { outcome, archMock } = await runHarness({
@@ -381,12 +385,13 @@ test('sabotaged undo -> RESIDUE halts the session as FAILED with the guided-rest
     },
   });
 
-  expect(outcome.finalStatus).toBe('failed');
-  expect(outcome.errorMessage).toContain('NO LONGER S0');
-  expect(outcome.errorMessage).toContain('/api/s0-snapshot/restore');
-  expect(archMock.diagnostics.some((d) => d.diagnostic_type === 'compensation_residue')).toBe(
-    true,
-  );
+  expect(outcome.finalStatus).toBe('completed_with_findings');
+  const drift = archMock.diagnostics.find((d) => d.diagnostic_type === 'irreversible_drift');
+  expect(drift).toBeDefined();
+  expect(drift!.message).toContain('pets');
+  expect(
+    archMock.diagnostics.some((d) => d.diagnostic_type === 'compensation_residue'),
+  ).toBe(false);
 });
 
 test('end-of-job fingerprint FAILS the session when the DB diverged from a pinned S0', async () => {
@@ -556,13 +561,13 @@ test('keyless zero-delta guard: a genuinely-READ keyless table in the bracket sc
     first.archMock.diagnostics.some((d) => d.diagnostic_type === 'keyless_write_recorded'),
   ).toBe(false);
 
-  // Run 2 (re-pinned 2026-08-27, scoped-row imaging): a REAL write to a
-  // READ-mapped keyless table is a mis-mined write the bracket can neither
-  // revert (no key) nor heal (keyless tables are never dumped) — the Tier-3
-  // guard now surfaces it as read_guard_moved residue with the table named,
-  // instead of tolerating it into the fingerprint as "keyless-written"
-  // (which masked exactly this class of leak). keyless detect-only
-  // tolerance remains for WRITE-mapped keyless tables.
+  // Run 2 (re-pinned 2026-08-29, halt-only-on-the-unexpected): a REAL write
+  // to a READ-mapped keyless table is a mis-mined write the bracket can
+  // neither revert (no key) nor heal (keyless tables are never dumped) —
+  // it is FLAGGED as irreversible_drift with the table named and the
+  // capture CONTINUES. It is never tolerated as "keyless-written" (that
+  // masked exactly this class of leak), and detect-only tolerance remains
+  // for WRITE-mapped keyless tables.
   const second = await runHarness({
     store,
     model: keylessModel,
@@ -573,12 +578,12 @@ test('keyless zero-delta guard: a genuinely-READ keyless table in the bracket sc
       store.tables.get('event_sink')!.push({ detail: 'written-by-app' });
     },
   });
-  expect(second.outcome.finalStatus).toBe('failed');
-  const residueDiag = second.archMock.diagnostics.find(
-    (d) => d.diagnostic_type === 'compensation_residue',
+  expect(second.outcome.finalStatus).toBe('completed_with_findings');
+  const driftDiag = second.archMock.diagnostics.find(
+    (d) => d.diagnostic_type === 'irreversible_drift',
   );
-  expect(residueDiag).toBeDefined();
-  expect(JSON.stringify(residueDiag!.detail_json ?? {})).toContain('event_sink');
+  expect(driftDiag).toBeDefined();
+  expect(driftDiag!.message).toContain('event_sink');
   expect(
     second.archMock.diagnostics.some((d) => d.diagnostic_type === 'keyless_write_recorded'),
   ).toBe(false);
@@ -615,5 +620,50 @@ test('Item #7 symmetry (2026-08-27): capture-side residue is HEALED from the pin
   // No residue halt was recorded — the run continued.
   expect(
     archMock.diagnostics.some((d) => d.diagnostic_type === 'compensation_residue'),
+  ).toBe(false);
+});
+
+test('end-of-job downgrade (2026-08-29): divergence ONLY on known irreversible tables does not re-fail the run', async () => {
+  const store = seededStore();
+  // Pin S0 so a heal SOURCE exists...
+  await runS0Snapshot({
+    adapter: fakeReadAdapter(store),
+    metadata: buildCompensationMetadataIndex(MODEL),
+    projectId: PROJECT_ID,
+    architectureId: ARCH_ID,
+    sourceDbType: 'sybase',
+    snapshotId: 's0-downgrade-001',
+  });
+  // ...sabotage the undo AND make the heal itself THROW on the truncate, so
+  // pets is honestly unhealable and gets flagged irreversible mid-run.
+  const inner = fakeWriteAdapter(store, { dropMatching: /^DELETE FROM pets/ });
+  const throwingAdapter = {
+    ...inner,
+    async executeRestoreBatch(statements: string[], options?: unknown) {
+      if (statements.some((s: string) => /^TRUNCATE TABLE pets$/i.test(s))) {
+        throw new Error('simulated engine refusal on TRUNCATE');
+      }
+      return inner.executeRestoreBatch(statements, options as never);
+    },
+  };
+
+  const { outcome, archMock } = await runHarness({
+    store,
+    effectScope: effectScopeWith([['POST /pets', ['pets']]]),
+    writeAdapter: throwingAdapter as never,
+    onRequest: () => {
+      store.tables.get('pets')!.push({ id: 3, name: 'sticky' });
+    },
+  });
+
+  // The end-of-job fingerprint DOES diverge on pets — but pets was already
+  // flagged irreversible, so the run is downgraded, never re-failed. The
+  // out-of-band test above proves UNEXPECTED drift still fails.
+  expect(outcome.finalStatus).toBe('completed_with_findings');
+  const drifts = archMock.diagnostics.filter((d) => d.diagnostic_type === 'irreversible_drift');
+  expect(drifts.length).toBeGreaterThanOrEqual(2); // per-scenario flag + end-of-job downgrade
+  expect(drifts.some((d) => d.message.includes('End-of-job'))).toBe(true);
+  expect(
+    archMock.diagnostics.some((d) => d.diagnostic_type === 's0_fingerprint_mismatch'),
   ).toBe(false);
 });
