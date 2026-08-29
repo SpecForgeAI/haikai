@@ -175,6 +175,16 @@ one impossible-format op → contract_gap label).
   via prompt; S-3: a format variant whose every capture is HTTP 415 emits
   deterministic `contract_gap` (reason format_variant_impossible).
 
+- **Post-program fix merged `43405a79`** (Kiro replication, 2026-08-29) —
+  (1) unique-index key fallback in buildCompensationMetadataIndex
+  (deriveUniqueKeyColumns: declared unique constraint/index IS a key;
+  identity(8) > clustered(4) > constraint(2), deterministic ties; scan-spec
+  path unchanged); (2) capture CONTINUES on irreversible drift — unhealable
+  residue tables flagged `irreversible_drift` (AMS-allowlisted), end-of-job
+  fingerprint fails only on UNFLAGGED tables and downgrades otherwise; rec
+  side deliberately still halts (it can re-migrate). Re-pins + downgrade
+  pin + 6 unique-key pins; AMVS 822; AMS test-compile clean.
+
 ### PICKUP (work machine, fresh clone)
 - **AMS FULL REBUILD** (`mvn package`): changeset 227 applies on boot;
   diagnostics + status allowlists; session DTO/entity changes.
