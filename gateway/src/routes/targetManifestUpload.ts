@@ -993,7 +993,7 @@ export function registerTargetManifestUploadRoute(
           return res.status(200).json({ tag: null, additions: [], conflicts: [] });
         }
         const decisions = await fetchLatestCapturedDecisions(projectId, targetArchitectureId);
-        const result = reconcileManifestWithDecisions(artifact.content, decisions);
+        const result = reconcileManifestWithAllDecisions(artifact.content, decisions);
         return res.status(200).json({ tag: artifact.tag, ...result });
       } catch (err) {
         logger.warn('[diag-gateway] manifest_reconcile read failed', {
@@ -1025,7 +1025,7 @@ export function registerTargetManifestUploadRoute(
           return res.status(409).json({ error: 'no confirmed Maven manifest to amend' });
         }
         const decisions = await fetchLatestCapturedDecisions(projectId, targetArchitectureId);
-        const { additions } = reconcileManifestWithDecisions(artifact.content, decisions);
+        const { additions } = reconcileManifestWithAllDecisions(artifact.content, decisions);
         const selected = additions.filter((a) =>
           coordinates.includes(`${a.groupId}:${a.artifactId}`)
         );

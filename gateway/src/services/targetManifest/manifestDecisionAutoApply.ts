@@ -40,7 +40,7 @@ import {
 import { fetchLatestCapturedDecisions } from '../targetStateCapturedDecisionsClient';
 import {
   applyAdditionsToPom,
-  reconcileManifestWithDecisions,
+  reconcileManifestWithAllDecisions,
 } from './manifestDecisionReconcile';
 
 export interface AutoApplyDeps {
@@ -53,8 +53,16 @@ export interface AutoApplyResult {
   status: 'applied' | 'noop' | 'no_manifest' | 'no_insertion_point' | 'error';
   /** `groupId:artifactId` of every coordinate applied this run. */
   applied: string[];
-  /** Version conflicts left LOUD for the operator (never auto-changed). */
+  /** Version + capability conflicts left LOUD for the operator (never auto-changed). */
   conflicts: number;
+  /**
+   * Subset of `conflicts` that are CAPABILITY clashes — a modernize.* decision
+   * requires one library while the confirmed pom declares a different library
+   * providing the same capability. These can never be resolved by a version
+   * bump, so callers should surface them distinctly rather than folding them
+   * into a version-conflict count.
+   */
+  capabilityConflicts?: number;
 }
 
 /** First Maven manifest artifact (latest per tag list), or null. */
@@ -91,10 +99,31 @@ export async function autoApplyDecisionAdditions(
       return { status: 'no_manifest', applied: [], conflicts: 0 };
     }
     const decisions = await fetchDecisions(projectId, targetArchitectureId);
-    const { additions, conflicts } = reconcileManifestWithDecisions(
+    // 2026-08-30: BOTH decision namespaces (target-state + modernize.*)
+    // through one additions/conflicts pipeline. The modernize.* namespace was
+    // previously invisible here — its scoped, differently-keyed rows never
+    // reached a rule — so confirmed modernization decisions could demand a
+    // library the authoritative seed pom silently lacked.
+    const { additions, conflicts } = reconcileManifestWithAllDecisions(
       artifact.content,
       decisions,
     );
+    const capabilityConflicts = conflicts.filter((c) => c.kind === 'capability');
+    if (capabilityConflicts.length > 0) {
+      // Capability conflicts (one library required, a different library
+      // providing the same capability declared) can never be resolved by a
+      // version bump, so they get their own loud line naming both
+      // coordinates — this is the shape that previously shipped silently.
+      logger.warn('[diag-gateway] manifest_decision_auto_apply capability_conflicts', {
+        projectId,
+        targetArchitectureId,
+        conflicts: capabilityConflicts.map((c) => ({
+          required: c.coordinate,
+          found: c.substituteCoordinate ?? null,
+          decisionCode: c.decisionCode,
+        })),
+      });
+    }
     if (conflicts.length > 0) {
       // Unchanged ruling: existing entries are NEVER auto-changed — the
       // reconcile panel carries these loudly for the operator.
@@ -105,7 +134,12 @@ export async function autoApplyDecisionAdditions(
       });
     }
     if (additions.length === 0) {
-      return { status: 'noop', applied: [], conflicts: conflicts.length };
+      return {
+        status: 'noop',
+        applied: [],
+        conflicts: conflicts.length,
+        capabilityConflicts: capabilityConflicts.length,
+      };
     }
     const updated = applyAdditionsToPom(artifact.content, additions);
     if (updated === null) {
@@ -118,6 +152,7 @@ export async function autoApplyDecisionAdditions(
         status: 'no_insertion_point',
         applied: [],
         conflicts: conflicts.length,
+        capabilityConflicts: capabilityConflicts.length,
       };
     }
     await persist(projectId, targetArchitectureId, [
@@ -152,7 +187,12 @@ export async function autoApplyDecisionAdditions(
       applied,
       conflictsLeftLoud: conflicts.length,
     });
-    return { status: 'applied', applied, conflicts: conflicts.length };
+    return {
+      status: 'applied',
+      applied,
+      conflicts: conflicts.length,
+      capabilityConflicts: capabilityConflicts.length,
+    };
   } catch (err) {
     logger.warn('[diag-gateway] manifest_decision_auto_apply failed (fail-soft)', {
       projectId,
