@@ -33,6 +33,13 @@
  * editing so values can change and re-save (re-confirm supersedes). Confirmed
  * rows seed their value from the PERSISTED decision, not the ruleset default.
  *
+ * 2026-08-30 proposal honesty round: `proposal_pass.status === 'failed'`
+ * renders a LOUD error banner with a retry (a failed LLM pass previously
+ * looked like dozens of legitimate "needs a value" rows), and a "Retry All"
+ * footer button regenerates + re-persists the per-scan proposal cache. A
+ * retry failure never blanks the table — the current rows stay put under a
+ * dedicated error banner.
+ *
  * `deps` injection mirrors `DecisionsFileUploadPanel` so tests can shim the
  * api seam without touching global fetch.
  */
@@ -42,16 +49,19 @@ import {
   confirmModernizationDecisions as defaultConfirmModernizationDecisions,
   deriveDecisionCode,
   fetchModernizationReview as defaultFetchModernizationReview,
+  retryModernizationProposals as defaultRetryModernizationProposals,
   SclModernizationApiError,
   type SclModernizationConfirmRow,
   type SclModernizationReview,
   type SclModernizationReviewRow,
+  type SclProposalPass,
 } from '../../../api/sclModernizationApi';
 import styles from './ModernizationReviewPanel.module.css';
 
 export interface ModernizationReviewPanelDeps {
   fetchModernizationReview: typeof defaultFetchModernizationReview;
   confirmModernizationDecisions: typeof defaultConfirmModernizationDecisions;
+  retryModernizationProposals: typeof defaultRetryModernizationProposals;
 }
 
 export const defaultModernizationReviewPanelDeps: ModernizationReviewPanelDeps = {
@@ -59,6 +69,8 @@ export const defaultModernizationReviewPanelDeps: ModernizationReviewPanelDeps =
     defaultFetchModernizationReview(projectId, architectureId),
   confirmModernizationDecisions: (projectId, architectureId, payload) =>
     defaultConfirmModernizationDecisions(projectId, architectureId, payload),
+  retryModernizationProposals: (projectId, architectureId) =>
+    defaultRetryModernizationProposals(projectId, architectureId),
 };
 
 export interface ModernizationReviewPanelProps {
@@ -116,45 +128,59 @@ export function ModernizationReviewPanel({
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [confirmSuccess, setConfirmSuccess] = useState<string | null>(null);
 
+  /** 2026-08-30: the loud proposal-pass outcome + the Retry-All in-flight
+   *  state. `proposalPass.status === 'failed'` banners a retry instead of
+   *  letting empty rows masquerade as legitimate human work. */
+  const [proposalPass, setProposalPass] = useState<SclProposalPass | null>(null);
+  const [retryBusy, setRetryBusy] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
+
+  /** Shared ingest for the initial load, the post-confirm reload and a
+   *  Retry-All response (all return the same full review shape). */
+  const ingestReview = useCallback((data: SclModernizationReview) => {
+    setReview(data);
+    setProposalPass(data.proposal_pass ?? null);
+    // Seed the editable target values from the defaults; a re-load after a
+    // confirm re-seeds so the inputs reflect what was just persisted (the
+    // gateway echoes confirmed values back as defaults on subsequent GETs;
+    // when it does not, the user's typed values are re-derivable from the
+    // existing_decisions summaries shown per row).
+    const seeded: Record<string, string> = {};
+    // Confirmed rows seed from the PERSISTED answer value (so review mode
+    // and a Re-open both show what was actually saved), falling back to the
+    // ruleset/LLM default for unconfirmed rows.
+    const valueByCode = new Map(
+      (data.existing_decisions ?? []).map((d) => [d.decision_code, d.answer_value]),
+    );
+    for (const row of data.rows ?? []) {
+      const code = deriveDecisionCode(row.family, row.from, row.matched_rule_code);
+      seeded[rowKey(row)] = valueByCode.get(code) ?? row.default_to ?? '';
+    }
+    setTargetValues(seeded);
+    setRowErrors({});
+    // Fully-confirmed review -> land read-only (saved data in review mode);
+    // any unconfirmed row keeps the table editable.
+    const confirmed = new Set(
+      (data.existing_decisions ?? []).map((d) => d.decision_code),
+    );
+    const rows = data.rows ?? [];
+    setReviewMode(
+      rows.length > 0 &&
+        rows.every((row) =>
+          confirmed.has(
+            deriveDecisionCode(row.family, row.from, row.matched_rule_code),
+          ),
+        ),
+    );
+  }, []);
+
   const loadReview = useCallback(async () => {
     setLoading(true);
     setNoScan(false);
     setLoadError(null);
     try {
       const data = await deps.fetchModernizationReview(projectId, architectureId);
-      setReview(data);
-      // Seed the editable target values from the defaults; a re-load after a
-      // confirm re-seeds so the inputs reflect what was just persisted (the
-      // gateway echoes confirmed values back as defaults on subsequent GETs;
-      // when it does not, the user's typed values are re-derivable from the
-      // existing_decisions summaries shown per row).
-      const seeded: Record<string, string> = {};
-      // Confirmed rows seed from the PERSISTED answer value (so review mode
-      // and a Re-open both show what was actually saved), falling back to the
-      // ruleset/LLM default for unconfirmed rows.
-      const valueByCode = new Map(
-        (data.existing_decisions ?? []).map((d) => [d.decision_code, d.answer_value]),
-      );
-      for (const row of data.rows ?? []) {
-        const code = deriveDecisionCode(row.family, row.from, row.matched_rule_code);
-        seeded[rowKey(row)] = valueByCode.get(code) ?? row.default_to ?? '';
-      }
-      setTargetValues(seeded);
-      setRowErrors({});
-      // Fully-confirmed review -> land read-only (saved data in review mode);
-      // any unconfirmed row keeps the table editable.
-      const confirmed = new Set(
-        (data.existing_decisions ?? []).map((d) => d.decision_code),
-      );
-      const rows = data.rows ?? [];
-      setReviewMode(
-        rows.length > 0 &&
-          rows.every((row) =>
-            confirmed.has(
-              deriveDecisionCode(row.family, row.from, row.matched_rule_code),
-            ),
-          ),
-      );
+      ingestReview(data);
     } catch (err) {
       if (err instanceof SclModernizationApiError && err.status === 404) {
         setNoScan(true);
@@ -167,7 +193,26 @@ export function ModernizationReviewPanel({
     } finally {
       setLoading(false);
     }
-  }, [deps, projectId, architectureId]);
+  }, [deps, projectId, architectureId, ingestReview]);
+
+  /** Retry-All (2026-08-30): regenerate + re-persist the AI proposals, then
+   *  swap in the returned review. A retry failure NEVER blanks the table —
+   *  it surfaces its own banner and the current rows stay put. */
+  const handleRetryProposals = useCallback(async () => {
+    setRetryBusy(true);
+    setRetryError(null);
+    setConfirmSuccess(null);
+    try {
+      const data = await deps.retryModernizationProposals(projectId, architectureId);
+      ingestReview(data);
+    } catch (err) {
+      setRetryError(
+        err instanceof Error ? err.message : 'Failed to retry AI proposals',
+      );
+    } finally {
+      setRetryBusy(false);
+    }
+  }, [deps, projectId, architectureId, ingestReview]);
 
   useEffect(() => {
     void loadReview();
@@ -316,6 +361,43 @@ export function ModernizationReviewPanel({
             </div>
           )}
 
+          {/* 2026-08-30: a FAILED proposal pass is loud — without this, the
+              affected rows render as legitimate-looking "needs a value" work
+              and the user starts typing dozens of answers by hand. */}
+          {!loading && !noScan && !loadError && review && !reviewMode &&
+            proposalPass?.status === 'failed' && (
+              <div
+                className={`${styles.banner} ${styles.bannerError}`}
+                role="alert"
+                data-testid="modernization-proposals-failed"
+              >
+                <span>
+                  {proposalPass.source === 'cache'
+                    ? `AI proposal regeneration failed (${proposalPass.error ?? 'unknown error'}) — showing the previously saved proposals.`
+                    : `AI proposals unavailable — ${proposalPass.eligible} row${proposalPass.eligible === 1 ? ' shows' : 's show'} "needs a value" because the proposal pass failed (${proposalPass.error ?? 'unknown error'}). Retry rather than typing them by hand.`}
+                </span>
+                <button
+                  type="button"
+                  className={styles.secondaryButton}
+                  onClick={() => void handleRetryProposals()}
+                  disabled={retryBusy || confirmBusy}
+                  data-testid="modernization-proposals-failed-retry"
+                >
+                  {retryBusy ? 'Retrying…' : 'Retry AI proposals'}
+                </button>
+              </div>
+            )}
+
+          {retryError && (
+            <div
+              className={`${styles.banner} ${styles.bannerError}`}
+              role="alert"
+              data-testid="modernization-retry-error"
+            >
+              {retryError}
+            </div>
+          )}
+
           {!loading && !noScan && !loadError && review && allRows.length > 0 && (
             <>
               <table className={styles.table} data-testid="modernization-review-table">
@@ -372,12 +454,27 @@ export function ModernizationReviewPanel({
                     <button
                       type="button"
                       className={styles.primaryButton}
-                      disabled={missingCount > 0 || confirmBusy}
+                      disabled={missingCount > 0 || confirmBusy || retryBusy}
                       onClick={() => void handleConfirmAll()}
                       data-testid="modernization-confirm-all"
                     >
                       {confirmBusy ? 'Confirming…' : 'Confirm all'}
                     </button>
+                    {/* Retry-All (2026-08-30): regenerate the AI proposals
+                        for the unmapped rows and re-seed the table. Only
+                        offered when the pass had eligible rows. */}
+                    {(proposalPass?.eligible ?? 0) > 0 && (
+                      <button
+                        type="button"
+                        className={styles.secondaryButton}
+                        disabled={retryBusy || confirmBusy}
+                        onClick={() => void handleRetryProposals()}
+                        title="Re-run the AI proposal pass for the unmapped rows and refresh the table (typed-but-unconfirmed values are re-seeded)"
+                        data-testid="modernization-retry-all"
+                      >
+                        {retryBusy ? 'Retrying…' : 'Retry All'}
+                      </button>
+                    )}
                     {missingCount > 0 && (
                       <span
                         className={styles.missingNote}

@@ -17,9 +17,19 @@
  *                provenance: 'ruleset_default'|'llm_proposed'|'unmapped',
  *                notes: string|null, proposal_rationale?: string }],
  *       existing_decisions: [{ decision_id, decision_code, answer_value,
- *                              answer_summary, scope_kind, created_at }]
+ *                              answer_summary, scope_kind, created_at }],
+ *       proposal_pass: { status: 'ok'|'failed',
+ *                        source: 'cache'|'generated'|'none',
+ *                        eligible, proposed, error: string|null,
+ *                        generated_at: string|null }
  *     }
  *     404 -> {error} when no SCL scan exists;  502 on upstream failure.
+ *
+ *   POST /projects/:projectId/architectures/:architectureId/scl/modernization/review/proposals/retry
+ *     Retry-All (2026-08-30): bypasses the per-scan proposal cache, re-runs
+ *     the LLM pass and re-persists on success (a failed retry replays the
+ *     surviving cache). Returns the SAME full review shape as the GET so the
+ *     client swaps state in one shot. 404/502 as the GET.
  *
  *   POST /projects/:projectId/architectures/:architectureId/scl/modernization/confirm
  *     body { target_architecture_id, rows: [{ code, family, from, to,
@@ -38,6 +48,7 @@ import {
   buildModernizationReview,
   ConfirmModernizationRow,
   confirmModernizationDecisions,
+  ModernizationProposalPass,
   SclModernizationNoScanError,
   SclModernizationValidationError,
 } from '../services/sclModernizationReview';
@@ -104,15 +115,37 @@ function rowFromWire(raw: unknown): ConfirmModernizationRow {
 // Routes
 // ---------------------------------------------------------------------------
 
-sclModernizationRouter.get(`${BASE}/review`, async (req: Request, res: Response) => {
+function proposalPassToWire(pass: ModernizationProposalPass): Record<string, unknown> {
+  return {
+    status: pass.status,
+    source: pass.source,
+    eligible: pass.eligible,
+    proposed: pass.proposed,
+    error: pass.error,
+    generated_at: pass.generatedAt,
+  };
+}
+
+/** Shared handler: the GET review and the Retry-All POST return the same
+ * full review wire shape; only `regenerateProposals` differs. */
+async function respondWithReview(
+  req: Request,
+  res: Response,
+  regenerateProposals: boolean
+): Promise<void> {
   const { projectId, architectureId } = req.params;
   try {
-    const review = await buildModernizationReview({ projectId, architectureId });
+    const review = await buildModernizationReview({
+      projectId,
+      architectureId,
+      regenerateProposals,
+    });
     res.json({
       scan_id: review.scanId,
       target_architecture_id: review.targetArchitectureId,
       rows: review.rows.map(rowToWire),
       existing_decisions: review.existingDecisions.map(decisionToWire),
+      proposal_pass: proposalPassToWire(review.proposalPass),
     });
   } catch (error) {
     if (error instanceof SclModernizationNoScanError) {
@@ -122,11 +155,22 @@ sclModernizationRouter.get(`${BASE}/review`, async (req: Request, res: Response)
     logger.error('[diag-gateway] scl_modernization review failed', {
       projectId,
       architectureId,
+      regenerateProposals,
       error: error instanceof Error ? error.message : 'Unknown error',
     });
     res.status(502).json({ error: 'modernization review build failed' });
   }
-});
+}
+
+sclModernizationRouter.get(`${BASE}/review`, (req: Request, res: Response) =>
+  respondWithReview(req, res, false)
+);
+
+// Retry-All (2026-08-30): regenerate + re-persist the LLM proposals.
+sclModernizationRouter.post(
+  `${BASE}/review/proposals/retry`,
+  (req: Request, res: Response) => respondWithReview(req, res, true)
+);
 
 sclModernizationRouter.post(`${BASE}/confirm`, async (req: Request, res: Response) => {
   const { projectId, architectureId } = req.params;

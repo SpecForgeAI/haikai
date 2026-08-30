@@ -4,12 +4,26 @@
  *
  * buildModernizationReview:
  *   latest scan -> contracts (tables / shapes / boundaries) -> deterministic
- *   observed-idiom inventory -> ONE batched LLM call proposing targets for
- *   the UNMAPPED THIRD-PARTY TYPES only (badge: provenance 'llm_proposed';
- *   guard: proposals for froms that were not requested are DROPPED; LLM
- *   failure is fail-soft — rows stay 'unmapped', logged). Returns the rows
- *   plus the already-persisted `modernize.*` captured decisions for the
- *   project's target architecture so the UI can render confirmed state.
+ *   observed-idiom inventory -> LLM proposals for the UNMAPPED THIRD-PARTY
+ *   TYPES only (badge: provenance 'llm_proposed'; guard: proposals for froms
+ *   that were not requested are DROPPED). Returns the rows plus the
+ *   already-persisted `modernize.*` captured decisions for the project's
+ *   target architecture so the UI can render confirmed state.
+ *
+ *   Proposal determinism + loud failure (2026-08-30 round, after a failed
+ *   pass rendered as 91 legitimate-looking "needs a value" rows):
+ *   - Generated proposals are PERSISTED per scan (AMS scan `stats_json`,
+ *     key `modernization_proposals` — an opaque map slot, no AMS schema
+ *     change). Subsequent loads REPLAY the cached set without an LLM call,
+ *     so two consecutive loads can never disagree.
+ *   - An LLM failure is still fail-soft for the review render (rows stay
+ *     'unmapped') but is now LOUD on the wire: `proposalPass.status =
+ *     'failed'` + the error, so the UI banners "proposals unavailable —
+ *     retry" instead of presenting empty rows as human work.
+ *   - `regenerateProposals: true` (the Retry-All route) bypasses the cache,
+ *     re-runs the pass and re-persists on success; on failure an existing
+ *     cached set is REPLAYED (never clobbered), reported as
+ *     status 'failed' + source 'cache'.
  *
  * confirmModernizationDecisions:
  *   validates the confirmed rows (code must start 'modernize.', target
@@ -110,6 +124,14 @@ export interface SclModernizationDeps {
     userPrompt: string;
     requestTag: string;
   }) => Promise<{ content: string }>;
+  /** PATCH /scans/{scanId} {stats_json} — the proposal-cache persist seam
+   * (caller merges: spread the read stats_json, then set the cache key). */
+  patchScan: (
+    projectId: string,
+    architectureId: string,
+    scanId: string,
+    statsJson: Record<string, unknown>
+  ) => Promise<void>;
 }
 
 function sclBase(projectId: string, architectureId: string): string {
@@ -126,6 +148,17 @@ async function amsGetJsonOrNull<T>(url: string, label: string): Promise<T | null
     throw new Error(`AMS ${label} failed: HTTP ${response.status}`);
   }
   return (await response.json()) as T;
+}
+
+async function amsPatchJson(url: string, body: unknown, label: string): Promise<void> {
+  const response = await fetch(url, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(`AMS ${label} failed: HTTP ${response.status}`);
+  }
 }
 
 /** Default LLM caller — the house idiom (see sclAnnotationPass.ts): lazy
@@ -177,6 +210,12 @@ const defaultDeps: SclModernizationDeps = {
   fetchDecisions: fetchLatestCapturedDecisions,
   postDecision: postCapturedDecision,
   llm: defaultLlm,
+  patchScan: (projectId, architectureId, scanId, statsJson) =>
+    amsPatchJson(
+      `${sclBase(projectId, architectureId)}/scans/${encodeURIComponent(scanId)}`,
+      { stats_json: statsJson },
+      'patch_scl_scan'
+    ),
 };
 
 // ---------------------------------------------------------------------------
@@ -245,46 +284,199 @@ function isUnmappedThirdPartyType(row: ObservedIdiom): boolean {
   );
 }
 
-async function mergeLlmProposals(
-  rows: ObservedIdiom[],
+/** The per-scan proposal cache persisted inside the scan's opaque
+ * `stats_json` under this key (snake_case wire, like its stats siblings). */
+export const MODERNIZATION_PROPOSALS_STATS_KEY = 'modernization_proposals';
+
+interface CachedProposalSet {
+  generatedAt: string | null;
+  proposals: LlmProposal[];
+}
+
+/** Tolerantly read the cached proposal set from a scan's stats_json; any
+ * malformed shape reads as absent (the pass simply regenerates). */
+function readCachedProposals(
+  statsJson: Record<string, unknown> | null | undefined
+): CachedProposalSet | null {
+  const raw = (statsJson ?? {})[MODERNIZATION_PROPOSALS_STATS_KEY];
+  if (!raw || typeof raw !== 'object') return null;
+  const record = raw as Record<string, unknown>;
+  if (!Array.isArray(record.proposals)) return null;
+  const proposals: LlmProposal[] = [];
+  for (const item of record.proposals) {
+    const p = (item ?? {}) as Record<string, unknown>;
+    if (
+      typeof p.from !== 'string' ||
+      typeof p.proposed_to !== 'string' ||
+      p.proposed_to.trim().length === 0
+    ) {
+      continue;
+    }
+    proposals.push({
+      from: p.from,
+      proposedTo: p.proposed_to,
+      rationale: typeof p.rationale === 'string' ? p.rationale : '',
+    });
+  }
+  return {
+    generatedAt: typeof record.generated_at === 'string' ? record.generated_at : null,
+    proposals,
+  };
+}
+
+/** Guarded merge shared by the generated and cached paths: proposals for
+ * froms that are not eligible rows are DROPPED. Returns the applied count. */
+function applyProposals(targets: ObservedIdiom[], proposals: LlmProposal[]): number {
+  const byFrom = new Map(targets.map((row) => [row.from, row]));
+  let applied = 0;
+  for (const proposal of proposals) {
+    const row = byFrom.get(proposal.from);
+    if (!row) {
+      logger.warn('[diag-gateway] scl_modernization dropped unrequested LLM proposal', {
+        from: proposal.from,
+      });
+      continue;
+    }
+    row.defaultTo = proposal.proposedTo;
+    row.provenance = 'llm_proposed';
+    row.proposalRationale = proposal.rationale;
+    applied++;
+  }
+  return applied;
+}
+
+/** ONE batched LLM call for the eligible rows. THROWS on failure — the
+ * caller (runProposalPass) owns the loud-but-fail-soft handling. */
+async function requestProposals(
+  targets: ObservedIdiom[],
   llm: SclModernizationDeps['llm'],
   requestTag: string
-): Promise<void> {
-  const targets = rows.filter(isUnmappedThirdPartyType);
-  if (targets.length === 0) return;
-
-  const byFrom = new Map(targets.map((row) => [row.from, row]));
+): Promise<LlmProposal[]> {
   const requests = targets.map((row) => ({
     from: row.from,
     family: row.family,
     examples: row.exampleCites.map((c) => `${c.symbol} (${c.sourcePath})`),
   }));
+  const { content } = await llm({
+    systemPrompt: PROPOSAL_SYSTEM_PROMPT,
+    userPrompt: buildProposalPrompt(requests),
+    requestTag,
+  });
+  return parseProposals(content);
+}
+
+/** The wire-visible outcome of the proposal pass (bug fix 2026-08-30: a
+ * failed pass previously rendered as silent legitimate-looking "needs a
+ * value" rows). */
+export interface ModernizationProposalPass {
+  status: 'ok' | 'failed';
+  /** Where the applied proposals came from: the per-scan cache, a fresh
+   * generation, or nowhere ('none': no eligible rows, or a failure with no
+   * cache to fall back on). */
+  source: 'cache' | 'generated' | 'none';
+  /** How many rows were eligible for proposals (unmapped third-party types). */
+  eligible: number;
+  /** How many rows received a proposal. */
+  proposed: number;
+  error: string | null;
+  generatedAt: string | null;
+}
+
+async function runProposalPass(args: {
+  projectId: string;
+  architectureId: string;
+  scanId: string;
+  statsJson: Record<string, unknown>;
+  rows: ObservedIdiom[];
+  regenerate: boolean;
+  llm: SclModernizationDeps['llm'];
+  patchScan: SclModernizationDeps['patchScan'];
+}): Promise<ModernizationProposalPass> {
+  const { projectId, architectureId, scanId, statsJson, rows, regenerate } = args;
+  const targets = rows.filter(isUnmappedThirdPartyType);
+  if (targets.length === 0) {
+    return { status: 'ok', source: 'none', eligible: 0, proposed: 0, error: null, generatedAt: null };
+  }
+
+  const cached = readCachedProposals(statsJson);
+
+  // Deterministic replay: a cached set answers every subsequent load without
+  // an LLM call, so two consecutive loads can never disagree.
+  if (cached && !regenerate) {
+    const applied = applyProposals(targets, cached.proposals);
+    return {
+      status: 'ok',
+      source: 'cache',
+      eligible: targets.length,
+      proposed: applied,
+      error: null,
+      generatedAt: cached.generatedAt,
+    };
+  }
 
   try {
-    const { content } = await llm({
-      systemPrompt: PROPOSAL_SYSTEM_PROMPT,
-      userPrompt: buildProposalPrompt(requests),
-      requestTag,
-    });
-    for (const proposal of parseProposals(content)) {
-      const row = byFrom.get(proposal.from);
-      if (!row) {
-        // Guard: proposals for froms that were never requested are DROPPED.
-        logger.warn('[diag-gateway] scl_modernization dropped unrequested LLM proposal', {
-          from: proposal.from,
-        });
-        continue;
-      }
-      row.defaultTo = proposal.proposedTo;
-      row.provenance = 'llm_proposed';
-      row.proposalRationale = proposal.rationale;
+    const proposals = await requestProposals(targets, args.llm, `scl-modernization-${projectId}`);
+    const applied = applyProposals(targets, proposals);
+    const generatedAt = new Date().toISOString();
+    // Persist per scan (merge-spread: never clobber sibling stats keys). A
+    // persist failure downgrades to a warning — the fresh proposals still
+    // serve this response; the next load regenerates.
+    try {
+      await args.patchScan(projectId, architectureId, scanId, {
+        ...statsJson,
+        [MODERNIZATION_PROPOSALS_STATS_KEY]: {
+          generated_at: generatedAt,
+          proposals: proposals.map((p) => ({
+            from: p.from,
+            proposed_to: p.proposedTo,
+            rationale: p.rationale,
+          })),
+        },
+      });
+    } catch (persistError) {
+      logger.warn('[diag-gateway] scl_modernization proposal-cache persist failed (serving unpersisted)', {
+        projectId,
+        scanId,
+        error: persistError instanceof Error ? persistError.message : 'Unknown error',
+      });
     }
+    return {
+      status: 'ok',
+      source: 'generated',
+      eligible: targets.length,
+      proposed: applied,
+      error: null,
+      generatedAt,
+    };
   } catch (error) {
-    // Fail-soft: the review still renders; unmapped rows stay unmapped.
-    logger.warn('[diag-gateway] scl_modernization LLM proposal pass failed (rows stay unmapped)', {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    // Fail-soft for the RENDER, loud on the WIRE. A regenerate failure never
+    // clobbers an existing cache — replay it so previously-seen defaults do
+    // not vanish under the user.
+    logger.warn('[diag-gateway] scl_modernization LLM proposal pass failed (loud on the wire)', {
       requested: targets.length,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      regenerate,
+      error: message,
     });
+    if (cached) {
+      const applied = applyProposals(targets, cached.proposals);
+      return {
+        status: 'failed',
+        source: 'cache',
+        eligible: targets.length,
+        proposed: applied,
+        error: message,
+        generatedAt: cached.generatedAt,
+      };
+    }
+    return {
+      status: 'failed',
+      source: 'none',
+      eligible: targets.length,
+      proposed: 0,
+      error: message,
+      generatedAt: null,
+    };
   }
 }
 
@@ -299,12 +491,20 @@ export interface ModernizationReview {
   rows: ObservedIdiom[];
   /** Already-persisted modernize.* decisions for the target architecture. */
   existingDecisions: TargetStateCapturedDecision[];
+  /** Loud proposal-pass outcome (2026-08-30): the UI banners 'failed'. */
+  proposalPass: ModernizationProposalPass;
 }
 
 const CONTRACT_KINDS = ['behaviour_table', 'shape', 'boundary'] as const;
 
 export async function buildModernizationReview(
-  args: { projectId: string; architectureId: string },
+  args: {
+    projectId: string;
+    architectureId: string;
+    /** Retry-All: bypass the per-scan cache, re-run the LLM pass and
+     * re-persist on success (an existing cache survives a failed retry). */
+    regenerateProposals?: boolean;
+  },
   deps?: Partial<SclModernizationDeps>
 ): Promise<ModernizationReview> {
   const d: SclModernizationDeps = { ...defaultDeps, ...deps };
@@ -321,8 +521,18 @@ export async function buildModernizationReview(
     contracts.push(...(await d.fetchContracts(projectId, architectureId, scanId, kind)));
   }
 
-  const rows = computeModernizationInventory(contracts, scan.stats_json ?? {});
-  await mergeLlmProposals(rows, d.llm, `scl-modernization-${projectId}`);
+  const statsJson = scan.stats_json ?? {};
+  const rows = computeModernizationInventory(contracts, statsJson);
+  const proposalPass = await runProposalPass({
+    projectId,
+    architectureId,
+    scanId,
+    statsJson,
+    rows,
+    regenerate: args.regenerateProposals === true,
+    llm: d.llm,
+    patchScan: d.patchScan,
+  });
 
   const targetArchitectureId = await d.resolveTargetArchitectureId(projectId);
   let existingDecisions: TargetStateCapturedDecision[] = [];
@@ -349,9 +559,10 @@ export async function buildModernizationReview(
     rows: rows.length,
     existingDecisions: existingDecisions.length,
     targetArchitectureId,
+    proposalPass: `${proposalPass.status}/${proposalPass.source}`,
   });
 
-  return { scanId, targetArchitectureId, rows, existingDecisions };
+  return { scanId, targetArchitectureId, rows, existingDecisions, proposalPass };
 }
 
 // ---------------------------------------------------------------------------

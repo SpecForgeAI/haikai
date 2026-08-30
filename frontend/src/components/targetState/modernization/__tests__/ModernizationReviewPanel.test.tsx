@@ -75,21 +75,29 @@ function depsFor(review: SclModernizationReview | Error): {
   deps: ModernizationReviewPanelDeps;
   fetchMock: ReturnType<typeof vi.fn>;
   confirmMock: ReturnType<typeof vi.fn>;
+  retryMock: ReturnType<typeof vi.fn>;
 } {
   const fetchMock =
     review instanceof Error
       ? vi.fn().mockRejectedValue(review)
       : vi.fn().mockResolvedValue(review);
   const confirmMock = vi.fn().mockResolvedValue({ confirmed: 3, failed: [] });
+  const retryMock =
+    review instanceof Error
+      ? vi.fn().mockRejectedValue(review)
+      : vi.fn().mockResolvedValue(review);
   return {
     deps: {
       fetchModernizationReview:
         fetchMock as unknown as ModernizationReviewPanelDeps['fetchModernizationReview'],
       confirmModernizationDecisions:
         confirmMock as unknown as ModernizationReviewPanelDeps['confirmModernizationDecisions'],
+      retryModernizationProposals:
+        retryMock as unknown as ModernizationReviewPanelDeps['retryModernizationProposals'],
     },
     fetchMock,
     confirmMock,
+    retryMock,
   };
 }
 
@@ -406,5 +414,123 @@ describe('ModernizationReviewPanel', () => {
 
     fireEvent.click(screen.getByTestId('modernization-review-toggle'));
     expect(screen.getByTestId('modernization-review-table')).toBeInTheDocument();
+  });
+
+  // -------------------------------------------------------------------------
+  // 2026-08-30 proposal honesty round: loud failed pass + Retry All
+  // -------------------------------------------------------------------------
+
+  it('banners a FAILED proposal pass loudly; the inline retry regenerates and fills the rows', async () => {
+    const failed = reviewFixture({
+      proposal_pass: {
+        status: 'failed',
+        source: 'none',
+        eligible: 1,
+        proposed: 0,
+        error: 'rate limited',
+        generated_at: null,
+      },
+    });
+    const { deps, retryMock } = depsFor(failed);
+    // The retry succeeds: proposals regenerated, the unmapped row now filled.
+    retryMock.mockResolvedValue(
+      reviewFixture({
+        rows: reviewFixture().rows.map((row) =>
+          row.matcher_key === 'com.acme.WideId'
+            ? {
+                ...row,
+                default_to: 'java.math.BigInteger',
+                provenance: 'llm_proposed' as const,
+                proposal_rationale: 'fresh',
+              }
+            : row,
+        ),
+        proposal_pass: {
+          status: 'ok',
+          source: 'generated',
+          eligible: 1,
+          proposed: 1,
+          error: null,
+          generated_at: '2026-08-30T10:00:00Z',
+        },
+      }),
+    );
+    render(<ModernizationReviewPanel {...BASE} deps={deps} />);
+
+    const banner = await screen.findByTestId('modernization-proposals-failed');
+    expect(banner).toHaveTextContent('AI proposals unavailable');
+    expect(banner).toHaveTextContent('rate limited');
+    expect(banner).toHaveTextContent('Retry rather than typing them by hand');
+
+    fireEvent.click(screen.getByTestId('modernization-proposals-failed-retry'));
+    await waitFor(() =>
+      expect(screen.queryByTestId('modernization-proposals-failed')).toBeNull(),
+    );
+    expect(retryMock).toHaveBeenCalledWith('p1', 'arch-1');
+    // The regenerated proposal seeded the previously-empty row.
+    const inputs = screen.getAllByTestId(
+      'modernization-target-input',
+    ) as HTMLInputElement[];
+    expect(inputs[2].value).toBe('java.math.BigInteger');
+  });
+
+  it('a failed REGENERATE over a surviving cache banners the softer copy', async () => {
+    const { deps } = depsFor(
+      reviewFixture({
+        proposal_pass: {
+          status: 'failed',
+          source: 'cache',
+          eligible: 1,
+          proposed: 1,
+          error: 'relay down',
+          generated_at: '2026-08-29T09:00:00Z',
+        },
+      }),
+    );
+    render(<ModernizationReviewPanel {...BASE} deps={deps} />);
+
+    const banner = await screen.findByTestId('modernization-proposals-failed');
+    expect(banner).toHaveTextContent('showing the previously saved proposals');
+    expect(banner).toHaveTextContent('relay down');
+  });
+
+  it('offers Retry All in the footer when the pass had eligible rows; a retry failure keeps the table', async () => {
+    const { deps, retryMock } = depsFor(
+      reviewFixture({
+        proposal_pass: {
+          status: 'ok',
+          source: 'cache',
+          eligible: 1,
+          proposed: 1,
+          error: null,
+          generated_at: '2026-08-29T09:00:00Z',
+        },
+      }),
+    );
+    retryMock.mockRejectedValue(new Error('gateway 502'));
+    render(<ModernizationReviewPanel {...BASE} deps={deps} />);
+
+    const retryAll = await screen.findByTestId('modernization-retry-all');
+    fireEvent.click(retryAll);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('modernization-retry-error')).toBeInTheDocument(),
+    );
+    expect(screen.getByTestId('modernization-retry-error')).toHaveTextContent(
+      'gateway 502',
+    );
+    // The table never blanked.
+    expect(screen.getByTestId('modernization-review-table')).toBeInTheDocument();
+    expect(screen.getAllByTestId('modernization-target-input')).toHaveLength(3);
+  });
+
+  it('hides Retry All when the pass reports no eligible rows (or is absent — older gateway)', async () => {
+    const { deps } = depsFor(reviewFixture()); // no proposal_pass at all
+    render(<ModernizationReviewPanel {...BASE} deps={deps} />);
+    await waitFor(() =>
+      expect(screen.getByTestId('modernization-review-table')).toBeInTheDocument(),
+    );
+    expect(screen.queryByTestId('modernization-retry-all')).toBeNull();
+    expect(screen.queryByTestId('modernization-proposals-failed')).toBeNull();
   });
 });
