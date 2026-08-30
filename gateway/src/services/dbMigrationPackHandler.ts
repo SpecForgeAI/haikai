@@ -918,9 +918,18 @@ export function buildDbMigrationPackArtifacts(
   // --- consolidated changesets ---------------------------------------------
   const schemas = [...new Set(orderedTables.map((t) => t.schemaName))];
   const schemasContent = emitSchemasChangeset(schemas);
+  // Structural accounting hoisted (2026-08-30): the FK emitter's empty-file
+  // banner names how many relationships carry no join metadata.
+  const structuralAccounting = ir.structuralAccounting ?? accountingFromIr(ir);
   const fkContent = emitForeignKeysChangeset({
     foreignKeys: ir.foreignKeys,
     emittedTables: emittedTableNames,
+    relationshipsWithoutJoinMetadata:
+      typeof structuralAccounting?.relationships_total === 'number' &&
+      typeof structuralAccounting?.relationships_with_fk_columns === 'number'
+        ? structuralAccounting.relationships_total -
+          structuralAccounting.relationships_with_fk_columns
+        : undefined,
   });
   const indexResult = emitIndexesChangeset({
     tables: orderedTables,
@@ -1047,7 +1056,6 @@ export function buildDbMigrationPackArtifacts(
     flagged: coverage.filter((c) => c.disposition === 'flagged').length,
   };
 
-  const structuralAccounting = ir.structuralAccounting ?? accountingFromIr(ir);
   const structuralFindings = deriveStructuralFindings(structuralAccounting);
   const structuralWarnings = structuralFindings.map((f) => f.message);
 

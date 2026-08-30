@@ -399,6 +399,10 @@ export function emitTableChangeset(args: {
     const option = res && typeof res['option'] === 'string' ? (res['option'] as string) : null;
     return option;
   };
+  // C5 (2026-08-30): remember exactly which columns the PK was emitted over
+  // so an identical UNIQUE can be suppressed as provably redundant (below).
+  let emittedPkColumns: string[] | null = null;
+  let emittedPkName: string | null = null;
   if (table.primaryKey) {
     const pkDropped = droppedKeys.find(
       (d) => d.kind === 'primary_key' && d.name === table.primaryKey!.name
@@ -408,6 +412,8 @@ export function emitTableChangeset(args: {
         `    CONSTRAINT ${quoteIdent(relName(table.primaryKey.name))} PRIMARY KEY ` +
           `(${table.primaryKey.columns.map(quoteIdent).join(', ')})`
       );
+      emittedPkColumns = [...table.primaryKey.columns];
+      emittedPkName = relName(table.primaryKey.name);
     } else if (keyResolution(table.primaryKey.name) === 'emit_over_present_members') {
       const kept = table.primaryKey.columns.filter((c) => presentColumns.has(c));
       if (kept.length > 0) {
@@ -415,12 +421,31 @@ export function emitTableChangeset(args: {
           `    CONSTRAINT ${quoteIdent(relName(table.primaryKey.name))} PRIMARY KEY ` +
             `(${kept.map(quoteIdent).join(', ')})`
         );
+        emittedPkColumns = kept;
+        emittedPkName = relName(table.primaryKey.name);
       }
     }
   }
+  /**
+   * True when the UNIQUE covers EXACTLY the PK's columns in EXACTLY the same
+   * order. Postgres backs both a PK and a UNIQUE with its own btree index, so
+   * that pair is two identical indexes — double the write cost and storage on
+   * the busiest tables, with no added guarantee. Order is part of the test on
+   * purpose: a different column ORDER is still a distinct (and potentially
+   * useful) index prefix, so those are left alone.
+   */
+  const isRedundantWithPk = (cols: readonly string[]): boolean =>
+    emittedPkColumns !== null &&
+    emittedPkColumns.length === cols.length &&
+    emittedPkColumns.every((c, i) => c.toLowerCase() === cols[i].toLowerCase());
+  const redundantUniques: Array<{ name: string; columns: string[] }> = [];
   for (const u of [...table.uniqueConstraints].sort((a, b) => a.name.localeCompare(b.name))) {
     const uDropped = droppedKeys.find((d) => d.kind === 'unique' && d.name === u.name);
     if (!uDropped) {
+      if (isRedundantWithPk(u.columns)) {
+        redundantUniques.push({ name: relName(u.name), columns: [...u.columns] });
+        continue;
+      }
       constraintDefs.push(
         `    CONSTRAINT ${quoteIdent(relName(u.name))} UNIQUE (${u.columns.map(quoteIdent).join(', ')})`
       );
@@ -429,6 +454,10 @@ export function emitTableChangeset(args: {
     if (keyResolution(u.name) === 'emit_over_present_members') {
       const kept = u.columns.filter((c) => presentColumns.has(c));
       if (kept.length > 0) {
+        if (isRedundantWithPk(kept)) {
+          redundantUniques.push({ name: relName(u.name), columns: kept });
+          continue;
+        }
         constraintDefs.push(
           `    CONSTRAINT ${quoteIdent(relName(u.name))} UNIQUE (${kept.map(quoteIdent).join(', ')})`
         );
@@ -492,6 +521,17 @@ export function emitTableChangeset(args: {
           `silently drops a key constraint.`
       );
     }
+  }
+  for (const ru of redundantUniques) {
+    lines.push(
+      `-- REDUNDANT UNIQUE ${qn}.${ru.name} (${ru.columns.join(', ')}) NOT emitted: ` +
+        `identical to PRIMARY KEY ${emittedPkName} on the same columns in the same ` +
+        `order. Postgres backs a PK and a UNIQUE with SEPARATE btree indexes, so ` +
+        `emitting both doubles index write cost and storage while adding no ` +
+        `guarantee. The uniqueness the source declared is fully preserved by the ` +
+        `primary key. (A different column ORDER would have been kept — that is a ` +
+        `distinct index prefix, not a duplicate.)`
+    );
   }
   for (const rc of rewrittenChecks) {
     lines.push(
@@ -565,6 +605,12 @@ export function emitForeignKeysChangeset(args: {
   foreignKeys: IrForeignKey[];
   /** Qualified names of tables actually emitted (FKs to skipped tables are dropped with a note). */
   emittedTables: Set<string>;
+  /**
+   * Relationships present in the model that carry NO `fk_columns` join
+   * metadata, so no constraint could be generated from them. Drives the
+   * loud empty-file banner below. Optional — omitted means "unknown".
+   */
+  relationshipsWithoutJoinMetadata?: number;
 }): string {
   const lines: string[] = [];
   lines.push(formattedSqlHeader(FOREIGN_KEYS_CHANGESET_PATH).trimEnd());
@@ -573,6 +619,7 @@ export function emitForeignKeysChangeset(args: {
     '-- Phase 3 of 5: ALL foreign keys apply ONCE after the bulk load, then stay' +
       ' enforced through every incremental run. Referential actions are verbatim from discovery.'
   );
+  let emittedCount = 0;
   const sorted = [...args.foreignKeys].sort((a, b) =>
     foreignKeyName(a).localeCompare(foreignKeyName(b))
   );
@@ -595,6 +642,42 @@ export function emitForeignKeysChangeset(args: {
     if (fk.onUpdate) sql += ` ON UPDATE ${fk.onUpdate.toUpperCase()}`;
     sql += ';';
     lines.push(sql);
+    emittedCount++;
+  }
+  // C2 (2026-08-30): an EMPTY foreign-keys changeset used to be
+  // indistinguishable from a source genuinely without FKs — header, one
+  // cheerful comment, nothing else. A live pack shipped exactly that while
+  // the source catalogue counted five declared FKs, and because the DB-tier
+  // acceptance is "the files match the pack content exactly", the empty file
+  // passed GREEN and every FK was silently dropped. The artifact must now
+  // incriminate itself. Fires even when every FK was skipped for an
+  // unemitted side — the case most likely to be mistaken for done.
+  if (emittedCount === 0) {
+    const n = args.relationshipsWithoutJoinMetadata;
+    lines.push('');
+    lines.push('-- ######################################################################');
+    lines.push('-- NO FOREIGN KEYS WERE EMITTED.');
+    lines.push('--');
+    lines.push('-- This is NOT evidence that the source database declares none.');
+    if (typeof n === 'number' && n > 0) {
+      lines.push(
+        `-- ${n} relationship(s) in the model carry no fk_columns join metadata,` +
+          ' so no ALTER TABLE ... ADD CONSTRAINT could be generated from them.'
+      );
+    } else {
+      lines.push(
+        '-- The model supplied no relationship carrying fk_columns join metadata,' +
+          ' so no ALTER TABLE ... ADD CONSTRAINT could be generated.'
+      );
+    }
+    lines.push("-- See the 'relationships_without_fk_columns' pack finding.");
+    lines.push('--');
+    lines.push('-- DO NOT accept this changeset as complete on the strength of a');
+    lines.push("-- 'files match the pack' check. Verify against the source catalogue:");
+    lines.push('--   Sybase ASE: SELECT count(*) FROM sysreferences;  Postgres:');
+    lines.push("--   SELECT count(*) FROM pg_constraint WHERE contype = 'f';");
+    lines.push('-- A non-zero source count means referential integrity is being lost.');
+    lines.push('-- ######################################################################');
   }
   return lines.join('\n') + '\n';
 }
