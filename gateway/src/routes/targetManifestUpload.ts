@@ -79,7 +79,7 @@ import {
 // conflicts; additions apply as a new latest artifact version.
 import {
   applyAdditionsToPom,
-  reconcileManifestWithDecisions,
+  reconcileManifestWithAllDecisions,
 } from '../services/targetManifest/manifestDecisionReconcile';
 import { fetchLatestCapturedDecisions } from '../services/targetStateCapturedDecisionsClient';
 import { autoApplyDecisionAdditions } from '../services/targetManifest/manifestDecisionAutoApply';
