@@ -27,6 +27,12 @@
  * Collapsible: the header toggle collapses the body (staleness-free — the
  * review is loaded on mount regardless so re-expanding is instant).
  *
+ * 2026-08-30 UX (main-area relocation round): when a load finds EVERY row
+ * already confirmed the panel lands in read-only REVIEW mode (targets as
+ * text, no Confirm-all); an explicit "Re-open to edit" button returns to
+ * editing so values can change and re-save (re-confirm supersedes). Confirmed
+ * rows seed their value from the PERSISTED decision, not the ruleset default.
+ *
  * `deps` injection mirrors `DecisionsFileUploadPanel` so tests can shim the
  * api seam without touching global fetch.
  */
@@ -97,6 +103,14 @@ export function ModernizationReviewPanel({
   const [targetValues, setTargetValues] = useState<Record<string, string>>({});
   /** Per-row confirm failures keyed by DERIVED decision code. */
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
+  /**
+   * 2026-08-30 UX: read-only REVIEW mode. Entered whenever a load finds EVERY
+   * row already confirmed (a previously saved table — including right after a
+   * successful Confirm-all reload); the explicit "Re-open" affordance drops
+   * back to editing so the user can change values and re-save (re-confirming
+   * supersedes server-side).
+   */
+  const [reviewMode, setReviewMode] = useState(false);
 
   const [confirmBusy, setConfirmBusy] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
@@ -115,11 +129,32 @@ export function ModernizationReviewPanel({
       // when it does not, the user's typed values are re-derivable from the
       // existing_decisions summaries shown per row).
       const seeded: Record<string, string> = {};
+      // Confirmed rows seed from the PERSISTED answer value (so review mode
+      // and a Re-open both show what was actually saved), falling back to the
+      // ruleset/LLM default for unconfirmed rows.
+      const valueByCode = new Map(
+        (data.existing_decisions ?? []).map((d) => [d.decision_code, d.answer_value]),
+      );
       for (const row of data.rows ?? []) {
-        seeded[rowKey(row)] = row.default_to ?? '';
+        const code = deriveDecisionCode(row.family, row.from, row.matched_rule_code);
+        seeded[rowKey(row)] = valueByCode.get(code) ?? row.default_to ?? '';
       }
       setTargetValues(seeded);
       setRowErrors({});
+      // Fully-confirmed review -> land read-only (saved data in review mode);
+      // any unconfirmed row keeps the table editable.
+      const confirmed = new Set(
+        (data.existing_decisions ?? []).map((d) => d.decision_code),
+      );
+      const rows = data.rows ?? [];
+      setReviewMode(
+        rows.length > 0 &&
+          rows.every((row) =>
+            confirmed.has(
+              deriveDecisionCode(row.family, row.from, row.matched_rule_code),
+            ),
+          ),
+      );
     } catch (err) {
       if (err instanceof SclModernizationApiError && err.status === 404) {
         setNoScan(true);
@@ -307,29 +342,52 @@ export function ModernizationReviewPanel({
                       confirmedCodes={confirmedCodes}
                       summaryByCode={summaryByCode}
                       rowErrors={rowErrors}
+                      readOnly={reviewMode}
                     />
                   ))}
                 </tbody>
               </table>
 
               <div className={styles.footer}>
-                <button
-                  type="button"
-                  className={styles.primaryButton}
-                  disabled={missingCount > 0 || confirmBusy}
-                  onClick={() => void handleConfirmAll()}
-                  data-testid="modernization-confirm-all"
-                >
-                  {confirmBusy ? 'Confirming…' : 'Confirm all'}
-                </button>
-                {missingCount > 0 && (
-                  <span
-                    className={styles.missingNote}
-                    data-testid="modernization-missing-count"
-                  >
-                    {missingCount} row{missingCount === 1 ? ' still needs' : 's still need'}{' '}
-                    a target value
-                  </span>
+                {reviewMode ? (
+                  <>
+                    <button
+                      type="button"
+                      className={styles.secondaryButton}
+                      onClick={() => setReviewMode(false)}
+                      data-testid="modernization-reopen"
+                    >
+                      Re-open to edit
+                    </button>
+                    <span
+                      className={styles.reviewModeNote}
+                      data-testid="modernization-review-mode-note"
+                    >
+                      Saved — read-only review. Re-open to change targets and
+                      re-save.
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className={styles.primaryButton}
+                      disabled={missingCount > 0 || confirmBusy}
+                      onClick={() => void handleConfirmAll()}
+                      data-testid="modernization-confirm-all"
+                    >
+                      {confirmBusy ? 'Confirming…' : 'Confirm all'}
+                    </button>
+                    {missingCount > 0 && (
+                      <span
+                        className={styles.missingNote}
+                        data-testid="modernization-missing-count"
+                      >
+                        {missingCount} row{missingCount === 1 ? ' still needs' : 's still need'}{' '}
+                        a target value
+                      </span>
+                    )}
+                  </>
                 )}
               </div>
 
@@ -370,6 +428,7 @@ function FamilyGroup({
   confirmedCodes,
   summaryByCode,
   rowErrors,
+  readOnly,
 }: {
   family: string;
   rows: SclModernizationReviewRow[];
@@ -378,6 +437,8 @@ function FamilyGroup({
   confirmedCodes: Set<string>;
   summaryByCode: Map<string, string | null>;
   rowErrors: Record<string, string>;
+  /** 2026-08-30 review mode: saved values render as text, not inputs. */
+  readOnly: boolean;
 }) {
   return (
     <>
@@ -417,18 +478,27 @@ function FamilyGroup({
               </span>
             </td>
             <td>
-              <input
-                type="text"
-                className={
-                  isEmpty
-                    ? `${styles.targetInput} ${styles.targetInputEmpty}`
-                    : styles.targetInput
-                }
-                value={value}
-                onChange={(e) => onTargetChange(key, e.target.value)}
-                aria-label={`Target for ${row.from}`}
-                data-testid="modernization-target-input"
-              />
+              {readOnly ? (
+                <span
+                  className={styles.targetReadOnly}
+                  data-testid="modernization-target-readonly"
+                >
+                  {value}
+                </span>
+              ) : (
+                <input
+                  type="text"
+                  className={
+                    isEmpty
+                      ? `${styles.targetInput} ${styles.targetInputEmpty}`
+                      : styles.targetInput
+                  }
+                  value={value}
+                  onChange={(e) => onTargetChange(key, e.target.value)}
+                  aria-label={`Target for ${row.from}`}
+                  data-testid="modernization-target-input"
+                />
+              )}
               {rowError && (
                 <p className={styles.rowError} data-testid="modernization-row-error">
                   {rowError}

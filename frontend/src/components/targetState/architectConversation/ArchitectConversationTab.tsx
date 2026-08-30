@@ -118,7 +118,6 @@ import {
   RevisePriorAnswerDialog,
 } from './RevisePriorAnswer';
 import { exportTranscript, slugifyForFilename } from './exportTranscript';
-import { Download } from 'lucide-react';
 import { useArchitecture, useActiveArchitectureId } from '../../../contexts/ArchitectureContext';
 import type { ApplicationComponent, Service } from '../../../types/model';
 import { deriveServiceTier } from '../../../utils/deriveServiceTier';
@@ -175,6 +174,16 @@ export interface ArchitectConversationTabProps {
    * tab falls back to the context model's services.
    */
   manifestServiceOptions?: ManifestServiceOption[] | null;
+  /**
+   * 2026-08-30 declutter: registers the Export-transcript action with the
+   * HOST panel header, which renders it icon-only beside the collapse/close
+   * icons ([export][collapse][close]). Called with `null` on unmount. When
+   * absent (older mounts / tests) no export affordance renders — the in-tab
+   * toolbar button this replaces is gone.
+   */
+  onExportActionChange?: (
+    action: { run: () => void; disabled: boolean } | null,
+  ) => void;
 }
 
 /**
@@ -214,10 +223,19 @@ export function ArchitectConversationTab({
   architectureName,
   conversationSavedAt = null,
   manifestServiceOptions: manifestServiceOptionsProp = null,
+  onExportActionChange,
 }: ArchitectConversationTabProps) {
   const [envelope, setEnvelope] = useState<ConversationEnvelope | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // 2026-08-30 UX: the LARGE main area toggles between the conversation
+  // transcript and the modernization-decisions table (previously buried in the
+  // cramped right rail). Auto-flips to 'decisions' on a successful Save
+  // Conversation; resets to 'conversation' when a session is (re)opened.
+  const [mainView, setMainView] = useState<'conversation' | 'decisions'>(
+    'conversation',
+  );
 
   // Per-action in-flight + error state.
   const [answerBusy, setAnswerBusy] = useState(false);
@@ -611,6 +629,8 @@ export function ArchitectConversationTab({
 
   const handleStartConversation = async () => {
     if (!envelope) return;
+    // (Re)opening a session is conversation work — land on the transcript.
+    setMainView('conversation');
     try {
       const result = await openConversation(projectId, selectedTargetArchitectureId!, {
         openedBy: currentUserId,
@@ -977,6 +997,11 @@ export function ArchitectConversationTab({
             }
           : prev,
       );
+      // 2026-08-30 UX: a successful Save Conversation AUTO-FLIPS the main
+      // area to the modernization-decisions table — the natural next step
+      // after the question walk (and previously near-undiscoverable in the
+      // right rail).
+      setMainView('decisions');
       // Spec C: conversation close is a THROTTLED full-OSV trigger (the critical
       // hard-gate evaluation reads the freshest newly_introduced bucket).
       recomputeReductionFull();
@@ -1221,6 +1246,19 @@ export function ArchitectConversationTab({
     URL.revokeObjectURL(url);
   }, [turnsForExport, architectureName, selectedTargetArchitectureId, projectId, effectiveArchitectureName]);
 
+  // 2026-08-30 declutter: publish the export action to the host panel header
+  // (icon-only, beside collapse/close). Registered from EVERY tab state — the
+  // saved view-only landing can export too (turns exist there); with no turns
+  // the action rides its own disabled flag. Cleared on unmount.
+  useEffect(() => {
+    if (!onExportActionChange) return undefined;
+    onExportActionChange({
+      run: handleExportTranscript,
+      disabled: turnsForExport.length === 0,
+    });
+    return () => onExportActionChange(null);
+  }, [onExportActionChange, handleExportTranscript, turnsForExport.length]);
+
   // 2026-06-06 Open-Ended LLM Phase: the open-phase surface state handed to the
   // ConversationMainPane. Built only when the user has engaged the open phase
   // (post-walk). When undefined the pane behaves exactly as before.
@@ -1237,6 +1275,48 @@ export function ArchitectConversationTab({
         onDoneAndClose: () => void handleDoneAndClose(),
       }
     : undefined;
+
+  // 2026-08-30 UX: the main-area view toggle — the modernization-decisions
+  // table now lives in the LARGE main area behind this switch instead of the
+  // cramped right rail. Hidden when there is no scanned architecture (the
+  // review is keyed to the code scan); shown in BOTH the active-session and
+  // saved/view-only states so the table is reachable without an open session.
+  const mainViewToggle = activeArchitectureId ? (
+    <div
+      className={styles.viewTabs}
+      role="tablist"
+      data-testid="architect-conversation-view-toggle"
+    >
+      <button
+        type="button"
+        role="tab"
+        aria-selected={mainView === 'conversation'}
+        className={
+          mainView === 'conversation'
+            ? `${styles.viewTab} ${styles.viewTabActive}`
+            : styles.viewTab
+        }
+        onClick={() => setMainView('conversation')}
+        data-testid="architect-conversation-view-tab-conversation"
+      >
+        Conversation
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={mainView === 'decisions'}
+        className={
+          mainView === 'decisions'
+            ? `${styles.viewTab} ${styles.viewTabActive}`
+            : styles.viewTab
+        }
+        onClick={() => setMainView('decisions')}
+        data-testid="architect-conversation-view-tab-decisions"
+      >
+        Modernization decisions
+      </button>
+    </div>
+  ) : null;
 
   // -------------------------------------------------------------------------
   // Render
@@ -1301,6 +1381,19 @@ export function ArchitectConversationTab({
     const showViewOnly = (isResumingPrior || isSavedConversation) && !!envelope;
     return (
       <div className={styles.container} data-testid="architect-conversation-tab">
+        {mainViewToggle}
+        {/* Conversation view (kept mounted while the decisions view shows so
+            nothing reloads on a toggle). */}
+        <div
+          style={{
+            display: mainView === 'conversation' ? 'flex' : 'none',
+            flexDirection: 'column',
+            gap: '1rem',
+            flex: 1,
+            minHeight: 0,
+          }}
+          data-testid="architect-conversation-conversation-view"
+        >
         {showViewOnly && envelope && (
           <ConversationMainPane
             turns={envelope.turns}
@@ -1370,24 +1463,34 @@ export function ArchitectConversationTab({
             testIdSuffix="close-summary"
           />
         )}
+        </div>
+        {/* Modernization-decisions view: the full main area. The panel owns
+            its own saved/read-only review mode + Re-open affordance. */}
+        {activeArchitectureId && (
+          <div
+            style={{
+              display: mainView === 'decisions' ? 'block' : 'none',
+              flex: 1,
+              minHeight: 0,
+              overflowY: 'auto',
+            }}
+            data-testid="architect-conversation-decisions-view"
+          >
+            <ModernizationReviewPanel
+              projectId={projectId}
+              architectureId={activeArchitectureId}
+              defaultOpen
+            />
+          </div>
+        )}
       </div>
     );
   }
 
   return (
     <div className={styles.container} data-testid="architect-conversation-tab">
-      <div className={styles.tabToolbar}>
-        <button
-          type="button"
-          className={styles.secondaryButton}
-          onClick={handleExportTranscript}
-          disabled={turnsForExport.length === 0}
-          data-testid="architect-conversation-export-button"
-        >
-          <Download size={14} aria-hidden="true" />
-          {' '}Export transcript
-        </button>
-      </div>
+      {/* 2026-08-30 declutter: the Export-transcript toolbar moved to the host
+          panel header as an icon-only action (see `onExportActionChange`). */}
       {latestPrefillSummary && (
         <TechStackPrefillBanner
           turn={latestPrefillSummary}
@@ -1404,19 +1507,19 @@ export function ArchitectConversationTab({
           affordance, surfaced STRICTLY post-walk (`phase === 'open-available'`)
           and only until the user engages it. The whole phase is optional — the
           user may ignore this and close via the close flow below, exactly as
-          today (preserving the input-bar-hidden post-walk state). */}
+          today (preserving the input-bar-hidden post-walk state). 2026-08-30
+          declutter: rendered as a SLIM one-line strip (full copy in the hover
+          title); the "Explore other areas" action stays directly reachable. */}
       {phase === 'open-available' && !openPhaseEngaged && (
         <div
-          className={styles.banner}
+          className={`${styles.banner} ${styles.bannerSlim}`}
+          title="You have covered the standard decisions. Want to explore any other migration-specific areas, or wrap up with some free-form notes?"
           data-testid="architect-conversation-open-phase-available"
         >
-          <span>
-            You have covered the standard decisions. Want to explore any other
-            migration-specific areas, or wrap up with some free-form notes?
-          </span>
+          <span>Standard decisions covered.</span>
           <button
             type="button"
-            className={styles.primaryButton}
+            className={styles.linkButton}
             onClick={() => void handleEngageOpenPhase()}
             data-testid="architect-conversation-open-phase-engage"
           >
@@ -1424,8 +1527,21 @@ export function ArchitectConversationTab({
           </button>
         </div>
       )}
+      {mainViewToggle}
       <ResizableRightColumn
         left={
+          /* 2026-08-30 UX: the LEFT (large) cell swaps between the transcript
+             and the modernization-decisions table via `mainView`. Both stay
+             MOUNTED (display toggling) so a mid-question draft answer or a
+             mid-edit decisions table survives flipping back and forth.
+             `display: contents` keeps `.mainPane` the actual grid item;
+             `display: none` generates no box, so the grid always sees exactly
+             one left cell. */
+          <>
+          <div
+            style={{ display: mainView === 'conversation' ? 'contents' : 'none' }}
+            data-testid="architect-conversation-conversation-view"
+          >
           <ConversationMainPane
           turns={envelope.turns}
           pendingQuestion={pendingQuestion}
@@ -1485,6 +1601,25 @@ export function ArchitectConversationTab({
             );
           }}
           />
+          </div>
+          {activeArchitectureId && (
+            <div
+              style={{
+                display: mainView === 'decisions' ? 'block' : 'none',
+                minWidth: 0,
+                minHeight: 0,
+                overflowY: 'auto',
+              }}
+              data-testid="architect-conversation-decisions-view"
+            >
+              <ModernizationReviewPanel
+                projectId={projectId}
+                architectureId={activeArchitectureId}
+                defaultOpen
+              />
+            </div>
+          )}
+          </>
         }
         right={
           /* Spec 2026-06-27 (Task Group 3): the right column scrolls
@@ -1599,18 +1734,9 @@ export function ArchitectConversationTab({
             proceedCriticalOverride={proceedCriticalOverride}
             onProceedCriticalOverridePersisted={setProceedCriticalOverride}
           />
-          {/* 2026-08-18 SCL pipeline: the modernization decisions review — a
-              collapsible section AFTER the conversation/decisions UI. Keyed to
-              the CURRENT (scanned) architecture; renders its own quiet no-scan
-              banner when the code scan has not run yet. Default collapsed so
-              the conversation surfaces stay primary. */}
-          {activeArchitectureId && (
-            <ModernizationReviewPanel
-              projectId={projectId}
-              architectureId={activeArchitectureId}
-              defaultOpen={false}
-            />
-          )}
+          {/* 2026-08-30 UX: the modernization decisions review moved OUT of
+              this rail into the large main area (the `mainView` toggle) — it
+              was near-invisible in this cramped column. */}
           </div>
         }
       />

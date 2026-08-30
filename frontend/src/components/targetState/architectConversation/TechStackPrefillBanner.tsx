@@ -127,8 +127,10 @@ export function TechStackPrefillBanner({
     matchedCount > 0;
 
   return (
+    // 2026-08-30 declutter: rendered as a SLIM one-line strip — same copy,
+    // tone and Review action, without dominating the top of the panel.
     <div
-      className={`${styles.banner} ${toneClass}`}
+      className={`${styles.banner} ${styles.bannerSlim} ${toneClass}`}
       role="status"
       data-testid="architect-conversation-tech-stack-prefill-banner"
       data-banner-variant={bannerVariant}
