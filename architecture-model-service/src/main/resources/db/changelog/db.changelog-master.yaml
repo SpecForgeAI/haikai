@@ -5294,3 +5294,17 @@ databaseChangeLog:
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: true
+  # 228: widen migration_story_spec_generations.book_item_id 128 -> 512
+  # (2026-08-30). A nested class in a deep package produced a 129-char
+  # book_item_id, which failed at VARCHAR(128) and rolled back the ENTIRE
+  # 25-row persist batch (logged misleadingly as persistedCount=24). Catalog-
+  # only change in Postgres: no rewrite, no data touched.
+  - changeSet:
+      id: 228-widen-book-item-id
+      author: architecture-tool
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/228-widen-book-item-id.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
