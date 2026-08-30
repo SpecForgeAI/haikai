@@ -455,9 +455,38 @@ describe('confirmModernizationDecisions', () => {
 
     expect(thrown).toBeInstanceOf(SclModernizationValidationError);
     const offenders = (thrown as SclModernizationValidationError).offenders;
-    expect(offenders.map((o) => o.index)).toEqual([0, 1]);
+    // 2026-08-30 re-pin: rows #1 and #2 share the CONFIRM_ROW code, so the
+    // new duplicate-code guard flags #2 as a third offender.
+    expect(offenders.map((o) => o.index)).toEqual([0, 1, 2]);
     expect(offenders[0].reason).toContain("must start with 'modernize.'");
     expect(offenders[1].reason).toContain('non-empty');
+    expect(offenders[2].reason).toContain('duplicate decision code');
+    expect(deps.postDecision).not.toHaveBeenCalled();
+  });
+
+  it('rejects DUPLICATE decision codes whole (supersede-by-code would silently drop one)', async () => {
+    const deps = makeDeps();
+    // Same derived code twice (the Kiro third bug: String vs String[] used
+    // to collide) — the store supersedes by code, so the second write would
+    // silently replace the first.
+    const rows = [CONFIRM_ROW, { ...CONFIRM_ROW, from: 'org.joda.time.LocalDate[]' }];
+
+    let thrown: unknown;
+    try {
+      await confirmModernizationDecisions(
+        { projectId: 'p1', targetArchitectureId: 'target-1', rows },
+        deps
+      );
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(SclModernizationValidationError);
+    const offenders = (thrown as SclModernizationValidationError).offenders;
+    expect(offenders).toHaveLength(1);
+    expect(offenders[0]).toMatchObject({ index: 1, code: 'modernize.dates.joda-localdate' });
+    expect(offenders[0].reason).toContain('duplicate decision code');
+    expect(offenders[0].reason).toContain('collides with row #0');
     expect(deps.postDecision).not.toHaveBeenCalled();
   });
 

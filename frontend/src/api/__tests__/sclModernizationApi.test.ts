@@ -12,7 +12,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   confirmModernizationDecisions,
   deriveDecisionCode,
+  extractSavedTargetValue,
   fetchModernizationReview,
+  retryModernizationProposals,
   SclModernizationApiError,
   slugForDecisionCode,
   type SclModernizationConfirmPayload,
@@ -71,6 +73,42 @@ describe('deriveDecisionCode', () => {
     expect(deriveDecisionCode('collections', 'java.util.Vector', undefined)).toBe(
       'modernize.collections.java-util-vector',
     );
+  });
+
+  it("slug: each '[]' maps to '-array' so array/raw pairs stay DISTINCT (Kiro third bug — 98 posted, 96 landed)", () => {
+    // The old trim swallowed a trailing '[]': String and String[] collided
+    // on modernize.types.string and the store silently kept one of the pair.
+    expect(slugForDecisionCode('String')).toBe('string');
+    expect(slugForDecisionCode('String[]')).toBe('string-array');
+    expect(slugForDecisionCode('String[][]')).toBe('string-array-array');
+    expect(slugForDecisionCode('String [ ]')).toBe('string-array');
+    expect(slugForDecisionCode('List<String[]>')).toBe('list-string-array');
+    expect(slugForDecisionCode('List<String>')).toBe('list-string');
+    expect(deriveDecisionCode('types', 'AttributeDescriptor[]', null)).toBe(
+      'modernize.types.attributedescriptor-array',
+    );
+    expect(deriveDecisionCode('types', 'AttributeDescriptor', null)).toBe(
+      'modernize.types.attributedescriptor',
+    );
+  });
+});
+
+describe('extractSavedTargetValue', () => {
+  it("unwraps the confirm write's JSON envelope to the plain '.to'", () => {
+    const envelope = JSON.stringify({
+      from: 'org.joda.time.LocalDate',
+      to: 'java.time.LocalDate',
+      family: 'dates',
+      provenance: 'ruleset_default',
+      usage_count: 61,
+      example_cites: [],
+    });
+    expect(extractSavedTargetValue(envelope)).toBe('java.time.LocalDate');
+  });
+
+  it('returns a plain (non-JSON / non-envelope) value verbatim', () => {
+    expect(extractSavedTargetValue('java.time.LocalDate')).toBe('java.time.LocalDate');
+    expect(extractSavedTargetValue('{"no_to_key":true}')).toBe('{"no_to_key":true}');
   });
 });
 
@@ -163,6 +201,33 @@ describe('sclModernizationApi wire calls', () => {
     expect(result.failed).toEqual([
       { code: 'modernize.dates.bad-row', error: 'unknown family' },
     ]);
+  });
+
+  it('POSTs the proposals-retry URL and returns the full review shape', async () => {
+    const fixture = reviewFixture({
+      proposal_pass: {
+        status: 'ok',
+        source: 'generated',
+        eligible: 1,
+        proposed: 1,
+        error: null,
+        generated_at: '2026-08-30T10:00:00Z',
+      },
+    });
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => fixture,
+    });
+
+    const result = await retryModernizationProposals(PROJECT_ID, ARCH_ID);
+
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(url).toBe(
+      `/api/v1/projects/${PROJECT_ID}/architectures/${ARCH_ID}/scl/modernization/review/proposals/retry`,
+    );
+    expect(options.method).toBe('POST');
+    expect(result).toEqual(fixture);
   });
 
   it('rejects the confirm POST on 400 with the server error + offenders', async () => {
