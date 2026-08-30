@@ -199,3 +199,24 @@
   font-size: 0.8rem;
   color: #7d4e00;
 }
+
+/* 2026-08-30 read-only review mode: the saved target value rendered as text */
+.targetReadOnly {
+  font-family: var(--mono, monospace);
+  font-size: 0.85rem;
+}
+
+.reviewModeNote {
+  font-size: 0.8rem;
+  color: #57606a;
+}
+
+.secondaryButton {
+  padding: 0.4rem 0.8rem;
+  border: 1px solid var(--border-color, #d0d7de);
+  border-radius: 6px;
+  background: #f6f8fa;
+  color: #24292f;
+  font-weight: 600;
+  cursor: pointer;
+}

@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, within, cleanup } from '@testing-library/react';
 
 import { RightHandPanelShell } from '../RightHandPanelShell';
 
@@ -82,5 +82,58 @@ describe('RightHandPanelShell', () => {
     const { onClose } = renderShell();
     fireEvent.click(screen.getByTestId('rhs-panel-close-button'));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders extraHeaderActions icon-only BEFORE the collapse/close pair (2026-08-30)', () => {
+    const onExport = vi.fn();
+    renderShell({
+      extraHeaderActions: [
+        {
+          key: 'export-transcript',
+          icon: <span data-testid="export-icon" />,
+          label: 'Export transcript',
+          onClick: onExport,
+          testId: 'rhs-panel-export-transcript-button',
+        },
+      ],
+    });
+
+    const exportButton = screen.getByTestId('rhs-panel-export-transcript-button');
+    expect(exportButton).toHaveAttribute('aria-label', 'Export transcript');
+    expect(within(exportButton).getByTestId('export-icon')).toBeInTheDocument();
+
+    // Order: [export][collapse][close].
+    const collapse = screen.getByTestId('rhs-panel-collapse-button');
+    const close = screen.getByTestId('rhs-panel-close-button');
+    expect(
+      exportButton.compareDocumentPosition(collapse) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      collapse.compareDocumentPosition(close) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    fireEvent.click(exportButton);
+    expect(onExport).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders a disabled extra header action inert', () => {
+    const onExport = vi.fn();
+    renderShell({
+      extraHeaderActions: [
+        {
+          key: 'export-transcript',
+          icon: <span />,
+          label: 'Export transcript',
+          onClick: onExport,
+          disabled: true,
+          testId: 'rhs-panel-export-transcript-button',
+        },
+      ],
+    });
+    const exportButton = screen.getByTestId('rhs-panel-export-transcript-button');
+    expect(exportButton).toBeDisabled();
+    fireEvent.click(exportButton);
+    expect(onExport).not.toHaveBeenCalled();
   });
 });

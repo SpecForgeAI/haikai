@@ -366,6 +366,24 @@
   border-color: #ff8182;
 }
 
+/*
+ * 2026-08-30 declutter: SLIM one-line variant of the yellow notice banner —
+ * the notices keep their tone + actions but stop dominating the top of the
+ * panel.
+ */
+.bannerSlim {
+  padding: 0.25rem 0.75rem;
+  font-size: 0.8rem;
+  border-radius: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.bannerSlim > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .spinner {
   display: inline-block;
   width: 1rem;
@@ -462,17 +480,11 @@
 }
 
 /*
- * 2026-05-26 Architect Conversation Enrichments (#12):
- * Right-aligned toolbar slot at the top of the Architect Conversation tab,
- * sits ABOVE the banner zone + `styles.layout` grid. Houses the
- * "Export transcript" button (single-button toolbar for v1; future toolbar
- * actions can be appended).
+ * 2026-05-26 Architect Conversation Enrichments (#12): the `.tabToolbar`
+ * Export-transcript toolbar that lived here was retired by the 2026-08-30
+ * declutter — the action now renders icon-only in the HOST panel header
+ * (`RightHandPanelShell` `extraHeaderActions`).
  */
-.tabToolbar {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 0.5rem;
-}
 
 /*
  * 2026-06-27 Right-panel UX (Spec A, Task Group 2): the inner right column is

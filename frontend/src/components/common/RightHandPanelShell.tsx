@@ -61,6 +61,22 @@ function readCollapsed(key: string, defaultOpen: boolean): boolean {
   return !defaultOpen;
 }
 
+/**
+ * An extra icon-only action rendered in the header BEFORE the collapse/close
+ * pair (2026-08-30 Architect Conversation declutter: the Export-transcript
+ * icon). Rendered with the same chrome class as the built-in header icons so
+ * the trio reads as one group: [extras…][collapse][close].
+ */
+export interface RightHandPanelHeaderAction {
+  key: string;
+  icon: ReactNode;
+  /** Accessible name; also the hover title. */
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  testId?: string;
+}
+
 export interface RightHandPanelShellProps {
   /** Stable key for per-panel width/collapse persistence (e.g. the project id). */
   storageKey: string;
@@ -74,6 +90,8 @@ export interface RightHandPanelShellProps {
   defaultOpen?: boolean;
   /** Fired when the user fully closes the panel via the header close (✕). */
   onClose: () => void;
+  /** Extra icon-only header actions, rendered before the collapse button. */
+  extraHeaderActions?: RightHandPanelHeaderAction[];
   /**
    * Overflow behaviour for the content wrapper hosting `children`. Defaults to
    * 'auto' (the wrapper scrolls, the long-standing behaviour Discovery relies
@@ -91,6 +109,7 @@ export function RightHandPanelShell({
   collapsedLabel = 'Chat',
   defaultOpen = true,
   onClose,
+  extraHeaderActions,
   contentOverflow = 'auto',
   children,
 }: RightHandPanelShellProps) {
@@ -223,6 +242,21 @@ export function RightHandPanelShell({
           </div>
         </div>
         <div className={panelStyles.headerActions}>
+          {(extraHeaderActions ?? []).map((action) => (
+            <button
+              key={action.key}
+              type="button"
+              className={panelStyles.collapseButton}
+              onClick={action.onClick}
+              disabled={action.disabled}
+              aria-label={action.label}
+              title={action.label}
+              style={action.disabled ? { opacity: 0.4, cursor: 'default' } : undefined}
+              data-testid={action.testId}
+            >
+              {action.icon}
+            </button>
+          ))}
           <button
             type="button"
             className={panelStyles.collapseButton}

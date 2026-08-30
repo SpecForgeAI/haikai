@@ -1,24 +1,29 @@
 /**
- * Tests for the Export-transcript toolbar in `ArchitectConversationTab`.
+ * Tests for the Export-transcript action in `ArchitectConversationTab`.
  *
- * Spec: 2026-05-26 Architect Conversation Enrichments (Batched #11 + #12)
+ * Spec: 2026-05-26 Architect Conversation Enrichments (Batched #11 + #12);
+ * reworked by the 2026-08-30 declutter round: the in-tab toolbar button is
+ * GONE — the tab now registers the action with the HOST panel header via
+ * `onExportActionChange` ([export icon][collapse][close]).
  *
- * Covers (2 tests):
- *   C. Clicking the "Export transcript" button triggers a download:
+ * Covers (3 tests):
+ *   C. Running the registered action triggers a download:
  *      `URL.createObjectURL` is called with a text/markdown Blob, a temporary
  *      <a> is inserted, `click()` is invoked on it, and the Object URL is
  *      revoked.
- *   D. The button renders disabled when `turns.length === 0` (empty open
+ *   D. The action registers disabled when `turns.length === 0` (empty open
  *      session).
+ *   E. The old in-tab toolbar button no longer renders.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   render,
   screen,
-  fireEvent,
+  waitFor,
   cleanup,
 } from '@testing-library/react';
+import { act } from 'react';
 
 // ---------------------------------------------------------------------------
 // Mocks (BEFORE imports)
@@ -125,21 +130,27 @@ describe('ArchitectConversationTab -- Export transcript button (Spec 2026-05-26,
       .spyOn(HTMLAnchorElement.prototype, 'click')
       .mockImplementation(() => undefined);
 
+    const actions: Array<{ run: () => void; disabled: boolean } | null> = [];
     render(
       <ArchitectConversationTab
         projectId={PROJECT_ID}
         selectedTargetArchitectureId={TARGET_ARCH_ID}
         currentUserId="user-A"
         architectureName="Target Payments v2"
+        onExportActionChange={(a) => actions.push(a)}
       />,
     );
 
-    const button = await screen.findByTestId(
-      'architect-conversation-export-button',
-    );
-    expect(button).not.toBeDisabled();
+    // The action registers with the host header once the turns are loaded.
+    await waitFor(() => {
+      expect(actions[actions.length - 1]).toMatchObject({ disabled: false });
+    });
+    // The old in-tab toolbar button is gone (declutter 2026-08-30).
+    expect(
+      screen.queryByTestId('architect-conversation-export-button'),
+    ).toBeNull();
 
-    fireEvent.click(button);
+    act(() => actions[actions.length - 1]!.run());
 
     // The handler must have called createObjectURL with a Blob (the Blob is
     // the first arg to createObjectURL). Verify the MIME type via that arg.
@@ -160,23 +171,23 @@ describe('ArchitectConversationTab -- Export transcript button (Spec 2026-05-26,
     anchorClickSpy.mockRestore();
   });
 
-  it('renders the export button as disabled when there are no turns', async () => {
-    // Empty turns but an open session so the active-session render branch
-    // (which carries the toolbar) is taken.
+  it('registers the export action as disabled when there are no turns', async () => {
+    // Empty turns but an open session so the active-session branch is taken.
     vi.mocked(loadConversation).mockResolvedValue(buildEnvelope([]));
 
+    const actions: Array<{ run: () => void; disabled: boolean } | null> = [];
     render(
       <ArchitectConversationTab
         projectId={PROJECT_ID}
         selectedTargetArchitectureId={TARGET_ARCH_ID}
         currentUserId="user-A"
         architectureName="Target Payments v2"
+        onExportActionChange={(a) => actions.push(a)}
       />,
     );
 
-    const button = await screen.findByTestId(
-      'architect-conversation-export-button',
-    );
-    expect(button).toBeDisabled();
+    await waitFor(() => {
+      expect(actions[actions.length - 1]).toMatchObject({ disabled: true });
+    });
   });
 });

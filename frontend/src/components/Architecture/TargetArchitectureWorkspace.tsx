@@ -54,6 +54,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Download } from 'lucide-react';
 import { useProject } from '../../contexts/ProjectContext';
 import {
   useArchitectureContext,
@@ -277,6 +278,15 @@ export const TargetArchitectureWorkspace: React.FC = () => {
   // (matching the tool's standard RHS conversation pattern) rather than a
   // center view-mode tab. It slides in over the right of the active view.
   const [conversationOpen, setConversationOpen] = useState(false);
+  // 2026-08-30 declutter: the conversation tab registers its Export-transcript
+  // action here so the panel HEADER renders it icon-only beside collapse/close
+  // ([export][collapse][close]) instead of a full-width toolbar button inside
+  // the tab. Null while the tab is unmounted (or has nothing to export yet the
+  // action carries its own disabled flag).
+  const [conversationExportAction, setConversationExportAction] = useState<{
+    run: () => void;
+    disabled: boolean;
+  } | null>(null);
 
   // One-frame highlight flag used by the Architect Conversation tab's
   // empty-state path (Surface 2 per Q23) to soft-push the user back here and
@@ -1056,6 +1066,20 @@ export const TargetArchitectureWorkspace: React.FC = () => {
           roomName="Architecture Room"
           collapsedLabel="Architect"
           onClose={() => setConversationOpen(false)}
+          extraHeaderActions={
+            conversationExportAction
+              ? [
+                  {
+                    key: 'export-transcript',
+                    icon: <Download size={20} />,
+                    label: 'Export transcript',
+                    onClick: conversationExportAction.run,
+                    disabled: conversationExportAction.disabled,
+                    testId: 'rhs-panel-export-transcript-button',
+                  },
+                ]
+              : undefined
+          }
           /* Spec 2026-06-27 (Task Group 3): bound the shell content wrapper so
              the conversation's inner height chain resolves and ONLY its
              transcript scrolls (Discovery keeps the default 'auto'). */
@@ -1067,6 +1091,7 @@ export const TargetArchitectureWorkspace: React.FC = () => {
             currentUserId={'current-user'}
             architectureName={selectedDraft?.name ?? undefined}
             conversationSavedAt={selectedDraft?.conversationSavedAt ?? null}
+            onExportActionChange={setConversationExportAction}
             onEmptyStateRedirect={handleEmptyStateRedirectFromConversation}
             scrollToDecisionId={scrollToDecisionId}
             onScrolledToDecision={handleScrolledToDecision}
