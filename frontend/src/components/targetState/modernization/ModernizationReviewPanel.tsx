@@ -48,6 +48,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   confirmModernizationDecisions as defaultConfirmModernizationDecisions,
   deriveDecisionCode,
+  extractSavedTargetValue,
   fetchModernizationReview as defaultFetchModernizationReview,
   retryModernizationProposals as defaultRetryModernizationProposals,
   SclModernizationApiError,
@@ -140,17 +141,18 @@ export function ModernizationReviewPanel({
   const ingestReview = useCallback((data: SclModernizationReview) => {
     setReview(data);
     setProposalPass(data.proposal_pass ?? null);
-    // Seed the editable target values from the defaults; a re-load after a
-    // confirm re-seeds so the inputs reflect what was just persisted (the
-    // gateway echoes confirmed values back as defaults on subsequent GETs;
-    // when it does not, the user's typed values are re-derivable from the
-    // existing_decisions summaries shown per row).
+    // Seed the editable target values. Confirmed rows seed from the
+    // PERSISTED decision's `.to` (extractSavedTargetValue unwraps the JSON
+    // answer_value envelope) so coming BACK to a saved table shows every
+    // saved value in its input — change one of 98 and Confirm all again,
+    // instead of facing a wall of empty "needs a value" rows. Unconfirmed
+    // rows fall back to the ruleset/LLM default.
     const seeded: Record<string, string> = {};
-    // Confirmed rows seed from the PERSISTED answer value (so review mode
-    // and a Re-open both show what was actually saved), falling back to the
-    // ruleset/LLM default for unconfirmed rows.
     const valueByCode = new Map(
-      (data.existing_decisions ?? []).map((d) => [d.decision_code, d.answer_value]),
+      (data.existing_decisions ?? []).map((d) => [
+        d.decision_code,
+        extractSavedTargetValue(d.answer_value),
+      ]),
     );
     for (const row of data.rows ?? []) {
       const code = deriveDecisionCode(row.family, row.from, row.matched_rule_code);
@@ -270,6 +272,27 @@ export function ModernizationReviewPanel({
         usage_count: row.usage_count,
         example_cites: row.example_cites,
       }));
+      // Collision guard (2026-08-30, Kiro third bug): rows deriving the SAME
+      // code silently supersede one another in the decisions store — 98
+      // posted, 96 landed, and one of each colliding pair was LOST. Refuse
+      // the whole batch loudly, naming every collision.
+      const fromsByCode = new Map<string, string[]>();
+      for (const row of rows) {
+        fromsByCode.set(row.code, [...(fromsByCode.get(row.code) ?? []), row.from]);
+      }
+      const collisions = [...fromsByCode.entries()].filter(
+        ([, froms]) => froms.length > 1,
+      );
+      if (collisions.length > 0) {
+        setConfirmError(
+          `Refusing to confirm: ${collisions.length} decision-code collision${collisions.length === 1 ? '' : 's'} ` +
+            'would silently overwrite rows — ' +
+            collisions
+              .map(([code, froms]) => `${code} <- [${froms.join(', ')}]`)
+              .join('; '),
+        );
+        return;
+      }
       const result = await deps.confirmModernizationDecisions(
         projectId,
         architectureId,
@@ -283,8 +306,11 @@ export function ModernizationReviewPanel({
           `${result.failed.length} row(s) failed to confirm — see the rows below.`,
         );
       } else {
+        // Report writes AND distinct codes (they match because the collision
+        // guard above blocks any batch where they would not).
         setConfirmSuccess(
-          `Confirmed ${result.confirmed || rows.length} modernization decision(s).`,
+          `Confirmed ${result.confirmed || rows.length} modernization decision(s) ` +
+            `(${fromsByCode.size} distinct codes).`,
         );
         await loadReview();
       }

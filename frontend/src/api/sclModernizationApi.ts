@@ -169,10 +169,19 @@ async function parseErrorMessage(
 /**
  * Slug per the wire contract: lowercase, every run of non-alphanumeric
  * characters collapses to a single '-', leading/trailing '-' trimmed.
+ *
+ * 2026-08-30 (Kiro third bug): each `[]` maps to `-array` BEFORE the general
+ * collapse. The plain collapse TRIMMED a trailing `[]` entirely, so
+ * `String` and `String[]` both derived `modernize.types.string` — and the
+ * supersede-by-code decisions store silently kept only one of the pair
+ * (98 posted, 96 landed; the `String -> java.lang.String` row was lost).
+ * With the suffix: `String[]` -> `string-array`, `List<String[]>` ->
+ * `list-string-array` — every array/raw pair stays distinct.
  */
 export function slugForDecisionCode(value: string): string {
   return value
     .toLowerCase()
+    .replace(/\s*\[\s*\]/g, '-array')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
 }
@@ -192,6 +201,29 @@ export function deriveDecisionCode(
     return matchedRuleCode;
   }
   return `modernize.${slugForDecisionCode(family)}.${slugForDecisionCode(from)}`;
+}
+
+/**
+ * The plain saved TARGET value out of a persisted modernization decision.
+ *
+ * The confirm write stores `answer_value` as a JSON envelope
+ * (`{"from","to","family","provenance","usage_count","example_cites"}` —
+ * gateway `confirmModernizationDecisions`), so re-seeding the table's target
+ * inputs from a saved decision must extract `.to`, NOT paste the blob. A
+ * non-JSON / non-envelope value returns verbatim (tolerance for plain
+ * string decisions).
+ */
+export function extractSavedTargetValue(answerValue: string): string {
+  try {
+    const parsed = JSON.parse(answerValue) as unknown;
+    if (parsed && typeof parsed === 'object') {
+      const to = (parsed as Record<string, unknown>).to;
+      if (typeof to === 'string' && to.trim().length > 0) return to;
+    }
+  } catch {
+    // not JSON — fall through to the raw value
+  }
+  return answerValue;
 }
 
 // ============================================================================

@@ -211,8 +211,62 @@ describe('ModernizationReviewPanel', () => {
       ],
     });
 
-    // Success reloads the review (initial load + post-confirm reload).
+    // Success reloads the review (initial load + post-confirm reload), and
+    // the success copy reports the DISTINCT-code count (Kiro third bug: 98
+    // writes silently landing as 96 codes is now visible — and blocked).
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId('modernization-confirm-success')).toHaveTextContent(
+      '(3 distinct codes)',
+    );
+  });
+
+  it('REFUSES a batch where two rows derive the same code (supersede-by-code would drop one)', async () => {
+    // 'Foo Bar' and 'Foo.Bar' both slug to foo-bar -> the same derived code.
+    const colliding = reviewFixture({
+      rows: [
+        {
+          family: 'types',
+          matcher_key: 'typeReference:Foo Bar',
+          usage_count: 4,
+          example_cites: [],
+          matched_rule_code: null,
+          from: 'Foo Bar',
+          default_to: 'foo.bar.One',
+          provenance: 'ruleset_default',
+          notes: null,
+        },
+        {
+          family: 'types',
+          matcher_key: 'typeReference:Foo.Bar',
+          usage_count: 2,
+          example_cites: [],
+          matched_rule_code: null,
+          from: 'Foo.Bar',
+          default_to: 'foo.bar.Two',
+          provenance: 'ruleset_default',
+          notes: null,
+        },
+      ],
+    });
+    const { deps, confirmMock } = depsFor(colliding);
+    render(<ModernizationReviewPanel {...BASE} deps={deps} />);
+    await waitFor(() =>
+      expect(screen.getByTestId('modernization-confirm-all')).toBeInTheDocument(),
+    );
+
+    fireEvent.click(screen.getByTestId('modernization-confirm-all'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('modernization-confirm-error')).toBeInTheDocument(),
+    );
+    expect(screen.getByTestId('modernization-confirm-error')).toHaveTextContent(
+      'decision-code collision',
+    );
+    expect(screen.getByTestId('modernization-confirm-error')).toHaveTextContent(
+      'modernize.types.foo-bar <- [Foo Bar, Foo.Bar]',
+    );
+    // NOTHING was posted — no silent overwrite.
+    expect(confirmMock).not.toHaveBeenCalled();
   });
 
   it('shows the confirmed tick + persisted answer summary for a row whose derived code exists', async () => {
@@ -306,13 +360,24 @@ describe('ModernizationReviewPanel', () => {
 
   it('lands READ-ONLY when fully confirmed; Re-open edits; re-save returns to review (2026-08-30)', async () => {
     // Every row's derived code is confirmed; the DateTime row's PERSISTED
-    // value deliberately differs from the ruleset default.
+    // value deliberately differs from the ruleset default. answer_value is
+    // the REAL confirm-write JSON envelope — the panel must extract `.to`,
+    // never paste the blob into the inputs.
+    const envelope = (from: string, to: string) =>
+      JSON.stringify({
+        from,
+        to,
+        family: 'x',
+        provenance: 'ruleset_default',
+        usage_count: 1,
+        example_cites: [],
+      });
     const allConfirmed = reviewFixture({
       existing_decisions: [
         {
           decision_id: 'd-1',
           decision_code: 'modernize.dates.org-joda-time-localdate',
-          answer_value: 'java.time.LocalDate',
+          answer_value: envelope('org.joda.time.LocalDate', 'java.time.LocalDate'),
           answer_summary: null,
           scope_kind: 'architecture',
           created_at: '2026-08-30T00:00:00Z',
@@ -320,7 +385,7 @@ describe('ModernizationReviewPanel', () => {
         {
           decision_id: 'd-2',
           decision_code: 'modernize.dates.joda-datetime',
-          answer_value: 'java.time.ZonedDateTime',
+          answer_value: envelope('org.joda.time.DateTime', 'java.time.ZonedDateTime'),
           answer_summary: null,
           scope_kind: 'architecture',
           created_at: '2026-08-30T00:00:00Z',
@@ -328,7 +393,7 @@ describe('ModernizationReviewPanel', () => {
         {
           decision_id: 'd-3',
           decision_code: 'modernize.numerics.com-acme-wideid',
-          answer_value: 'java.math.BigInteger',
+          answer_value: envelope('com.acme.WideId', 'java.math.BigInteger'),
           answer_summary: null,
           scope_kind: 'architecture',
           created_at: '2026-08-30T00:00:00Z',
@@ -348,7 +413,8 @@ describe('ModernizationReviewPanel', () => {
     expect(screen.queryByTestId('modernization-confirm-all')).toBeNull();
     expect(screen.getByTestId('modernization-review-mode-note')).toBeInTheDocument();
 
-    // The PERSISTED value renders, not the ruleset default.
+    // The PERSISTED `.to` renders (extracted from the envelope — no JSON
+    // blob), not the ruleset default.
     const readonlyValues = screen
       .getAllByTestId('modernization-target-readonly')
       .map((el) => el.textContent);

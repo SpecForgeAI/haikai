@@ -598,6 +598,7 @@ export async function confirmModernizationDecisions(
   // Validate EVERYTHING first — a payload with any malformed row is rejected
   // whole, listing every offender (no partial-silent writes).
   const offenders: ModernizationRowOffender[] = [];
+  const firstIndexByCode = new Map<string, number>();
   rows.forEach((row, index) => {
     const code = typeof row?.code === 'string' ? row.code : null;
     if (!code || !code.startsWith(MODERNIZATION_DECISION_CODE_PREFIX)) {
@@ -609,6 +610,21 @@ export async function confirmModernizationDecisions(
     }
     if (typeof row?.to !== 'string' || row.to.trim().length === 0) {
       offenders.push({ index, code, reason: 'target mapping (to) must be non-empty' });
+    }
+    // Duplicate-code guard (2026-08-30, Kiro third bug): the decisions store
+    // supersedes by code, so two rows sharing one code silently keep only
+    // the LAST write (98 posted, 96 landed). Reject the batch loudly.
+    if (code) {
+      const firstIndex = firstIndexByCode.get(code);
+      if (firstIndex !== undefined) {
+        offenders.push({
+          index,
+          code,
+          reason: `duplicate decision code — collides with row #${firstIndex} and would silently supersede it`,
+        });
+      } else {
+        firstIndexByCode.set(code, index);
+      }
     }
   });
   if (offenders.length > 0) {
