@@ -32,6 +32,7 @@ vi.mock('../DbMigrationPack.module.css', () => ({
 const mockListFindings = vi.fn();
 const mockSetDisposition = vi.fn();
 const mockClearDisposition = vi.fn();
+const mockSuggestNextStep = vi.fn();
 
 vi.mock('../../../../api/dbMigrationPackApi', async () => {
   const actual = await vi.importActual<
@@ -45,6 +46,7 @@ vi.mock('../../../../api/dbMigrationPackApi', async () => {
       mockSetDisposition(...args),
     clearDbMigrationPackStructuralFindingDisposition: (...args: unknown[]) =>
       mockClearDisposition(...args),
+    suggestFindingNextStep: (...args: unknown[]) => mockSuggestNextStep(...args),
   };
 });
 
@@ -325,3 +327,61 @@ describe('DbMigrationPackStructuralFindingsPanel', () => {
   });
 });
 
+
+describe('Suggest next step — disposition advisor (2026-08-30)', () => {
+  it('renders the advice, prefills the note on Use-suggestion, and disables Fix-with-AI when unapplicable', async () => {
+    const fkFinding: DbMigrationPackStructuralFinding = {
+      key: 'relationships_without_fk_columns:all_relationships',
+      kind: 'relationships_without_fk_columns',
+      subject: 'all_relationships',
+      message: '3 relationships carry no fk_columns join metadata.',
+      details: [],
+      disposition: null,
+      note: null,
+      open: true,
+    };
+    mockListFindings.mockResolvedValue({ findings: [fkFinding] });
+    mockSuggestNextStep.mockResolvedValue({
+      advice: {
+        recommended_disposition: 'known_gap',
+        rationale: 'The referenced key is composite/temporal; record the debt.',
+        confidence: 'high',
+        caveats: ['Revisit if the parent gains a surrogate key.'],
+        suggested_note: 'Known gap: temporal composite parent key.',
+        fix_with_ai_applicable: false,
+        deterministic_constraint:
+          'The referenced key of screen_filter (key: FilterId, ValidFrom, ValidTo — temporal) is composite/temporal — Fix with AI is UNAPPLICABLE here.',
+      },
+      warnings: [],
+    });
+
+    render(
+      <DbMigrationPackStructuralFindingsPanel
+        projectId="proj-1"
+        architectureId="arch-1"
+        packId="pack-1"
+      />,
+    );
+    const suggest = await screen.findByTestId(`db-finding-advice-${fkFinding.key}`);
+    fireEvent.click(suggest);
+
+    // Advice card renders the recommendation + rationale + constraint.
+    await screen.findByTestId(`db-finding-advice-rationale-${fkFinding.key}`);
+    expect(
+      screen.getByTestId(`db-finding-advice-rationale-${fkFinding.key}`),
+    ).toHaveTextContent('record the debt');
+
+    // Fix-with-AI is disabled with the deterministic reason as its title.
+    const fixWithAi = screen.getByTestId(`db-gap-proposals-draft-${fkFinding.key}`);
+    expect(fixWithAi).toBeDisabled();
+    expect(fixWithAi.getAttribute('title')).toContain('UNAPPLICABLE');
+
+    // Use-suggestion opens the note draft PREFILLED — the human still confirms.
+    fireEvent.click(screen.getByTestId(`db-finding-advice-use-${fkFinding.key}`));
+    const noteInput = (await screen.findByTestId(
+      `db-pack-structural-finding-note-input-${fkFinding.key}`,
+    )) as HTMLInputElement;
+    expect(noteInput.value).toBe('Known gap: temporal composite parent key.');
+    expect(mockSetDisposition).not.toHaveBeenCalled();
+  });
+});
