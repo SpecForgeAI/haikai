@@ -474,14 +474,72 @@ export function buildSequenceSeeds(
         continue;
       }
       const targetQq = quotedQualifiedName(table.schemaName, m.table);
-      statements.push({
-        objectRef: ref,
-        sql:
-          `CREATE SEQUENCE IF NOT EXISTS ${quoteIdent(seqIdent)};\n` +
-          `SELECT setval('${seqIdent}', (SELECT COALESCE(MAX(${quoteIdent(m.column)}), 0) + 1 ` +
-          `FROM ${targetQq}), false);`,
-        note: `seeded from loaded ${m.table}.${m.column} max+1 (${gen.decision_ref ?? 'decision'}).`,
-      });
+      // C1 collision-safety (2026-08-30). The confirmed mapping names ONE
+      // table, but the same id column routinely lives in SEVERAL in-scope
+      // tables — and a sibling table can hold a HIGHER max than the mapped
+      // one (a live run seeded from the smaller table and re-issued ids a
+      // sibling's own allocator had already handed out; under a bitemporal
+      // PK the collision does not even fail loudly, it silently creates a
+      // second lineage under a live id).
+      //
+      // Fix: seed from the GREATEST max across EVERY in-scope table carrying
+      // the column. The result is never lower than the mapped table's max,
+      // so this can only reduce collision risk — and when the column is
+      // unique to one table the emitted SQL is byte-identical to before.
+      const mappedCol = String(m.column);
+      const mappedRef = String(m.table).toLowerCase();
+      const isMapped = (t: IrTable) =>
+        t.tableName.toLowerCase() === mappedRef ||
+        `${t.schemaName}.${t.tableName}`.toLowerCase() === mappedRef;
+      const carriers = ir.tables.filter(
+        (t) =>
+          t.objectType === 'table' &&
+          t.columns.some((c) => c.columnName.toLowerCase() === mappedCol.toLowerCase()),
+      );
+      const others = carriers
+        .filter((t) => !isMapped(t))
+        .sort((a, b) =>
+          `${a.schemaName}.${a.tableName}`.localeCompare(`${b.schemaName}.${b.tableName}`),
+        );
+      if (others.length === 0) {
+        // Unambiguous (or the mapping references something not in scope):
+        // unchanged emission.
+        statements.push({
+          objectRef: ref,
+          sql:
+            `CREATE SEQUENCE IF NOT EXISTS ${quoteIdent(seqIdent)};\n` +
+            `SELECT setval('${seqIdent}', (SELECT COALESCE(MAX(${quoteIdent(m.column)}), 0) + 1 ` +
+            `FROM ${targetQq}), false);`,
+          note: `seeded from loaded ${m.table}.${m.column} max+1 (${gen.decision_ref ?? 'decision'}).`,
+        });
+      } else {
+        const maxTerms = [
+          `COALESCE((SELECT MAX(${quoteIdent(mappedCol)}) FROM ${targetQq}), 0)`,
+          ...others.map(
+            (t) =>
+              `COALESCE((SELECT MAX(${quoteIdent(mappedCol)}) FROM ` +
+              `${quotedQualifiedName(t.schemaName, t.tableName)}), 0)`,
+          ),
+        ];
+        const otherNames = others
+          .map((t) => `${t.schemaName}.${t.tableName}`)
+          .join(', ');
+        statements.push({
+          objectRef: ref,
+          sql:
+            `CREATE SEQUENCE IF NOT EXISTS ${quoteIdent(seqIdent)};\n` +
+            `SELECT setval('${seqIdent}', (SELECT GREATEST(\n    ` +
+            maxTerms.join(',\n    ') +
+            `\n  ) + 1), false);`,
+          note:
+            `seeded from the GREATEST ${mappedCol} max across ${carriers.length} loaded ` +
+            `table(s) — mapped ${m.table} plus ${otherNames} ` +
+            `(${gen.decision_ref ?? 'decision'}). The confirmed mapping named ` +
+            `${m.table} alone; seeding from one table while a sibling holds a HIGHER ` +
+            `${mappedCol} would re-issue live ids. Confirm ${m.table} is the ` +
+            `authoritative owner if you want the single-table form.`,
+        });
+      }
       viewSelects.push(
         `SELECT '${String(m.sequence_name).replace(/'/g, "''")}' AS ` +
           `${quoteIdent(gen.name_column ?? 'sequence_name')}, ` +
@@ -860,9 +918,18 @@ export function buildDbMigrationPackArtifacts(
   // --- consolidated changesets ---------------------------------------------
   const schemas = [...new Set(orderedTables.map((t) => t.schemaName))];
   const schemasContent = emitSchemasChangeset(schemas);
+  // Structural accounting hoisted (2026-08-30): the FK emitter's empty-file
+  // banner names how many relationships carry no join metadata.
+  const structuralAccounting = ir.structuralAccounting ?? accountingFromIr(ir);
   const fkContent = emitForeignKeysChangeset({
     foreignKeys: ir.foreignKeys,
     emittedTables: emittedTableNames,
+    relationshipsWithoutJoinMetadata:
+      typeof structuralAccounting?.relationships_total === 'number' &&
+      typeof structuralAccounting?.relationships_with_fk_columns === 'number'
+        ? structuralAccounting.relationships_total -
+          structuralAccounting.relationships_with_fk_columns
+        : undefined,
   });
   const indexResult = emitIndexesChangeset({
     tables: orderedTables,
@@ -989,7 +1056,6 @@ export function buildDbMigrationPackArtifacts(
     flagged: coverage.filter((c) => c.disposition === 'flagged').length,
   };
 
-  const structuralAccounting = ir.structuralAccounting ?? accountingFromIr(ir);
   const structuralFindings = deriveStructuralFindings(structuralAccounting);
   const structuralWarnings = structuralFindings.map((f) => f.message);
 

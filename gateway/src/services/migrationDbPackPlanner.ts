@@ -1437,12 +1437,29 @@ export function buildDbEpicStories(args: BuildDbEpicStoriesArgs): MigrationBookO
     const tables = orderedTables(manifest);
     const rowCounts = manifest.bulk_load?.expected_row_counts ?? {};
     const totalRows = Object.values(rowCounts).reduce((a, b) => a + (b ?? 0), 0);
+    // Row-count COVERAGE (2026-08-30). `expected_row_counts` only carries the
+    // tables whose count was actually captured: estimatedRowCount is
+    // populated opportunistically from profiling findings ("best-effort"),
+    // and the pack handler OMITS null-count tables from the map entirely.
+    // The sum is therefore over the COVERED subset, while `tables.length`
+    // counts every table — two different denominators in one sentence. A
+    // live plan presented a partial sum as if it were the total and a
+    // cutover window was sized from a figure several times too small. Never
+    // present a partial sum as the total.
+    const coveredTables = Object.keys(rowCounts).length;
+    const rowsLabel =
+      coveredTables === 0
+        ? 'source row counts NOT captured'
+        : coveredTables < tables.length
+          ? `~${totalRows.toLocaleString('en-GB')} rows counted across only ` +
+            `${coveredTables} of ${tables.length} tables — TOTAL UNKNOWN`
+          : `~${totalRows.toLocaleString('en-GB')} rows`;
     stories.push(
       mkItem({
         id: `${epic.id}-s-bulk-load`,
         type: 'story',
         parentId: bulk.id,
-        title: `Build the initial bulk load (${tables.length} tables, ~${totalRows.toLocaleString('en-GB')} rows)`,
+        title: `Build the initial bulk load (${tables.length} tables, ${rowsLabel})`,
         description:
           'Implement the weekend bulk load from the pack scripts: FK-ordered extract from the source, staged files, COPY into the target, structural changesets before, post-load changesets after.',
         workstream: ws,

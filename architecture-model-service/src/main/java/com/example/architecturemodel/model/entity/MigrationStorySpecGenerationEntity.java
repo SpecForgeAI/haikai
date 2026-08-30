@@ -129,8 +129,16 @@ public class MigrationStorySpecGenerationEntity {
      * The book-of-work hierarchy item id (from the {@code book_of_work_json}
      * blob in Spec 1's row). Nullable for the same reason as
      * {@link #bookOfWorkId}.
+     *
+     * <p>Length widened 128 -> 512 on 2026-08-30 (changeset
+     * {@code 228-widen-book-item-id}). The id embeds the flattened
+     * fully-qualified symbol, so a NESTED class in a deep package produced a
+     * 129-char value; at 128 the insert failed with SQLSTATE 22001 and,
+     * because the batch is one transaction, the ENTIRE 25-row batch rolled
+     * back. Keep this in step with the DB column — {@code ddl-auto: validate}
+     * is on.</p>
      */
-    @Column(name = "book_item_id", length = 128)
+    @Column(name = "book_item_id", length = 512)
     private String bookItemId;
 
     /**

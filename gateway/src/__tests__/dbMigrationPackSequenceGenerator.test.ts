@@ -84,3 +84,109 @@ describe('buildSequenceSeedStatements — sequence-generator idiom', () => {
     );
   });
 });
+
+/**
+ * C1 collision-safety (2026-08-30): the confirmed mapping names ONE table but
+ * the same id column lives in several — a sibling holding a HIGHER max means
+ * seeding from the mapped table alone re-issues live ids. The seed now takes
+ * the GREATEST max across every in-scope carrier; the single-carrier output
+ * stays byte-identical.
+ */
+describe('buildSequenceSeeds — GREATEST across every carrier of the column', () => {
+  const col = (name: string) => ({ columnName: name });
+  const gen = {
+    strategy: 'native',
+    name_column: 'SequenceName',
+    number_column: 'SequenceNumber',
+    decision_ref: 'F-9',
+    mappings: [
+      { sequence_name: 'WidgetId', table: 'screen_filter', column: 'WidgetId' },
+    ],
+  };
+  const irWith = (tables: Array<Record<string, unknown>>) =>
+    ({
+      tables,
+      foreignKeys: [],
+      sequences: [],
+      resolvedDecisions: {},
+    }) as never;
+
+  it('a sibling carrier joins the seed via GREATEST; the mapped table stays first', () => {
+    const { statements } = buildSequenceSeeds(
+      irWith([
+        baseTable({ sequenceGenerator: gen, tableName: 'seq_registry' }),
+        baseTable({ tableName: 'screen_filter', columns: [col('WidgetId')] }),
+        baseTable({ tableName: 'view_registry', columns: [col('WidgetId')] }),
+      ]),
+      100,
+      [],
+    );
+    const widget = statements.find((s) => s.objectRef.includes('WidgetId'));
+    expect(widget?.sql).toContain('GREATEST(');
+    expect(widget?.sql).toContain('COALESCE((SELECT MAX("WidgetId") FROM "dbo"."screen_filter"), 0)');
+    expect(widget?.sql).toContain('COALESCE((SELECT MAX("WidgetId") FROM "dbo"."view_registry"), 0)');
+    // Mapped table is the FIRST term.
+    expect(widget!.sql!.indexOf('"dbo"."screen_filter"')).toBeLessThan(
+      widget!.sql!.indexOf('"dbo"."view_registry"'),
+    );
+    expect(widget?.note).toContain('GREATEST');
+    expect(widget?.note).toContain('dbo.view_registry');
+    expect(widget?.note).toContain('re-issue live ids');
+  });
+
+  it('tables NOT carrying the column never join the seed', () => {
+    const { statements } = buildSequenceSeeds(
+      irWith([
+        baseTable({ sequenceGenerator: gen, tableName: 'seq_registry' }),
+        baseTable({ tableName: 'screen_filter', columns: [col('WidgetId')] }),
+        baseTable({ tableName: 'view_registry', columns: [col('WidgetId')] }),
+        baseTable({ tableName: 'audit_trail_info', columns: [col('OtherId')] }),
+      ]),
+      100,
+      [],
+    );
+    const widget = statements.find((s) => s.objectRef.includes('WidgetId'));
+    expect(widget?.sql).not.toContain('audit_trail_info');
+  });
+
+  it('is symmetric: whichever carrier is the mapped one, BOTH maxes are in the seed', () => {
+    const mappedToView = {
+      ...gen,
+      mappings: [{ sequence_name: 'WidgetId', table: 'view_registry', column: 'WidgetId' }],
+    };
+    const { statements } = buildSequenceSeeds(
+      irWith([
+        baseTable({ sequenceGenerator: mappedToView, tableName: 'seq_registry' }),
+        baseTable({ tableName: 'screen_filter', columns: [col('WidgetId')] }),
+        baseTable({ tableName: 'view_registry', columns: [col('WidgetId')] }),
+      ]),
+      100,
+      [],
+    );
+    const widget = statements.find((s) => s.objectRef.includes('WidgetId'));
+    expect(widget?.sql).toContain('"dbo"."view_registry"');
+    expect(widget?.sql).toContain('"dbo"."screen_filter"');
+    expect(widget!.sql!.indexOf('"dbo"."view_registry"')).toBeLessThan(
+      widget!.sql!.indexOf('"dbo"."screen_filter"'),
+    );
+  });
+
+  it('a single-carrier column emits the EXACT single-table form (byte-identical)', () => {
+    const { statements } = buildSequenceSeeds(
+      irWith([
+        baseTable({ sequenceGenerator: gen, tableName: 'seq_registry' }),
+        baseTable({ tableName: 'screen_filter', columns: [col('WidgetId')] }),
+        baseTable({ tableName: 'view_registry', columns: [col('FilterId')] }),
+      ]),
+      100,
+      [],
+    );
+    const widget = statements.find((s) => s.objectRef.includes('WidgetId'));
+    expect(widget?.sql).toBe(
+      'CREATE SEQUENCE IF NOT EXISTS "widgetid_seq";\n' +
+        `SELECT setval('widgetid_seq', (SELECT COALESCE(MAX("WidgetId"), 0) + 1 ` +
+        'FROM "dbo"."screen_filter"), false);',
+    );
+    expect(widget?.note).toBe('seeded from loaded screen_filter.WidgetId max+1 (F-9).');
+  });
+});

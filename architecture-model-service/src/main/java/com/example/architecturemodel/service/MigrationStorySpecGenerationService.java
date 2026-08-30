@@ -1091,18 +1091,45 @@ public class MigrationStorySpecGenerationService {
     }
 
     /**
-     * True when the row is a deterministic MANUAL-GATE spec — identified by the
-     * {@code focused_context_refs_json.source == 'code_plan_manual_gate'} marker
-     * the gateway code-carriage stamps. Manual-gate specs intentionally omit
-     * the decisions/interfaces/assumptions sections (they are HUMAN/WIZARD
-     * procedure + gate-condition text), so full-shape-spec heading warnings do
-     * not apply to them.
+     * Every {@code focused_context_refs_json.source} marker that identifies a
+     * DETERMINISTICALLY ASSEMBLED spec — one built by a gateway carriage from
+     * committed facts, a migration pack, or a confirmed manifest, rather than
+     * authored as a full shape-spec.
+     *
+     * <p>The manual-gate exemption below already established the rule: a
+     * deterministic carriage intentionally omits the decisions / interfaces /
+     * assumptions sections, so {@code parser_missing_heading} for them is
+     * spurious noise. The exemption was just never widened past the one
+     * marker that first hit it.</p>
+     *
+     * <p>Observed consequence: on a mostly-deterministic book review nearly
+     * every spec carried three {@code parser_missing_heading} warnings that
+     * no reader could act on — the specs were mechanically assembled and
+     * correctly had no such sections. That noise also dilutes the warnings
+     * that DO matter (unresolved references, capability conflicts).</p>
      */
-    private static boolean isManualGateSpec(MigrationStorySpecGenerationEntity entity) {
+    private static final java.util.Set<String> DETERMINISTIC_CARRIAGE_SOURCES = java.util.Set.of(
+        "code_plan_manual_gate",              // HUMAN/WIZARD procedure + gate text
+        "committed_model_code_carriage",      // endpoint specs from committed facts
+        "committed_model_internal_carriage",  // internal-process specs
+        "scl_spec_carriage",                  // corpus-derived contract specs
+        "db_migration_pack",                  // DB-tier specs carrying pack files
+        "scaffold_bootstrap_carriage"         // seed build-file scaffold spec
+    );
+
+    /**
+     * True when the row was assembled deterministically by a gateway carriage
+     * (see {@link #DETERMINISTIC_CARRIAGE_SOURCES}). Such rows never contain
+     * the full-shape-spec headings by design, so heading warnings are
+     * suppressed for them. Sections are still PARSED (and land correctly
+     * empty) — only the warnings are skipped. An unknown source is NOT
+     * exempt: the allow-list stays opt-in.
+     */
+    private static boolean isDeterministicCarriageSpec(MigrationStorySpecGenerationEntity entity) {
         Map<String, Object> refs = entity.getFocusedContextRefsJson();
         if (refs == null) return false;
         Object source = refs.get("source");
-        return "code_plan_manual_gate".equals(source);
+        return source instanceof String s && DETERMINISTIC_CARRIAGE_SOURCES.contains(s);
     }
 
     /**
@@ -1127,16 +1154,22 @@ public class MigrationStorySpecGenerationService {
         entity.setInterfacesJson(result.interfaces().isEmpty() ? null : new ArrayList<>(result.interfaces()));
         entity.setAssumptionsJson(result.assumptions().isEmpty() ? null : new ArrayList<>(result.assumptions()));
 
-        // Manual-gate exemption (Phase 0, 2026-07-20): manual-gate specs
-        // (deterministic HUMAN/WIZARD procedure text, focused_context_refs
-        // source 'code_plan_manual_gate') intentionally omit the
-        // decisions/interfaces/assumptions sections — appending
-        // parser_missing_heading warnings for them is spurious noise. Sections
-        // are still parsed (correctly empty); only the warnings are skipped.
-        if (isManualGateSpec(entity)) {
+        // Deterministic-carriage exemption. Phase 0 (2026-07-20) introduced
+        // this for manual-gate specs only; widened 2026-08-30 to EVERY
+        // deterministic carriage source, because they all share the same
+        // property — the spec is mechanically assembled from committed facts
+        // / a pack / a confirmed manifest and intentionally omits the
+        // decisions/interfaces/assumptions sections, so
+        // parser_missing_heading is spurious noise for all of them.
+        // Sections are still parsed (correctly empty); only the warnings are
+        // skipped.
+        if (isDeterministicCarriageSpec(entity)) {
             log.debug(
-                "[diag-ams] spec_generation parser_warnings_skipped_manual_gate workItemId={}",
-                shortPrefix(entity.getWorkItemId()));
+                "[diag-ams] spec_generation parser_warnings_skipped_deterministic_carriage "
+                    + "workItemId={} source={}",
+                shortPrefix(entity.getWorkItemId()),
+                entity.getFocusedContextRefsJson() == null
+                    ? null : entity.getFocusedContextRefsJson().get("source"));
             return;
         }
 

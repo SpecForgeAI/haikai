@@ -19,6 +19,7 @@
 import {
   CodeSpecFacts,
   buildCodeSpecText,
+  buildInternalProcessSpecText,
   canonicalJson,
   codeCarriageMarkersFromBlob,
   isCodeCarriageStory,
@@ -497,6 +498,64 @@ describe('spec text structure', () => {
     expect(text).toContain('## Behaviour blocks on the data-effect paths (1)');
     expect(text).toContain('## Parity obligation');
     expect(text).not.toContain('Captured examples');
+  });
+});
+
+describe('ZERO-DATA-EFFECTS CAVEAT (C3, 2026-08-30)', () => {
+  it('an endpoint with zero effects carries the blind-spot caveat, engine-agnostically', () => {
+    const text = buildCodeSpecText({
+      story: story(),
+      facts: facts({ dataEffects: [] }),
+      behaviours: [],
+      omissions: [],
+    });
+    expect(text).toContain('### Data effects (0)');
+    expect(text).toContain('_No committed data-effect edges for this endpoint._');
+    expect(text).toContain(
+      '**Zero data effects is NOT evidence that this endpoint writes nothing.**',
+    );
+    // Both named blind spots + the manual confirmation steps.
+    expect(text).toContain('**Stored procedures.**');
+    expect(text).toContain('{call ...}');
+    expect(text).toContain('DAO interface -> implementation delegation');
+    expect(text).toContain("source database's own procedure catalogue");
+    expect(text).toContain('DB-delta oracle for this story is unsafe');
+    // A re-scan alone is NOT presented as the remedy.
+    expect(text).toContain('a re-scan will report zero');
+    // Engine-agnostic: this is a GENERIC module (engine-name guard).
+    expect(text).not.toMatch(/sysobjects|sybase|postgres/i);
+  });
+
+  it('an internal process with zero effects carries the caveat too (its oracle reads the empty scope)', () => {
+    const text = buildInternalProcessSpecText({
+      story: story({ protocol: 'internal', title: 'Implement OrderSyncJob' }),
+      facts: {
+        endpoints: [
+          {
+            id: 'e-1',
+            name: 'SCHEDULED 0 0 * * * *',
+            verb: null,
+            path: null,
+            endpointType: 'SCHEDULED',
+            protocol: 'internal',
+            interfaceName: 'OrderSyncJob',
+            requestContract: null,
+            responseContract: null,
+            protocolMetadata: null,
+          },
+        ],
+        dataEffects: [],
+        behaviours: [],
+      },
+    });
+    expect(text).toContain('### Data effects (0)');
+    // The pre-existing empty-scope line stays; the caveat rides beneath it.
+    expect(text).toContain('the effect scope below is EMPTY');
+    expect(text).toContain(
+      '**Zero data effects is NOT evidence that this internal process writes nothing.**',
+    );
+    expect(text).toContain('**Stored procedures.**');
+    expect(text).not.toMatch(/sysobjects|sybase|postgres/i);
   });
 });
 
