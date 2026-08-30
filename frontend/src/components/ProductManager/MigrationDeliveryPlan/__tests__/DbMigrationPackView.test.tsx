@@ -545,3 +545,41 @@ describe('DbMigrationPackView (Task 6.1)', () => {
   });
 });
 
+
+describe('untranslated-block key uniqueness (2026-08-30 duplicate-key bug)', () => {
+  it('an object in BOTH lists plus a repeated ref renders without React key collisions', async () => {
+    // Pre-fix both sibling lists keyed `${kind}-${object_ref}`; an object in
+    // both (or repeated in one) collided and React duplicated whole sibling
+    // subtrees on the next re-render — the thrice-rendered findings panel.
+    const manifest = {
+      ...MANIFEST,
+      requires_translation_spec_2: [
+        { kind: 'stored_procedure', object_ref: 'dbo.sp_calc', finding_ids: [] },
+        { kind: 'stored_procedure', object_ref: 'dbo.sp_calc', finding_ids: [] },
+      ],
+      manual_recreation: [
+        { kind: 'stored_procedure', object_ref: 'dbo.sp_calc', finding_ids: [] },
+      ],
+    };
+    mockListPacks.mockResolvedValue([buildPack({ manifest_json: manifest })]);
+    mockGetPack.mockResolvedValue(buildPack({ manifest_json: manifest }));
+    mockListFiles.mockResolvedValue(FILES);
+
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      renderView();
+      await waitFor(() =>
+        expect(screen.getByTestId('db-pack-untranslated')).toBeInTheDocument(),
+      );
+      const keyWarnings = errorSpy.mock.calls.filter((args) =>
+        String(args[0] ?? '').includes('two children with the same key'),
+      );
+      expect(keyWarnings).toEqual([]);
+      // Every entry renders exactly once (2 requires-translation + 1 manual).
+      const section = screen.getByTestId('db-pack-untranslated');
+      expect(section.querySelectorAll('p').length).toBe(3);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+});

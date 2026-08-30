@@ -620,9 +620,9 @@ export const DbMigrationPackView: React.FC<DbMigrationPackViewProps> = ({
                       </tr>
                     </thead>
                     <tbody>
-                      {manifest.coverage.objects.map((o) => (
+                      {manifest.coverage.objects.map((o, i) => (
                         <tr
-                          key={`${o.objectType}-${o.objectRef}`}
+                          key={`coverage:${o.objectType}-${o.objectRef}-${i}`}
                           data-testid={`db-pack-disposition-${o.objectRef}`}
                         >
                           <td>{o.objectType}</td>
@@ -681,18 +681,25 @@ export const DbMigrationPackView: React.FC<DbMigrationPackViewProps> = ({
                   <h4 className={styles.manifestSectionTitle}>
                     Not translated by this pack
                   </h4>
-                  {manifest.requires_translation_spec_2.map((u) => (
+                  {/* Keys are NAMESPACED per list AND index-suffixed
+                      (2026-08-30): the two sibling lists shared the
+                      `${kind}-${object_ref}` template, so an object present
+                      in BOTH (or a ref repeated within one) collided —
+                      React's duplicate-key reconciliation then duplicated
+                      whole sibling subtrees on the next re-render (the
+                      thrice-rendered findings panel; hard refresh reset it). */}
+                  {manifest.requires_translation_spec_2.map((u, i) => (
                     <p
-                      key={`${u.kind}-${u.object_ref}`}
+                      key={`requires-translation:${u.kind}-${u.object_ref}-${i}`}
                       className={styles.manifestNote}
                     >
                       <span className={styles.badge}>{u.kind}</span> {u.object_ref}{' '}
                       — requires translation (spec 2)
                     </p>
                   ))}
-                  {manifest.manual_recreation.map((u) => (
+                  {manifest.manual_recreation.map((u, i) => (
                     <p
-                      key={`${u.kind}-${u.object_ref}`}
+                      key={`manual-recreation:${u.kind}-${u.object_ref}-${i}`}
                       className={styles.manifestNote}
                     >
                       <span className={styles.badge}>{u.kind}</span> {u.object_ref}{' '}
