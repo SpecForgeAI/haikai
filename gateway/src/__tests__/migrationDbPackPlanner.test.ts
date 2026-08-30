@@ -524,6 +524,13 @@ describe('buildDbEpicStories — data migration + cutover epics', () => {
     const stories = expandEpic(makePackView(), `${DATA_STREAM}-epic-load`, DATA_STREAM);
     const bulk = stories.find((s) => s.id.endsWith('-s-bulk-load'))!;
     expect(bulk.title).toContain('8 tables');
+    // Row-count coverage honesty (2026-08-30): this fixture was ALWAYS
+    // partial (8 tables, 2 captured counts) and the old title presented the
+    // partial sum as if it were the total — the '8 tables' assertion above
+    // never caught it. The label now names both denominators.
+    expect(bulk.title).toContain(
+      '~6,000 rows counted across only 2 of 8 tables — TOTAL UNKNOWN',
+    );
     expect(bulk.tags).toContain(SEED_DB_PACK_FILES_TAG);
 
     const needsDecision = stories.find((s) => s.id.endsWith('-s-incr-needs_decision'))!;
@@ -545,6 +552,27 @@ describe('buildDbEpicStories — data migration + cutover epics', () => {
     expect(
       (reconciliation as MigrationBookOfWorkItem & { packFilePaths?: string[] }).packFilePaths
     ).toEqual(['reconcile/reconciliation.sql', 'reconcile/build-report.sh']);
+  });
+
+  it('bulk title: FULL row-count coverage reads as a plain total (no coverage caveat)', () => {
+    const view = makePackView();
+    const counts: Record<string, number> = {};
+    for (const t of view.manifest.bulk_load.table_order) counts[t] = 100;
+    view.manifest.bulk_load.expected_row_counts = counts;
+    const stories = expandEpic(view, `${DATA_STREAM}-epic-load`, DATA_STREAM);
+    const bulk = stories.find((s) => s.id.endsWith('-s-bulk-load'))!;
+    expect(bulk.title).toContain('8 tables, ~800 rows');
+    expect(bulk.title).not.toContain('TOTAL UNKNOWN');
+    expect(bulk.title).not.toContain('NOT captured');
+  });
+
+  it('bulk title: ZERO captured counts says so — never a misleading "~0 rows"', () => {
+    const view = makePackView();
+    view.manifest.bulk_load.expected_row_counts = {};
+    const stories = expandEpic(view, `${DATA_STREAM}-epic-load`, DATA_STREAM);
+    const bulk = stories.find((s) => s.id.endsWith('-s-bulk-load'))!;
+    expect(bulk.title).toContain('8 tables, source row counts NOT captured');
+    expect(bulk.title).not.toContain('~0 rows');
   });
 
   it('cutover epic: final delta, sequence seeding at swap-over, job enablement, verification', () => {
