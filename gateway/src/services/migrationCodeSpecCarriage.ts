@@ -403,6 +403,58 @@ function fencedText(lines: string[], label: string, body: string): void {
   lines.push(fence);
 }
 
+/**
+ * C3 (2026-08-30): name the KNOWN blind spots whenever an endpoint or
+ * internal process resolves to ZERO data effects.
+ *
+ * "Data effects (0)" reads as "this writes nothing", and the downstream
+ * DB-delta oracle consumes it as an EMPTY expected delta — so a process that
+ * really does write either passes the oracle trivially or makes every real
+ * write look like a regression.
+ *
+ * A live estate showed the failure at scale: every internal process reported
+ * zero effects while a large minority demonstrably wrote. Two shapes
+ * accounted for all of them — a batch main delegating to a DAO interface
+ * whose INSERT/UPDATE lives in the `*Impl`, and a batch main invoking a
+ * stored PROCEDURE through the project's own SQL-executor abstraction.
+ *
+ * Root cause: the walker recognises the JPA stored-procedure query API but
+ * not a callable-statement invocation nor a project-specific SQL-executor
+ * abstraction, and the procedure NAME is often assembled from a constant map
+ * with token substitution, which no static walk folds today. So "re-scan and
+ * commit" alone will report zero AGAIN — the operator has to know that
+ * before trusting it.
+ *
+ * Engine-agnostic by design: naming a concrete engine or catalogue table
+ * here would put engine knowledge in a generic module (see the engine-name
+ * guard).
+ *
+ * This caveat does not pretend the traversal is fixed. It stops a false
+ * negative from being read as a verified zero.
+ */
+function zeroDataEffectCaveat(kind: 'endpoint' | 'internal process'): string[] {
+  return [
+    `> **Zero data effects is NOT evidence that this ${kind} writes nothing.**`,
+    '> The effect walk has known blind spots, and a re-scan will report zero,',
+    '> again wherever they apply:',
+    '>',
+    '> 1. **Stored procedures.** Only the JPA stored-procedure query API is',
+    '>    recognised. Invocations through a callable statement, a `{call ...}`',
+    '>    escape, or a project-specific SQL-executor abstraction are not',
+    '>    followed — and where the procedure name is assembled from a constant,',
+    '>    map or string substitution it cannot be resolved statically at all.',
+    '>    Everything those procedures write is invisible here.',
+    '> 2. **DAO interface -> implementation delegation.** A call to an interface',
+    '>    method whose SQL lives in the `*Impl` may not be joined up.',
+    '>',
+    `> Before trusting an empty effect scope, confirm by hand: list this ${kind}'s`,
+    '> DAO / executor collaborators and read their SQL, then list the stored',
+    "> procedures it reaches from the source database's own procedure catalogue.",
+    '> If either shows writes, the DB-delta oracle for this story is unsafe',
+    '> until the effects are captured or recorded manually.',
+  ];
+}
+
 export interface BuildCodeSpecTextArgs {
   story: CarriedStory;
   facts: CodeSpecFacts;
@@ -495,6 +547,8 @@ export function buildCodeSpecText(args: BuildCodeSpecTextArgs): string {
     if (effects.length === 0) {
       lines.push('');
       lines.push('_No committed data-effect edges for this endpoint._');
+      lines.push('');
+      lines.push(...zeroDataEffectCaveat('endpoint'));
     }
     for (const effect of effects) {
       lines.push('');
@@ -644,6 +698,8 @@ export function buildInternalProcessSpecText(args: {
         '_No committed data-effect edges — the effect scope below is EMPTY; ' +
           'capture the effects (re-scan + commit) before relying on the recipe._'
       );
+      lines.push('');
+      lines.push(...zeroDataEffectCaveat('internal process'));
     }
     for (const effect of effects) {
       if (effect.dataEntityPointId) effectRefs.add(effect.dataEntityPointId);
