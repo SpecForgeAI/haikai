@@ -3,14 +3,20 @@
  *
  *  1. review merges LLM proposals ONLY for requested froms (the guard drops
  *     unrequested proposals);
- *  2. LLM failure is fail-soft — unmapped rows stay unmapped;
+ *  2. LLM failure is fail-soft for the RENDER but LOUD on the wire
+ *     (2026-08-30: proposalPass.status 'failed' — a failed pass previously
+ *     rendered as legitimate-looking "needs a value" rows);
  *  3. confirm persists via the mocked EXISTING decisions write path with the
  *     exact decisionCode / answerValue / answerSummary / scopeKind shapes;
  *  4. invalid rows are rejected whole, listing every offender;
  *  5. existing modernize.* decisions surface in the review (non-modernize
  *     decisions filtered out);
  *  6. no scan -> SclModernizationNoScanError;  per-row persist failures are
- *     collected, never partial-silent.
+ *     collected, never partial-silent;
+ *  7. proposal determinism (2026-08-30): generated proposals persist into the
+ *     scan's stats_json (merge-spread) and REPLAY on later loads without an
+ *     LLM call; regenerate bypasses the cache and re-persists; a failed
+ *     regenerate replays the surviving cache (defaults never vanish).
  */
 
 jest.mock('../logger', () => ({
@@ -76,6 +82,7 @@ interface MockDeps extends SclModernizationDeps {
   fetchDecisions: jest.Mock;
   postDecision: jest.Mock;
   llm: jest.Mock;
+  patchScan: jest.Mock;
 }
 
 function makeDeps(overrides: Partial<MockDeps> = {}): MockDeps {
@@ -89,7 +96,35 @@ function makeDeps(overrides: Partial<MockDeps> = {}): MockDeps {
     fetchDecisions: jest.fn().mockResolvedValue([MODERNIZE_DECISION, OTHER_DECISION]),
     postDecision: jest.fn().mockResolvedValue({}),
     llm: jest.fn().mockResolvedValue({ content: '[]' }),
+    patchScan: jest.fn().mockResolvedValue(undefined),
     ...overrides,
+  };
+}
+
+/** A scan whose stats_json carries a cached proposal set for Money (plus a
+ * sibling stats key that any persist must preserve via merge-spread). */
+function scanWithCachedProposals() {
+  return {
+    id: 'scan-1',
+    status: 'completed',
+    stats_json: {
+      near_duplicate_cluster: [{ keep: 'x' }],
+      modernization_proposals: {
+        generated_at: '2026-08-29T09:00:00Z',
+        proposals: [
+          {
+            from: 'com.thirdparty.Money',
+            proposed_to: 'javax.money.MonetaryAmount',
+            rationale: 'cached earlier',
+          },
+          {
+            from: 'com.never.Requested',
+            proposed_to: 'java.lang.Object',
+            rationale: 'stale hallucination — the apply guard must drop it',
+          },
+        ],
+      },
+    },
   };
 }
 
@@ -139,9 +174,44 @@ describe('buildModernizationReview — LLM proposals', () => {
     const joda = review.rows.find((r) => r.from === 'org.joda.time.LocalDate');
     expect(joda?.provenance).toBe('ruleset_default');
     expect(joda?.defaultTo).toBe('java.time.LocalDate');
+
+    // 2026-08-30: the pass reports ok/generated on the wire...
+    expect(review.proposalPass).toMatchObject({
+      status: 'ok',
+      source: 'generated',
+      eligible: 1,
+      proposed: 1,
+      error: null,
+    });
+    // ...and PERSISTS the set per scan (snake_case, merge-spread of stats).
+    expect(deps.patchScan).toHaveBeenCalledTimes(1);
+    const [pProj, pArch, pScan, statsJson] = deps.patchScan.mock.calls[0] as [
+      string,
+      string,
+      string,
+      Record<string, unknown>,
+    ];
+    expect([pProj, pArch, pScan]).toEqual(['p1', 'arch-1', 'scan-1']);
+    const cache = statsJson.modernization_proposals as {
+      generated_at: string;
+      proposals: Array<Record<string, unknown>>;
+    };
+    expect(typeof cache.generated_at).toBe('string');
+    expect(cache.proposals).toEqual([
+      {
+        from: 'com.thirdparty.Money',
+        proposed_to: 'java.math.BigDecimal',
+        rationale: 'Exact-scale decimal carrier in the JDK.',
+      },
+      {
+        from: 'com.never.Requested',
+        proposed_to: 'java.lang.Object',
+        rationale: 'hallucinated — must be dropped',
+      },
+    ]);
   });
 
-  it('keeps unmapped rows unmapped when the LLM call fails (fail-soft)', async () => {
+  it('LLM failure keeps rows unmapped but is LOUD on the wire (failed/none), nothing persisted', async () => {
     const deps = makeDeps({ llm: jest.fn().mockRejectedValue(new Error('rate limited')) });
 
     const review = await buildModernizationReview(ARGS, deps);
@@ -149,6 +219,114 @@ describe('buildModernizationReview — LLM proposals', () => {
     const money = review.rows.find((r) => r.from === 'com.thirdparty.Money');
     expect(money?.provenance).toBe('unmapped');
     expect(money?.defaultTo).toBeNull();
+    // 2026-08-30: no more silent fail-soft — the wire names the failure.
+    expect(review.proposalPass).toMatchObject({
+      status: 'failed',
+      source: 'none',
+      eligible: 1,
+      proposed: 0,
+      error: 'rate limited',
+    });
+    expect(deps.patchScan).not.toHaveBeenCalled();
+  });
+
+  it('REPLAYS the cached per-scan proposals without an LLM call (deterministic loads)', async () => {
+    const deps = makeDeps({
+      fetchLatestScan: jest.fn().mockResolvedValue(scanWithCachedProposals()),
+    });
+
+    const review = await buildModernizationReview(ARGS, deps);
+
+    expect(deps.llm).not.toHaveBeenCalled();
+    expect(deps.patchScan).not.toHaveBeenCalled();
+    const money = review.rows.find((r) => r.from === 'com.thirdparty.Money');
+    expect(money?.provenance).toBe('llm_proposed');
+    expect(money?.defaultTo).toBe('javax.money.MonetaryAmount');
+    expect(money?.proposalRationale).toBe('cached earlier');
+    // The apply guard drops the stale unrequested entry on replay too.
+    expect(review.rows.some((r) => r.defaultTo === 'java.lang.Object')).toBe(false);
+    expect(review.proposalPass).toMatchObject({
+      status: 'ok',
+      source: 'cache',
+      eligible: 1,
+      proposed: 1,
+      error: null,
+      generatedAt: '2026-08-29T09:00:00Z',
+    });
+  });
+
+  it('regenerateProposals bypasses the cache, re-runs the LLM and re-persists (sibling stats kept)', async () => {
+    const deps = makeDeps({
+      fetchLatestScan: jest.fn().mockResolvedValue(scanWithCachedProposals()),
+      llm: jest.fn().mockResolvedValue({
+        content: JSON.stringify([
+          {
+            from: 'com.thirdparty.Money',
+            proposedTo: 'java.math.BigDecimal',
+            rationale: 'fresh proposal',
+          },
+        ]),
+      }),
+    });
+
+    const review = await buildModernizationReview(
+      { ...ARGS, regenerateProposals: true },
+      deps
+    );
+
+    expect(deps.llm).toHaveBeenCalledTimes(1);
+    const money = review.rows.find((r) => r.from === 'com.thirdparty.Money');
+    expect(money?.defaultTo).toBe('java.math.BigDecimal');
+    expect(review.proposalPass).toMatchObject({ status: 'ok', source: 'generated' });
+
+    // Re-persisted, REPLACING the cache key but keeping sibling stats keys.
+    expect(deps.patchScan).toHaveBeenCalledTimes(1);
+    const statsJson = deps.patchScan.mock.calls[0][3] as Record<string, unknown>;
+    expect(statsJson.near_duplicate_cluster).toEqual([{ keep: 'x' }]);
+    const cache = statsJson.modernization_proposals as { proposals: Array<{ from: string }> };
+    expect(cache.proposals).toEqual([
+      { from: 'com.thirdparty.Money', proposed_to: 'java.math.BigDecimal', rationale: 'fresh proposal' },
+    ]);
+  });
+
+  it('a FAILED regenerate replays the surviving cache (defaults never vanish)', async () => {
+    const deps = makeDeps({
+      fetchLatestScan: jest.fn().mockResolvedValue(scanWithCachedProposals()),
+      llm: jest.fn().mockRejectedValue(new Error('relay down')),
+    });
+
+    const review = await buildModernizationReview(
+      { ...ARGS, regenerateProposals: true },
+      deps
+    );
+
+    const money = review.rows.find((r) => r.from === 'com.thirdparty.Money');
+    expect(money?.provenance).toBe('llm_proposed');
+    expect(money?.defaultTo).toBe('javax.money.MonetaryAmount');
+    expect(review.proposalPass).toMatchObject({
+      status: 'failed',
+      source: 'cache',
+      error: 'relay down',
+      generatedAt: '2026-08-29T09:00:00Z',
+    });
+    expect(deps.patchScan).not.toHaveBeenCalled();
+  });
+
+  it('a proposal-cache persist failure downgrades to a warning (fresh proposals still serve)', async () => {
+    const deps = makeDeps({
+      llm: jest.fn().mockResolvedValue({
+        content: JSON.stringify([
+          { from: 'com.thirdparty.Money', proposedTo: 'java.math.BigDecimal', rationale: 'r' },
+        ]),
+      }),
+      patchScan: jest.fn().mockRejectedValue(new Error('AMS down')),
+    });
+
+    const review = await buildModernizationReview(ARGS, deps);
+
+    const money = review.rows.find((r) => r.from === 'com.thirdparty.Money');
+    expect(money?.defaultTo).toBe('java.math.BigDecimal');
+    expect(review.proposalPass).toMatchObject({ status: 'ok', source: 'generated' });
   });
 
   it('skips the LLM entirely when nothing is unmapped', async () => {
@@ -168,8 +346,14 @@ describe('buildModernizationReview — LLM proposals', () => {
       }),
     });
 
-    await buildModernizationReview(ARGS, deps);
+    const review = await buildModernizationReview(ARGS, deps);
     expect(deps.llm).not.toHaveBeenCalled();
+    expect(review.proposalPass).toMatchObject({
+      status: 'ok',
+      source: 'none',
+      eligible: 0,
+      proposed: 0,
+    });
   });
 });
 

@@ -65,11 +65,29 @@ export interface SclExistingDecision {
   created_at: string;
 }
 
+/**
+ * 2026-08-30: the loud proposal-pass outcome. `status: 'failed'` means the
+ * LLM pass could not run — unmapped rows are NOT legitimate "needs a value"
+ * work, and the panel banners a retry instead. `source` says where applied
+ * proposals came from ('cache' = the persisted per-scan set, so consecutive
+ * loads agree; 'none' = nothing applied).
+ */
+export interface SclProposalPass {
+  status: 'ok' | 'failed';
+  source: 'cache' | 'generated' | 'none';
+  eligible: number;
+  proposed: number;
+  error: string | null;
+  generated_at: string | null;
+}
+
 export interface SclModernizationReview {
   scan_id: string;
   target_architecture_id: string | null;
   rows: SclModernizationReviewRow[];
   existing_decisions: SclExistingDecision[];
+  /** Optional for tolerance of an older gateway (treated as ok/none). */
+  proposal_pass?: SclProposalPass;
 }
 
 export interface SclModernizationConfirmRow {
@@ -204,6 +222,30 @@ export async function fetchModernizationReview(
     const msg = await parseErrorMessage(
       res,
       `Failed to load modernization review: ${res.status} ${res.statusText}`,
+    );
+    throw new SclModernizationApiError(msg, res.status);
+  }
+  return (await res.json()) as SclModernizationReview;
+}
+
+/**
+ * POST Retry-All (2026-08-30): bypass the per-scan proposal cache, re-run the
+ * LLM pass and re-persist on success. Returns the SAME full review shape as
+ * the GET (a failed retry replays the surviving cached set, reported via
+ * `proposal_pass`), so the panel swaps its state in one shot.
+ */
+export async function retryModernizationProposals(
+  projectId: string,
+  architectureId: string,
+): Promise<SclModernizationReview> {
+  const res = await fetch(
+    `${buildBase(projectId, architectureId)}/review/proposals/retry`,
+    { method: 'POST', headers: { Accept: 'application/json' } },
+  );
+  if (!res.ok) {
+    const msg = await parseErrorMessage(
+      res,
+      `Failed to retry modernization proposals: ${res.status} ${res.statusText}`,
     );
     throw new SclModernizationApiError(msg, res.status);
   }
