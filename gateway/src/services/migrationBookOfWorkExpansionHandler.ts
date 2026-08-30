@@ -144,6 +144,7 @@ import {
 } from './migrationScaffoldManifestGate';
 import { fetchMigrationDiscoveryContext } from './migrationDiscoveryContextClient';
 import { fetchEndpointBaselineCoverage } from './apiBehaviourBaselineCoverageClient';
+import { recommendedNextActionForItem } from './migrationExecutionClass';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -2045,8 +2046,12 @@ function corpusItem(seed: {
     readiness: 'ready_for_spec',
     readinessReasons: [],
     missingInputs: [],
+    // Execution-class aware (2026-08-30) — see migrationExecutionClass. The
+    // flat automated default instructed the operator to generate a spec on
+    // MANUAL items, which never generate one.
     recommendedNextAction:
-      seed.recommendedNextAction ?? 'Generate the focused shape-spec for this story.',
+      seed.recommendedNextAction ??
+      recommendedNextActionForItem({ tags: seed.tags ?? [] }),
     traceabilitySummary: seed.traceabilitySummary,
   };
   return { ...item, ...(seed.extras ?? {}) } as MigrationBookOfWorkItem;
