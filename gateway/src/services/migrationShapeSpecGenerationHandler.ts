@@ -224,7 +224,7 @@ import {
   buildDbPackReviewSpecText,
   plannerDeclaredMissing,
 } from './migrationDbPackReviewRoute';
-import { isManualExecutionItem } from './migrationExecutionClass';
+import { isManualExecutionItem, isManualGateRunbookItem } from './migrationExecutionClass';
 import { CODE_PREREQUISITE_TAG } from './migrationCodeStreamPlanner';
 import {
   fetchProjectConfigWithDefaults as defaultFetchProjectConfigWithDefaults,
@@ -1449,6 +1449,13 @@ export function resolveBatchSize(input?: number): number {
  *   - MANUAL-execution items (Spec 2026-08-04-1): human work never generates
  *     a spec — no hollow "this is human work" text, no insufficient_context
  *     rows. Their readiness still shows via the preflight routes.
+ *     EXCEPTION (2026-08-30): `execution:manual-gate` capture/closure items DO
+ *     generate, because they carry a real RUNBOOK (numbered procedure + gate
+ *     condition, rendered by `buildManualGateSpecText`) rather than hollow
+ *     text. This does not make them dispatchable — the driver's skip is
+ *     tag-based, not spec-row-based — it only puts the procedure with the
+ *     story. Every other manual shape (pack review gates, prerequisite gates)
+ *     stays excluded: their description + acceptanceCriteria ARE the spec.
  *   - items without a `workItemId` (story not yet saved to backlog)
  *   - rows already at `status='generated'` (unless `regenerateAll=true`)
  */
@@ -1465,7 +1472,10 @@ export function selectEligibleStories(
   }
   const candidates = bow.items
     .filter((it) => it.type === 'story')
-    .filter((it) => !isManualExecutionItem(it))
+    // Manual work is excluded EXCEPT manual-gate runbook items (2026-08-30):
+    // those carry a real numbered procedure + gate condition, so the runbook
+    // lives with the story. Still never dispatched — that gate is tag-based.
+    .filter((it) => !isManualExecutionItem(it) || isManualGateRunbookItem(it))
     .filter((it) => typeof it.workItemId === 'string' && it.workItemId.length > 0)
     .sort((a, b) => {
       if (a.sequenceOrder !== b.sequenceOrder) return a.sequenceOrder - b.sequenceOrder;

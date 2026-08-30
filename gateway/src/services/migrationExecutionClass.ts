@@ -80,3 +80,51 @@ export function executionClassForItem(item: ExecutionClassifiable): ExecutionCla
 export function isManualExecutionItem(item: ExecutionClassifiable): boolean {
   return executionClassForItem(item) === 'manual';
 }
+
+/**
+ * Manual work that carries a RUNBOOK (2026-08-30).
+ *
+ * A narrow subset of `manual`: the code-stream capture/closure gates tagged
+ * `execution:manual-gate`. These have a concrete, writable procedure --
+ * "open the capture wizard, capture these N endpoints, promote to baseline" --
+ * which `buildManualGateSpecText` (migrationCodeSpecCarriage) already renders.
+ * Persisting that procedure puts the runbook WITH the story instead of only
+ * in a cutover doc.
+ *
+ * <p>This does NOT weaken the manual rule: `manual` still means never
+ * dispatched — the execution driver's skip is TAG-based
+ * (`migrationExecutionDriver` -> {@link isManualExecutionItem}), not
+ * spec-row-based, so a persisted procedure row cannot make these
+ * dispatchable. The original ruling's concern was dispatchability plus
+ * "hollow 'this is human work' text"; a numbered procedure with a gate
+ * condition is neither.</p>
+ *
+ * <p>Deliberately excludes the OTHER manual shapes — pack review gates
+ * (`provenance:pack` without verbatim carriage) and prerequisite gates —
+ * whose story record (description + acceptanceCriteria +
+ * traceabilitySummary) is already the whole specification and for which no
+ * procedure text exists.</p>
+ */
+export function isManualGateRunbookItem(item: ExecutionClassifiable): boolean {
+  return (item.tags ?? []).includes(LEGACY_MANUAL_GATE_TAG);
+}
+
+/**
+ * The honest `recommendedNextAction` for an item, by execution class.
+ *
+ * Manual items previously inherited the automated default
+ * ("Generate the focused shape-spec for this story."), which instructs the
+ * operator to do something {@link isManualExecutionItem} forbids — the plan
+ * told you to press a button that would never produce anything. Manual-gate
+ * items get their procedure persisted, so they point at the procedure; other
+ * manual items point at their own acceptance criteria, which ARE their spec.
+ */
+export function recommendedNextActionForItem(item: ExecutionClassifiable): string {
+  if (isManualGateRunbookItem(item)) {
+    return 'Work the persisted manual-gate procedure; complete when its gate condition holds.';
+  }
+  if (isManualExecutionItem(item)) {
+    return 'Manual work item — no spec is generated. Complete the task and satisfy its acceptance criteria.';
+  }
+  return 'Generate the focused shape-spec for this story.';
+}

@@ -50,7 +50,10 @@ import {
   MigrationBookOfWorkWorkstream,
 } from './generatedMigrationBookOfWorkSchema';
 import { fetchEndpointBaselineCoverage } from './apiBehaviourBaselineCoverageClient';
-import { MANUAL_EXECUTION_TAG } from './migrationExecutionClass';
+import {
+  MANUAL_EXECUTION_TAG,
+  recommendedNextActionForItem,
+} from './migrationExecutionClass';
 
 // ---------------------------------------------------------------------------
 // Public constants
@@ -480,8 +483,12 @@ function mkItem(seed: ItemSeed): MigrationBookOfWorkItem {
     readiness: seed.readiness ?? 'ready_for_spec',
     readinessReasons: seed.readinessReasons ?? [],
     missingInputs: seed.missingInputs ?? [],
+    // Execution-class aware (2026-08-30). The flat automated default told the
+    // operator to "Generate the focused shape-spec" on MANUAL items, which the
+    // eligibility filter forbids — a button that could never produce anything.
     recommendedNextAction:
-      seed.recommendedNextAction ?? 'Generate the focused shape-spec for this story.',
+      seed.recommendedNextAction ??
+      recommendedNextActionForItem({ tags: seed.tags ?? [] }),
     traceabilitySummary:
       seed.traceabilitySummary ??
       'Derived deterministically from the committed architecture model.',
