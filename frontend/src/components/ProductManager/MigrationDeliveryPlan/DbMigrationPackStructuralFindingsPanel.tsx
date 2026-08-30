@@ -28,6 +28,8 @@ import {
   clearDbMigrationPackStructuralFindingDisposition,
   listDbMigrationPackStructuralFindings,
   setDbMigrationPackStructuralFindingDisposition,
+  suggestFindingNextStep,
+  type DbFindingAdvice,
   type DbMigrationPackStructuralFinding,
   type DbMigrationPackStructuralFindingDisposition,
   type RunDbStructuralHarvestResponse,
@@ -113,6 +115,11 @@ export const DbMigrationPackStructuralFindingsPanel: React.FC<
   const [expandedDetails, setExpandedDetails] = useState<Record<string, boolean>>({});
   /** Harvest-from-source-DB modal visibility (credentials live IN the modal). */
   const [harvestOpen, setHarvestOpen] = useState(false);
+  /** "Suggest next step" advice per finding key (2026-08-30). Ephemeral —
+   *  the suggested note persists via the disposition note when applied. */
+  const [adviceByKey, setAdviceByKey] = useState<
+    Record<string, { loading: boolean; advice: DbFindingAdvice | null; error: string | null }>
+  >({});
   /** Rows in note-entry mode: key -> { kind of disposition, draft note }. */
   const [noteDrafts, setNoteDrafts] = useState<
     Record<string, { disposition: NoteEntryKind; note: string }>
@@ -263,6 +270,40 @@ export const DbMigrationPackStructuralFindingsPanel: React.FC<
     }));
   }, []);
 
+  /** "Suggest next step" (2026-08-30): fetch advisory disposition advice
+   *  for one finding. Advisory ONLY — rendering a recommendation; every
+   *  state change still goes through the human's disposition click. */
+  const suggestNextStep = useCallback(
+    async (finding: DbMigrationPackStructuralFinding) => {
+      setAdviceByKey((prev) => ({
+        ...prev,
+        [finding.key]: { loading: true, advice: null, error: null },
+      }));
+      try {
+        const result = await suggestFindingNextStep(projectId, {
+          architecture_id: architectureId,
+          finding_kind: finding.kind,
+          finding_key: finding.key,
+          message: finding.message,
+        });
+        setAdviceByKey((prev) => ({
+          ...prev,
+          [finding.key]: { loading: false, advice: result.advice, error: null },
+        }));
+      } catch (err) {
+        setAdviceByKey((prev) => ({
+          ...prev,
+          [finding.key]: {
+            loading: false,
+            advice: null,
+            error: err instanceof Error ? err.message : 'Next-step suggestion failed',
+          },
+        }));
+      }
+    },
+    [projectId, architectureId],
+  );
+
   /** Show/hide an already-materialised proposals section (never generates). */
   const toggleGapSection = useCallback((findingKey: string) => {
     setGapSections((prev) => {
@@ -358,6 +399,12 @@ export const DbMigrationPackStructuralFindingsPanel: React.FC<
                   GAP_PROPOSAL_FINDING_KINDS.has(finding.kind) &&
                   finding.disposition !== 'accepted';
                 const gapSection = gapSections[finding.key] ?? null;
+                const adviceState = adviceByKey[finding.key] ?? null;
+                // Advisor gating (2026-08-30): when the deterministic
+                // pre-check proved FK drafting unapplicable, the Fix-with-AI
+                // button is disabled WITH the reason — never a silent trap.
+                const fixWithAiBlocked =
+                  adviceState?.advice?.fix_with_ai_applicable === false;
                 return (
                   <React.Fragment key={finding.key}>
                   <tr
@@ -513,13 +560,28 @@ export const DbMigrationPackStructuralFindingsPanel: React.FC<
                           >
                             Known gap
                           </button>
+                          <button
+                            type="button"
+                            className={styles.actionButton}
+                            onClick={() => void suggestNextStep(finding)}
+                            disabled={busyKey !== null || adviceState?.loading === true}
+                            title="Review this finding against the committed schema facts and recommend a disposition — advisory only, nothing is applied"
+                            data-testid={`db-finding-advice-${finding.key}`}
+                          >
+                            {adviceState?.loading ? 'Suggesting…' : 'Suggest next step'}
+                          </button>
                           {gapEligible && (
                             <button
                               type="button"
                               className={styles.actionButton}
                               onClick={() => draftGapProposals(finding.key)}
-                              disabled={busyKey !== null}
-                              title="AI drafts the missing PK/FK metadata from the committed model into a review queue — nothing is applied without your approval"
+                              disabled={busyKey !== null || fixWithAiBlocked}
+                              title={
+                                fixWithAiBlocked
+                                  ? adviceState?.advice?.deterministic_constraint ??
+                                    'Unapplicable for this finding'
+                                  : 'AI drafts the missing PK/FK metadata from the committed model into a review queue — nothing is applied without your approval'
+                              }
                               data-testid={`db-gap-proposals-draft-${finding.key}`}
                             >
                               Fix with AI
@@ -553,6 +615,76 @@ export const DbMigrationPackStructuralFindingsPanel: React.FC<
                       )}
                     </td>
                   </tr>
+                  {(adviceState?.advice || adviceState?.error) && (
+                    <tr data-testid={`db-finding-advice-row-${finding.key}`}>
+                      <td colSpan={3}>
+                        {adviceState.error ? (
+                          <p className={styles.errorBanner}>{adviceState.error}</p>
+                        ) : (
+                          <div className={styles.manifestNote}>
+                            <p>
+                              <strong>
+                                Suggested: {adviceState.advice!.recommended_disposition.replace('_', ' ')}
+                              </strong>{' '}
+                              ({adviceState.advice!.confidence} confidence — advisory
+                              only, you decide)
+                            </p>
+                            <p data-testid={`db-finding-advice-rationale-${finding.key}`}>
+                              {adviceState.advice!.rationale}
+                            </p>
+                            {adviceState.advice!.deterministic_constraint && (
+                              <p>
+                                <strong>Schema constraint:</strong>{' '}
+                                {adviceState.advice!.deterministic_constraint}
+                              </p>
+                            )}
+                            {adviceState.advice!.caveats.length > 0 && (
+                              <ul>
+                                {adviceState.advice!.caveats.map((c, i) => (
+                                  <li key={`caveat-${finding.key}-${i}`}>{c}</li>
+                                ))}
+                              </ul>
+                            )}
+                            {adviceState.advice!.recommended_disposition ===
+                            'fix_upstream' ? (
+                              <button
+                                type="button"
+                                className={styles.actionButton}
+                                onClick={() =>
+                                  void applyDisposition(finding, 'fix_upstream')
+                                }
+                                disabled={busyKey !== null}
+                                data-testid={`db-finding-advice-apply-${finding.key}`}
+                              >
+                                Apply Fix upstream
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                className={styles.actionButton}
+                                onClick={() => {
+                                  setError(null);
+                                  setNoteDrafts((prev) => ({
+                                    ...prev,
+                                    [finding.key]: {
+                                      disposition: adviceState.advice!
+                                        .recommended_disposition as NoteEntryKind,
+                                      note: adviceState.advice!.suggested_note ?? '',
+                                    },
+                                  }));
+                                }}
+                                disabled={busyKey !== null}
+                                title="Prefills the disposition note with the suggestion — you still confirm"
+                                data-testid={`db-finding-advice-use-${finding.key}`}
+                              >
+                                Use suggestion (review note)
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  )}
                   {/* Spec 4: inline (collapsible) gap-proposal queue for this
                       finding. Approvals write to the MODEL — the finding
                       itself only clears when a regenerated pack stops

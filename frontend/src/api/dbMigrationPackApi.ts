@@ -1337,6 +1337,47 @@ export async function generateGapProposals(
   );
 }
 
+// ---------------------------------------------------------------------------
+// "Suggest next step" — per-finding disposition ADVISOR (2026-08-30).
+// Advisory only: the gateway runs a deterministic pre-check (composite/
+// temporal referenced keys make Fix-with-AI unapplicable) then narrates a
+// recommendation via the LLM. Nothing is persisted or applied — the human
+// clicks the disposition button; the suggested note rides into that
+// disposition's note field.
+// ---------------------------------------------------------------------------
+
+export interface DbFindingAdvice {
+  recommended_disposition: 'accepted' | 'fix_upstream' | 'known_gap';
+  rationale: string;
+  confidence: DbGapProposalConfidence;
+  caveats: string[];
+  suggested_note: string | null;
+  fix_with_ai_applicable: boolean;
+  deterministic_constraint: string | null;
+}
+
+export interface DbFindingAdviceResponse {
+  advice: DbFindingAdvice;
+  warnings: string[];
+}
+
+export async function suggestFindingNextStep(
+  projectId: string,
+  request: {
+    architecture_id: string;
+    finding_kind: string;
+    finding_key: string;
+    message?: string;
+  },
+): Promise<DbFindingAdviceResponse> {
+  return sendJson<DbFindingAdviceResponse>(
+    `${gapProposalsBase(projectId)}/advice`,
+    'POST',
+    request,
+    'Next-step suggestion failed',
+  );
+}
+
 /** List the project's queue rows, optionally filtered to one finding. */
 export async function listGapProposals(
   projectId: string,

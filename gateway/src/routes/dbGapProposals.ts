@@ -27,6 +27,7 @@
 
 import { Router, Request, Response } from 'express';
 import { getConfig } from '../config';
+import { runFindingAdvice } from '../services/dbFindingAdvice';
 import { logger } from '../services/logger';
 import {
   CommittedPhysicalModel,
@@ -242,6 +243,54 @@ export function createDbGapProposalsRouter(
         `[diag-gw] route=db-gap-proposals-generate status=err elapsed_ms=${Date.now() - start}`
       );
       mapError(error, res, 'generate', { projectId, findingKey: body.finding_key });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /advice — "Suggest next step": advisory disposition recommendation
+  // for one structural finding (2026-08-30). Deterministic pre-check in code
+  // (composite/temporal referenced keys make FK drafting unapplicable), LLM
+  // for the narrated rationale. NEVER persists, NEVER applies — the human
+  // clicks the disposition button; the suggested note rides into the
+  // disposition's note field (which IS persisted) when they do.
+  // -------------------------------------------------------------------------
+  router.post(`${BASE}/advice`, async (req: Request, res: Response) => {
+    const { projectId } = req.params;
+    const body = (req.body ?? {}) as {
+      architecture_id?: string;
+      finding_kind?: string;
+      finding_key?: string;
+      message?: string;
+    };
+    for (const field of ['architecture_id', 'finding_kind', 'finding_key'] as const) {
+      if (!body[field] || typeof body[field] !== 'string') {
+        res.status(400).json({ error: { code: 400, message: `${field} is required.` } });
+        return;
+      }
+    }
+    const start = Date.now();
+    try {
+      const model = await deps.fetchModel(projectId, body.architecture_id as string);
+      const result = await runFindingAdvice({
+        projectId,
+        findingKind: body.finding_kind as string,
+        findingKey: body.finding_key as string,
+        message: typeof body.message === 'string' ? body.message : null,
+        model,
+        callLlm: deps.callLlm,
+      });
+      console.log(
+        `[diag-gw] route=db-gap-proposals-advice status=200 ` +
+          `disposition=${result.advice.recommended_disposition} ` +
+          `constrained=${result.advice.deterministic_constraint !== null} ` +
+          `warnings=${result.warnings.length} elapsed_ms=${Date.now() - start}`
+      );
+      res.status(200).json({ advice: result.advice, warnings: result.warnings });
+    } catch (error) {
+      console.warn(
+        `[diag-gw] route=db-gap-proposals-advice status=err elapsed_ms=${Date.now() - start}`
+      );
+      mapError(error, res, 'advice', { projectId, findingKey: body.finding_key });
     }
   });
 
