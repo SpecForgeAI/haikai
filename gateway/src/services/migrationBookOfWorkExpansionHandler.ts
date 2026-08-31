@@ -120,6 +120,10 @@ import {
   loadCorpusPlan as defaultLoadCorpusPlan,
 } from './sclCorpusPlanner';
 import {
+  JoinableEndpoint,
+  joinSclStoryToEndpoints,
+} from './sclEndpointIdentityJoin';
+import {
   FetchPackViewFn,
   PackView,
   buildDbEpicStories,
@@ -1303,10 +1307,21 @@ async function runEpicPipeline(args: {
           stream,
           plan: corpusPlan,
           startSequence: maxSequence,
+          // The SCL corpus stays the CONSTRUCTION truth on this path; the
+          // committed endpoints are supplied only to resolve endpoint element
+          // ids for traceability, coverage gating and parity scoping.
+          endpoints: view?.endpoints ?? [],
+          findingIdsByEndpointId: view?.findingIdsByEndpointId,
         });
+        const joinedStories = corpusItems.filter((item) => {
+          if (item.type !== 'story') return false;
+          const ids = (item as unknown as Record<string, unknown>).apiEndpointIds;
+          return Array.isArray(ids) && ids.length > 0;
+        }).length;
         console.log(
           `[diag-gateway] migration_bow_expansion corpus_plan_used ` +
             `stories=${corpusItems.filter((i) => i.type === 'story').length} ` +
+            `endpoint_joined_stories=${joinedStories} ` +
             `projectId=${projectId} epicId=${epic.id} epicKind=interfaces`
         );
         return corpusItems;
@@ -2147,8 +2162,24 @@ export function buildCorpusEndpointGroupItems(args: {
   stream: string;
   plan: SclCorpusPlan;
   startSequence: number;
+  /**
+   * Committed endpoint surface, for resolving each corpus story's declared
+   * routes to endpoint element ids. Optional: when omitted the join resolves
+   * nothing and `apiEndpointIds` stays empty exactly as before.
+   */
+  endpoints?: JoinableEndpoint[];
+  /**
+   * endpoint element id -> attached discovery finding ids. Used to populate
+   * `findingIds` on the corpus stories once their endpoints resolve, so
+   * carry-over findings have a story-level home. Previously `findingIds` was
+   * populated ONLY for flagged/exceptional endpoints, leaving every corpus
+   * story with no finding linkage at all.
+   */
+  findingIdsByEndpointId?: Map<string, string[]>;
 }): MigrationBookOfWorkItem[] {
   const { epic, stream, plan } = args;
+  const joinEndpoints = args.endpoints ?? [];
+  const findingsByEndpoint = args.findingIdsByEndpointId ?? new Map<string, string[]>();
   const ws = workstreamForEpic(epic);
   let seq = args.startSequence;
   const items: MigrationBookOfWorkItem[] = [];
@@ -2199,6 +2230,43 @@ export function buildCorpusEndpointGroupItems(args: {
         })
       );
       stories.forEach((planned, i) => {
+        // Endpoint-identity join (2026-08-30). `apiEndpointIds` used to be
+        // hardcoded empty, which made every corpus story invisible to the
+        // endpoint coverage gate (it only considers stories with ids) and left
+        // "which join implements endpoint X" mechanically unanswerable.
+        const join = joinSclStoryToEndpoints({
+          routes: planned.httpRoutes,
+          endpoints: joinEndpoints,
+        });
+        // Discovery findings attached to the endpoints this story implements.
+        // Deduped + sorted so the blob stays deterministic.
+        const findingIds = [
+          ...new Set(join.endpointIds.flatMap((id) => findingsByEndpoint.get(id) ?? [])),
+        ].sort();
+        const acceptanceCriteria = [
+          `All ${planned.rowCount} behaviour-table row(s) across ` +
+            `${planned.contractKeys.length} SCL contract(s) are implemented and verified ` +
+            `row-by-row (the row is the verification unit, regardless of grouping).`,
+        ];
+        if (findingIds.length > 0) {
+          acceptanceCriteria.push(
+            `The ${findingIds.length} discovery finding(s) attached to this story's ` +
+              'endpoints are addressed or explicitly carried forward with a reason.'
+          );
+        }
+        if (join.endpointIds.length > 0) {
+          acceptanceCriteria.push(
+            `Parity holds for all ${join.endpointIds.length} committed endpoint(s) ` +
+              'this story implements, against their captured behaviour baselines.'
+          );
+        }
+        const traceabilityTail =
+          join.endpointIds.length > 0
+            ? ` Joined to ${join.endpointIds.length} committed endpoint(s) by route identity.`
+            : join.joinable
+              ? ` Declared ${join.unresolved.length} route(s) that match NO committed endpoint.`
+              : ' No routing annotations, so no route-identity join is possible' +
+                ' (deployment-descriptor mapping); scoped by SCL contract key only.';
         items.push(
           corpusItem({
             id: `${featureId}-s-${i + 1}`,
@@ -2208,29 +2276,40 @@ export function buildCorpusEndpointGroupItems(args: {
             description: planned.description,
             workstream: ws,
             sequenceOrder: ++seq,
-            acceptanceCriteria: [
-              `All ${planned.rowCount} behaviour-table row(s) across ` +
-                `${planned.contractKeys.length} SCL contract(s) are implemented and verified ` +
-                `row-by-row (the row is the verification unit, regardless of grouping).`,
-            ],
+            acceptanceCriteria,
             tags: corpusTags(stream, planned),
             traceabilitySummary:
               `SCL corpus ${kind} endpoint story for ${controller}: ` +
-              `${planned.contractKeys.length} contract(s), ${planned.rowCount} row(s).`,
+              `${planned.contractKeys.length} contract(s), ${planned.rowCount} row(s).` +
+              traceabilityTail,
             extras: {
               codeStoryKind: 'scl-endpoint-group',
               // Mirror of the legacy interface-cluster marker set the
-              // downstream carriage tolerates; endpoint element ids are NOT
-              // trivially derivable from SCL symbols, so apiEndpointIds
-              // stays EMPTY (per the spec-7 ruling).
+              // downstream carriage tolerates. `apiEndpointIds` is now RESOLVED
+              // by route identity where the endpoint declares a route; it stays
+              // empty only when the join genuinely cannot apply.
               apiInterfaceId: null,
-              apiEndpointIds: [],
+              apiEndpointIds: join.endpointIds,
               baselineByEndpointId: {},
+              findingIds,
               protocol: null,
               scl_layer: planned.layer,
               scl_contract_keys: planned.contractKeys,
               scl_row_count: planned.rowCount,
               scl_controller_class: controller,
+              scl_declared_routes: (planned.httpRoutes ?? []).map(
+                (r) => `${r.verb ?? 'ANY'} ${r.path ?? '(no path)'}`
+              ),
+              // Explicit, inspectable provenance for the join outcome so a gap
+              // is visible in the blob instead of looking like "no endpoints".
+              scl_endpoint_join: join.joinable
+                ? join.unresolved.length > 0
+                  ? 'partial'
+                  : 'resolved'
+                : 'not_applicable',
+              scl_unresolved_routes: join.unresolved.map(
+                (r) => `${r.verb ?? 'ANY'} ${r.path ?? '(no path)'}`
+              ),
             },
           })
         );
