@@ -1210,6 +1210,24 @@ public class MigrationStorySpecGenerationService {
      *
      * <p>Spec: Spec Quality Scoring (2026-05-20) -- Task Group 3.</p>
      */
+    /**
+     * The producing generator recorded on {@code focused_context_refs_json.source},
+     * or {@code null} for the LLM-authored path (which stores no source).
+     *
+     * <p>Selects the section vocabulary COMPLETENESS is measured against. Before
+     * this was plumbed through, every deterministic carriage spec was scored
+     * against the LLM shape-spec template's seven headings -- none of which the
+     * carriage generators emit -- so COMPLETENESS was structurally near-zero for
+     * the majority of every generated book.</p>
+     */
+    private static String focusedContextSource(MigrationStorySpecGenerationEntity entity) {
+        if (entity == null) return null;
+        Map<String, Object> refs = entity.getFocusedContextRefsJson();
+        if (refs == null) return null;
+        Object source = refs.get("source");
+        return source == null ? null : String.valueOf(source);
+    }
+
     private void applyQualityScoring(
             MigrationStorySpecGenerationEntity entity,
             String storyTitle,
@@ -1234,7 +1252,8 @@ public class MigrationStorySpecGenerationService {
                 entity.getInterfacesJson(),
                 entity.getAssumptionsJson(),
                 entity.getWarningsJson(),
-                storyTitle);
+                storyTitle,
+                SpecQualityScorer.SpecArchetype.fromSource(focusedContextSource(entity)));
             SpecQualityScorer.Output output = specQualityScorer.score(input);
             entity.setPreviousQualityScore(priorScore);
             entity.setQualityScore(output.score());
