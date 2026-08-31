@@ -64,6 +64,12 @@ export interface SclPlannedStory {
   tags: string[];
   /** Declaring legacy controller class (endpoint groups only). */
   controllerClass?: string;
+  /**
+   * HTTP routes this story's endpoint contracts declare, for joining SCL
+   * stories to committed endpoint element ids. EMPTY for foundation layers and
+   * for endpoints with no routing annotation (e.g. `web.xml` servlets).
+   */
+  httpRoutes?: SclHttpRoute[];
 }
 
 export interface SclCorpusPlanStats {
@@ -73,6 +79,12 @@ export interface SclCorpusPlanStats {
   controllerCount: number;
   /** Controllers whose group was split into row-budget parts. */
   splitCount: number;
+  /**
+   * Foundation LAYERS that had to split into row-budget parts. Before
+   * foundation layers were budgeted this was structurally always 0 and the
+   * layers grew without bound.
+   */
+  foundationSplitCount: number;
   rowBudget: number;
 }
 
@@ -190,6 +202,112 @@ export function isHttpAnnotated(contract: SclContractDto): boolean {
   );
 }
 
+/** One HTTP route declared by an endpoint contract's annotations. */
+export interface SclHttpRoute {
+  /** Upper-cased verb when the annotation determines one, else null. */
+  verb: string | null;
+  /** Declared path when present, else null. */
+  path: string | null;
+}
+
+/** Annotation name -> implied verb, for the verb-specific mapping forms. */
+const VERB_BY_ANNOTATION: ReadonlyMap<string, string> = new Map([
+  ['@GetMapping', 'GET'],
+  ['@PostMapping', 'POST'],
+  ['@PutMapping', 'PUT'],
+  ['@DeleteMapping', 'DELETE'],
+  ['@PatchMapping', 'PATCH'],
+  ['@GET', 'GET'],
+  ['@POST', 'POST'],
+  ['@PUT', 'PUT'],
+  ['@DELETE', 'DELETE'],
+  ['@PATCH', 'PATCH'],
+  ['@HEAD', 'HEAD'],
+  ['@OPTIONS', 'OPTIONS'],
+]);
+
+/** Stable de-dupe for a route list (deterministic ordering). */
+export function dedupeRoutes(routes: SclHttpRoute[]): SclHttpRoute[] {
+  const seen = new Map<string, SclHttpRoute>();
+  for (const route of routes) {
+    const key = `${route.verb ?? ''} ${route.path ?? ''}`;
+    if (!seen.has(key)) seen.set(key, route);
+  }
+  return [...seen.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([, r]) => r);
+}
+
+function annotationName(text: string): string {
+  const paren = text.indexOf('(');
+  return (paren >= 0 ? text.slice(0, paren) : text).trim();
+}
+
+/** First quoted string in an annotation, which is its path for all forms. */
+function annotationPath(text: string): string | null {
+  const quoted = text.match(/"([^"]*)"/);
+  if (!quoted) return null;
+  const value = quoted[1].trim();
+  return value.length > 0 ? value : null;
+}
+
+/** `method = RequestMethod.POST` / `method = {RequestMethod.PUT}` -> POST/PUT. */
+function requestMappingVerb(text: string): string | null {
+  const match = text.match(/RequestMethod\s*\.\s*([A-Za-z]+)/);
+  return match ? match[1].toUpperCase() : null;
+}
+
+/**
+ * HTTP routes a contract declares, derived from its annotations.
+ *
+ * <p>Covers the Spring (`@RequestMapping` + the verb-specific `@*Mapping`) and
+ * JAX-RS (`@Path` + `@GET`/`@POST`/...) forms named in
+ * {@link SCL_HTTP_ANNOTATION_PREFIXES}. A JAX-RS method splits its route across
+ * two annotations (verb on one, path on `@Path`), so verbs and paths are
+ * collected separately and combined.</p>
+ *
+ * <p>Returns an EMPTY array for endpoints that carry no routing annotation at
+ * all — notably `web.xml`-mapped servlets, whose route lives in a deployment
+ * descriptor rather than on the class. That is a real limit of this derivation,
+ * not something to paper over: callers must treat "no routes" as "cannot join
+ * by route", never as "no endpoints".</p>
+ */
+export function httpRoutesOf(contract: SclContractDto): SclHttpRoute[] {
+  const verbs: string[] = [];
+  const paths: string[] = [];
+  let sawRoutingAnnotation = false;
+
+  for (const text of annotationTexts(contract)) {
+    const name = annotationName(text);
+    if (!SCL_HTTP_ANNOTATION_PREFIXES.some((prefix) => name === prefix)) continue;
+    sawRoutingAnnotation = true;
+
+    const path = annotationPath(text);
+    if (path) paths.push(path);
+
+    const mapped = VERB_BY_ANNOTATION.get(name);
+    if (mapped) {
+      verbs.push(mapped);
+      continue;
+    }
+    if (name === '@RequestMapping') {
+      const verb = requestMappingVerb(text);
+      if (verb) verbs.push(verb);
+    }
+  }
+
+  if (!sawRoutingAnnotation) return [];
+
+  const uniqueVerbs = [...new Set(verbs)].sort();
+  const uniquePaths = [...new Set(paths)].sort();
+  if (uniqueVerbs.length === 0 && uniquePaths.length === 0) return [];
+  if (uniqueVerbs.length === 0) return uniquePaths.map((path) => ({ verb: null, path }));
+  if (uniquePaths.length === 0) return uniqueVerbs.map((verb) => ({ verb, path: null }));
+  const routes: SclHttpRoute[] = [];
+  for (const verb of uniqueVerbs) {
+    for (const path of uniquePaths) routes.push({ verb, path });
+  }
+  return routes;
+}
+
 function keyOf(contract: SclContractDto): string {
   return contract.contract_key ?? symbolOf(contract);
 }
@@ -286,6 +404,10 @@ function endpointGroupStory(args: {
       `shared fragments (fan-in >= 2) are implemented by the foundation layers and referenced, never re-implemented.`,
     contractKeys,
     rowCount,
+    // Routes are collected from the ROOT contracts in this slice (the endpoint
+    // methods); vertical-residue contracts are internal helpers and declare no
+    // routes of their own.
+    httpRoutes: dedupeRoutes(slice.flatMap((m) => httpRoutesOf(m.contract))),
     tags: ['scl', `scl:endpoint:${kind}`],
     controllerClass: cls,
   };
@@ -353,22 +475,88 @@ function buildEndpointGroups(args: {
   return stories;
 }
 
-function foundationStory(args: {
+/**
+ * Cost of ONE contract against the story budget.
+ *
+ * <p>Behaviour tables cost their row count — identical to the endpoint-group
+ * accounting, so a foundation layer and an endpoint group mean the same thing
+ * by "budget". Shape and boundary contracts carry no rows but each renders its
+ * own section plus a field/outcome table, so they cost 1 rather than 0.
+ * Without the floor of 1, every shape layer summed to a cost of ZERO and could
+ * never exceed any budget — which is precisely why the shape layers grew
+ * unbounded.</p>
+ */
+function contractCostOf(contract: SclContractDto): number {
+  return Math.max(1, rowCountOf(contract));
+}
+
+/**
+ * Plan ONE foundation layer, splitting it into `(part N)` stories when it
+ * exceeds the story budget.
+ *
+ * <p><b>Why this splits (2026-08-30).</b> `buildEndpointGroups` has always
+ * enforced `rowBudget`, but foundation layers bypassed it entirely: every
+ * contract in a layer landed in exactly one story no matter how large. On a
+ * live corpus that produced four unbounded stories — cross-cutting fragments
+ * approaching half a megabyte of spec text, the test kit and DTO-shape layers
+ * each in the hundreds of kilobytes — together roughly a third of the entire
+ * generated book, and the test kit is a hard dependency of every endpoint
+ * story, so its size sat directly on the critical path.</p>
+ *
+ * <p>Parts PARTITION the layer: every contract lands in exactly one part, in
+ * deterministic symbol order, and no contract is duplicated across parts. A
+ * single contract whose own cost exceeds the budget still yields exactly one
+ * part rather than being torn apart — same rule as the endpoint slicer.</p>
+ */
+function planFoundationLayer(args: {
   layer: string;
   title: string;
   description: string;
   contracts: SclContractDto[];
   countRows: boolean;
-}): SclPlannedStory {
+  rowBudget: number;
+  onSplit: () => void;
+}): SclPlannedStory[] {
   const sorted = [...args.contracts].sort(bySymbol);
-  return {
+  const total = sorted.reduce((sum, c) => sum + contractCostOf(c), 0);
+
+  const mk = (
+    slice: SclContractDto[],
+    part: number | null,
+    totalParts: number
+  ): SclPlannedStory => ({
     layer: args.layer,
-    title: args.title,
-    description: args.description,
-    contractKeys: sorted.map(keyOf),
-    rowCount: args.countRows ? sorted.reduce((sum, c) => sum + rowCountOf(c), 0) : 0,
+    title: args.title + (part !== null ? ` (part ${part})` : ''),
+    description:
+      part === null
+        ? args.description
+        : `${args.description} PART ${part} of ${totalParts}: ` +
+          `${slice.length} of ${sorted.length} contract(s) in this layer. The layer is ` +
+          `split on the ${args.rowBudget}-unit story budget; the parts partition the ` +
+          `layer in symbol order with NO overlap and NO omission.`,
+    contractKeys: slice.map(keyOf),
+    rowCount: args.countRows ? slice.reduce((sum, c) => sum + rowCountOf(c), 0) : 0,
     tags: ['scl', `scl:foundation:${args.layer}`],
-  };
+  });
+
+  if (total <= args.rowBudget) return [mk(sorted, null, 1)];
+
+  args.onSplit();
+  const slices: SclContractDto[][] = [];
+  let current: SclContractDto[] = [];
+  let currentCost = 0;
+  for (const contract of sorted) {
+    const cost = contractCostOf(contract);
+    if (current.length > 0 && currentCost + cost > args.rowBudget) {
+      slices.push(current);
+      current = [];
+      currentCost = 0;
+    }
+    current.push(contract);
+    currentCost += cost;
+  }
+  if (current.length > 0) slices.push(current);
+  return slices.map((slice, i) => mk(slice, i + 1, slices.length));
 }
 
 /**
@@ -422,13 +610,19 @@ export function deriveCorpusPlan(
   ).length;
 
   // -- The 6 foundational layers, in order; EMPTY layers omitted -------------
+  // Foundation layers are budget-split exactly like endpoint groups; this
+  // counts the LAYERS that had to split, mirroring `splitCount` for controllers.
+  let foundationSplitCount = 0;
+  const onFoundationSplit = () => {
+    foundationSplitCount += 1;
+  };
   const foundationStories: SclPlannedStory[] = [];
 
   if (constantsShapes.length > 0) {
     const enums = constantsShapes.filter(isEnumShape);
     const exceptions = constantsShapes.filter((c) => !isEnumShape(c));
     foundationStories.push(
-      foundationStory({
+      ...planFoundationLayer({
         layer: 'constants-exceptions',
         title: 'Constants, enums & exception types',
         description:
@@ -436,13 +630,15 @@ export function deriveCorpusPlan(
           `corpus shape contracts: ${boundedSymbols(constantsShapes)}. Zero-dependency layer — built first.`,
         contracts: constantsShapes,
         countRows: false,
+        rowBudget,
+        onSplit: onFoundationSplit,
       })
     );
   }
 
   if (dtoShapes.length > 0) {
     foundationStories.push(
-      foundationStory({
+      ...planFoundationLayer({
         layer: 'dto-shapes',
         title: 'DTO & domain shapes',
         description:
@@ -452,13 +648,15 @@ export function deriveCorpusPlan(
           `citing the modernization decisions for representation.`,
         contracts: dtoShapes,
         countRows: false,
+        rowBudget,
+        onSplit: onFoundationSplit,
       })
     );
   }
 
   if (crossCuttingFragments.length > 0) {
     foundationStories.push(
-      foundationStory({
+      ...planFoundationLayer({
         layer: 'cross-cutting-fragments',
         title: 'Cross-cutting shared fragments',
         description:
@@ -467,13 +665,15 @@ export function deriveCorpusPlan(
           `Implemented ONCE here; endpoint stories reference their outcome labels.`,
         contracts: crossCuttingFragments,
         countRows: true,
+        rowBudget,
+        onSplit: onFoundationSplit,
       })
     );
   }
 
   if (utilityFragments.length > 0) {
     foundationStories.push(
-      foundationStory({
+      ...planFoundationLayer({
         layer: 'utilities',
         title: 'Utility functions package',
         description:
@@ -482,13 +682,15 @@ export function deriveCorpusPlan(
           `consolidation decisions.`,
         contracts: utilityFragments,
         countRows: true,
+        rowBudget,
+        onSplit: onFoundationSplit,
       })
     );
   }
 
   if (boundaries.length > 0) {
     foundationStories.push(
-      foundationStory({
+      ...planFoundationLayer({
         layer: 'data-access',
         title: 'Data-access layer',
         description:
@@ -496,13 +698,15 @@ export function deriveCorpusPlan(
           `verbatim SQL / derived-query outcomes: ${boundedSymbols(boundaries)}.`,
         contracts: boundaries,
         countRows: false,
+        rowBudget,
+        onSplit: onFoundationSplit,
       })
     );
   }
 
   if (shapes.length > 0) {
     foundationStories.push(
-      foundationStory({
+      ...planFoundationLayer({
         layer: 'test-kit',
         title: 'Test kit — fixture builders',
         description:
@@ -511,6 +715,8 @@ export function deriveCorpusPlan(
           `expected values.`,
         contracts: shapes,
         countRows: false,
+        rowBudget,
+        onSplit: onFoundationSplit,
       })
     );
   }
@@ -530,6 +736,7 @@ export function deriveCorpusPlan(
     sharedContractCount: contracts.filter(isSharedContract).length,
     controllerCount: 0,
     splitCount: 0,
+    foundationSplitCount,
     rowBudget,
   };
   const onController = () => {

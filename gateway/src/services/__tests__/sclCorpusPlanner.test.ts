@@ -239,6 +239,7 @@ describe('deriveCorpusPlan — endpoint groups', () => {
       sharedContractCount: 2, // T-ENV (fan_in 3) + T-UTIL (fan_in 2)
       controllerCount: 3, // OrdersController, UsersController, NightlyJob
       splitCount: 0,
+      foundationSplitCount: 0, // fixture layers are all well under the 40 budget
       rowBudget: 40,
     });
   });
