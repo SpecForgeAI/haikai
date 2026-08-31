@@ -42,6 +42,23 @@ import java.util.regex.Pattern;
  *       EVIDENCE DENSITY 15, SIBLING/PARENT ALIGNMENT 10 (sum = 100)</li>
  *   <li>Grade bands: A &gt;= 85, B 70-84, C 55-69, D 40-54, F &lt; 40</li>
  * </ul>
+ *
+ * <p><b>Archetype awareness (2026-08-30).</b> v1 measured every row against the
+ * LLM shape-spec template: seven bare-label sections and two citation
+ * notations. Deterministic carriage generators emit neither, so on a
+ * carriage-dominated book the scorer reported COMPLETENESS near zero,
+ * EVIDENCE DENSITY at exactly zero for 100% of rows, and SIBLING/PARENT
+ * ALIGNMENT as the constant 50 — three of five dimensions carrying no signal,
+ * which graded well-formed specs F. The scorer now resolves a
+ * {@link SpecArchetype} from {@code focused_context_refs_json.source} and
+ * measures each row against the vocabulary its producer actually emits.
+ * An unknown or absent source falls back to {@link SpecArchetype#LLM_SHAPE},
+ * preserving v1 behaviour exactly for the LLM path.</p>
+ *
+ * <p>This is a MEASUREMENT fix, not a leniency fix: a genuinely missing
+ * acceptance-criteria section is still scored as missing (see
+ * {@link SpecArchetype#DB_PACK}), and unresolved references now cost points
+ * where previously they cost nothing.</p>
  */
 @Component
 @Slf4j
@@ -86,6 +103,16 @@ public class SpecQualityScorer {
     private static final String WARNING_KIND_ALIGNED_WITH_EPIC_DECISION =
         "aligned_with_epic_decision";
 
+    /**
+     * Emitted by the heading/reference parser when a spec cites a reference that
+     * does not resolve in the committed model. Treated as a referential failure
+     * against the parent/sibling context.
+     */
+    private static final String WARNING_KIND_UNRESOLVED_REFERENCE = "UNRESOLVED_REFERENCE";
+
+    /** Points deducted per unresolved reference, floored at 0 by clamping. */
+    private static final int UNRESOLVED_REFERENCE_PENALTY = 5;
+
     // -----------------------------------------------------------------------
     // Section heading detection (COMPLETENESS). Tolerant of leading optional
     // ATX heading marker, trailing colon, plural suffixes, and case.
@@ -122,6 +149,130 @@ public class SpecQualityScorer {
         return Pattern.compile(
             "^\\s*(?:[#]{1,6}\\s+)?" + label + "\\s*:?\\s*$",
             Pattern.CASE_INSENSITIVE);
+    }
+
+    /**
+     * Heading matcher for DETERMINISTIC CARRIAGE specs.
+     *
+     * <p>{@link #headingPattern} anchors the whole line ({@code ...\s*$}), which
+     * is correct for the LLM shape-spec template whose headings are bare labels
+     * ({@code Decisions:}). Carriage generators emit headings that carry a
+     * trailing qualifier — e.g.
+     * {@code ## Modernization decisions (confirmed — cite, never re-decide)}
+     * and {@code ## Files to reproduce byte-for-byte (15)} — so a whole-line
+     * anchor can NEVER match them. Every carriage archetype therefore scored
+     * 1/7 or 0/7 on COMPLETENESS regardless of how complete it actually was.
+     * This matcher requires the ATX marker (carriage headings always have one)
+     * and anchors only the PREFIX.</p>
+     */
+    private static Pattern headingPrefixPattern(String label) {
+        return Pattern.compile(
+            "\\s*[#]{1,6}\\s+" + label + "\\b.*$",
+            Pattern.CASE_INSENSITIVE);
+    }
+
+    private static SectionDescriptor carriageSection(String label) {
+        return new SectionDescriptor(label, headingPrefixPattern(label));
+    }
+
+    // -----------------------------------------------------------------------
+    // Spec archetypes (2026-08-30)
+    //
+    // COMPLETENESS is only meaningful against the section vocabulary the
+    // producing generator actually emits. The v1 scorer hardcoded the LLM
+    // shape-spec template's seven sections and applied it to every row, so
+    // deterministic carriage specs were measured against headings they were
+    // never designed to have. The archetype is resolved from
+    // `focused_context_refs_json.source` and selects the expected set.
+    //
+    // DELIBERATELY UNCHANGED: an unknown/absent source falls back to
+    // LLM_SHAPE with the original seven exact-match sections, so the LLM
+    // path — the only path the v1 scorer measured correctly — keeps its
+    // existing scores byte-for-byte.
+    // -----------------------------------------------------------------------
+
+    /** Producing-generator family for a spec row. */
+    public enum SpecArchetype {
+        /** LLM-authored shape spec (v1 behaviour; the default). */
+        LLM_SHAPE,
+        /** Per-endpoint carriage assembled from the SCL corpus. */
+        SCL_CARRIAGE,
+        /** DB migration pack carriage (changesets, runbooks, load scripts). */
+        DB_PACK,
+        /** Internal-process carriage with the DB-delta verification oracle. */
+        INTERNAL_CARRIAGE,
+        /** Human/wizard gate runbook. */
+        MANUAL_GATE,
+        /** Application scaffold + seed build files. */
+        SCAFFOLD;
+
+        /** Resolve from {@code focused_context_refs_json.source}. */
+        public static SpecArchetype fromSource(String source) {
+            if (source == null) return LLM_SHAPE;
+            return switch (source.trim().toLowerCase(Locale.ROOT)) {
+                case "scl_spec_carriage" -> SCL_CARRIAGE;
+                case "db_migration_pack" -> DB_PACK;
+                case "committed_model_internal_carriage" -> INTERNAL_CARRIAGE;
+                case "code_plan_manual_gate" -> MANUAL_GATE;
+                case "scaffold_bootstrap_carriage" -> SCAFFOLD;
+                default -> LLM_SHAPE;
+            };
+        }
+    }
+
+    /**
+     * Expected sections per archetype. Labels are the real headings emitted by
+     * each generator, verified against the produced corpus — NOT aspirational.
+     *
+     * <p>Where an archetype genuinely has no acceptance-criteria heading we
+     * still list one if its absence is a real defect worth scoring
+     * ({@code DB_PACK}), and omit it where another section carries the
+     * acceptance role ({@code INTERNAL_CARRIAGE}'s verification recipe,
+     * {@code MANUAL_GATE}'s gate condition). The scorer must not manufacture a
+     * permanent penalty for a section the archetype is not supposed to have.</p>
+     */
+    private static final Map<SpecArchetype, List<SectionDescriptor>> SECTIONS_BY_ARCHETYPE =
+        Map.of(
+            SpecArchetype.SCL_CARRIAGE, List.of(
+                carriageSection("objective"),
+                carriageSection("acceptance criteria"),
+                carriageSection("modernization decisions"),
+                carriageSection("contract blocks"),
+                carriageSection("target technology stack"),
+                carriageSection("wire-format fidelity")),
+            SpecArchetype.DB_PACK, List.of(
+                carriageSection("context"),
+                carriageSection("requirements"),
+                carriageSection("files to reproduce"),
+                carriageSection("acceptance criteria")),
+            SpecArchetype.INTERNAL_CARRIAGE, List.of(
+                carriageSection("context"),
+                carriageSection("internal process"),
+                carriageSection("verification recipe"),
+                carriageSection("target technology stack")),
+            SpecArchetype.MANUAL_GATE, List.of(
+                carriageSection("manual-gate work item"),
+                carriageSection("procedure"),
+                carriageSection("gate condition")),
+            SpecArchetype.SCAFFOLD, List.of(
+                carriageSection("objective"),
+                carriageSection("acceptance criteria"),
+                carriageSection("seed build files"),
+                carriageSection("target technology stack")));
+
+    /**
+     * Heading that carries the ACCEPTANCE role for archetypes that do not emit
+     * a literal {@code ## Acceptance criteria}. Used as an AC-block fallback by
+     * {@link #scoreAcMeasurability} so those rows are scored on the statements
+     * they DO make rather than reported as "no acceptance criteria found".
+     */
+    private static final Map<SpecArchetype, Pattern> AC_FALLBACK_HEADING = Map.of(
+        SpecArchetype.DB_PACK, headingPrefixPattern("requirements"),
+        SpecArchetype.INTERNAL_CARRIAGE, headingPrefixPattern("verification recipe"),
+        SpecArchetype.MANUAL_GATE, headingPrefixPattern("gate condition"));
+
+    private static List<SectionDescriptor> expectedSections(SpecArchetype archetype) {
+        return SECTIONS_BY_ARCHETYPE.getOrDefault(archetype, EXPECTED_SECTIONS);
     }
 
     // -----------------------------------------------------------------------
@@ -180,6 +331,29 @@ public class SpecQualityScorer {
         "\\[(?:finding-[^\\]]+|baseline-[^\\]]+|evidence-[^\\]]+)\\]",
         Pattern.CASE_INSENSITIVE);
 
+    /**
+     * Citation notations emitted by the DETERMINISTIC CARRIAGE generators.
+     *
+     * <p>v1 recognised only the LLM template's {@code Evidence:} prefixes and
+     * {@code [finding-...]} brackets. Carriage specs cite their evidence in
+     * three entirely different notations, so EVIDENCE DENSITY scored exactly
+     * ZERO on every carriage row — the dimension never fired and contributed a
+     * flat 0 of its 15 weight to every spec in the corpus:</p>
+     * <ul>
+     *   <li>{@code [decision:<code>]} — a confirmed architecture decision</li>
+     *   <li>{@code SomeClass.java:217} — a source cite behind a contract</li>
+     *   <li>{@code pack <uuid>} — provenance of a carried pack artefact</li>
+     * </ul>
+     */
+    private static final Pattern EVIDENCE_DECISION_CITE = Pattern.compile(
+        "\\[decision:[^\\]]+\\]", Pattern.CASE_INSENSITIVE);
+    private static final Pattern EVIDENCE_SOURCE_LINE_CITE = Pattern.compile(
+        "\\b[\\w$]+\\.(?:java|ts|tsx|py|go|sql|xml|jsp|properties)\\s*:\\s*\\d+\\b",
+        Pattern.CASE_INSENSITIVE);
+    private static final Pattern EVIDENCE_PACK_STAMP = Pattern.compile(
+        "\\bpack\\s+[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\b",
+        Pattern.CASE_INSENSITIVE);
+
     // -----------------------------------------------------------------------
     // Public API
     // -----------------------------------------------------------------------
@@ -194,8 +368,25 @@ public class SpecQualityScorer {
         List<String> interfaces,
         List<String> assumptions,
         List<Map<String, Object>> warnings,
-        String storyTitle
+        String storyTitle,
+        SpecArchetype archetype
     ) {
+        /**
+         * Backwards-compatible 6-arg form. {@code archetype} defaults to
+         * {@link SpecArchetype#LLM_SHAPE}, which selects the original v1
+         * section vocabulary — so every existing caller and test keeps its
+         * exact previous behaviour.
+         */
+        public Input(
+                String specText,
+                List<String> decisions,
+                List<String> interfaces,
+                List<String> assumptions,
+                List<Map<String, Object>> warnings,
+                String storyTitle) {
+            this(specText, decisions, interfaces, assumptions, warnings, storyTitle,
+                SpecArchetype.LLM_SHAPE);
+        }
     }
 
     /**
@@ -225,9 +416,11 @@ public class SpecQualityScorer {
             ? new Input(null, null, null, null, null, null)
             : input;
         String specText = safe.specText() == null ? "" : safe.specText();
+        SpecArchetype archetype =
+            safe.archetype() == null ? SpecArchetype.LLM_SHAPE : safe.archetype();
 
-        DimensionScore completeness = scoreCompleteness(specText);
-        DimensionScore acMeasurability = scoreAcMeasurability(specText);
+        DimensionScore completeness = scoreCompleteness(specText, archetype);
+        DimensionScore acMeasurability = scoreAcMeasurability(specText, archetype);
         DimensionScore concreteness = scoreImplementationConcreteness(specText, safe.storyTitle());
         DimensionScore evidence = scoreEvidenceDensity(specText);
         DimensionScore alignment = scoreSiblingParentAlignment(safe.warnings());
@@ -254,32 +447,38 @@ public class SpecQualityScorer {
     // Dimension 1: COMPLETENESS
     // -----------------------------------------------------------------------
 
+    /** v1 entry point — scores against the LLM shape-spec vocabulary. */
     DimensionScore scoreCompleteness(String specText) {
+        return scoreCompleteness(specText, SpecArchetype.LLM_SHAPE);
+    }
+
+    DimensionScore scoreCompleteness(String specText, SpecArchetype archetype) {
+        List<SectionDescriptor> expected = expectedSections(archetype);
         if (specText == null || specText.isBlank()) {
-            // Build the full "missing: ..." list verbatim from EXPECTED_SECTIONS.
+            // Build the full "missing: ..." list verbatim from the expected set.
             String missing = joinLabels(
-                EXPECTED_SECTIONS.stream().map(SectionDescriptor::label).toList());
+                expected.stream().map(SectionDescriptor::label).toList());
             return new DimensionScore(
                 DIMENSION_COMPLETENESS,
                 0,
-                "0/" + EXPECTED_SECTIONS.size() + " expected sections present; missing: " + missing);
+                "0/" + expected.size() + " expected sections present; missing: " + missing);
         }
         String[] lines = specText.split("\\r?\\n", -1);
         int present = 0;
         List<String> missingLabels = new ArrayList<>();
-        for (SectionDescriptor sd : EXPECTED_SECTIONS) {
+        for (SectionDescriptor sd : expected) {
             if (anyLineMatches(lines, sd.pattern())) {
                 present++;
             } else {
                 missingLabels.add(sd.label());
             }
         }
-        int score = (int) Math.round((present / (double) EXPECTED_SECTIONS.size()) * 100.0);
+        int score = (int) Math.round((present / (double) expected.size()) * 100.0);
         String reason;
         if (missingLabels.isEmpty()) {
-            reason = present + "/" + EXPECTED_SECTIONS.size() + " expected sections present";
+            reason = present + "/" + expected.size() + " expected sections present";
         } else {
-            reason = present + "/" + EXPECTED_SECTIONS.size()
+            reason = present + "/" + expected.size()
                 + " expected sections present; missing: "
                 + joinLabels(missingLabels);
         }
@@ -301,12 +500,17 @@ public class SpecQualityScorer {
     // Dimension 2: AC MEASURABILITY
     // -----------------------------------------------------------------------
 
+    /** v1 entry point — LLM shape-spec AC block only. */
     DimensionScore scoreAcMeasurability(String specText) {
+        return scoreAcMeasurability(specText, SpecArchetype.LLM_SHAPE);
+    }
+
+    DimensionScore scoreAcMeasurability(String specText, SpecArchetype archetype) {
         if (specText == null || specText.isBlank()) {
             return new DimensionScore(
                 DIMENSION_AC_MEASURABILITY, 0, "No acceptance criteria found in spec");
         }
-        List<String> acs = extractAcceptanceCriteriaLines(specText);
+        List<String> acs = extractAcceptanceCriteriaLines(specText, archetype);
         if (acs.isEmpty()) {
             return new DimensionScore(
                 DIMENSION_AC_MEASURABILITY, 0, "No acceptance criteria found in spec");
@@ -346,28 +550,69 @@ public class SpecQualityScorer {
         return Math.min(100, s);
     }
 
-    /**
-     * Pull the block between {@code ## Acceptance Criteria} (any heading level
-     * / tolerant pluralisation) and the next heading boundary, then split into
-     * AC entries (bullet / ordered list items). Returns an empty list when no
-     * AC heading is present OR when the block contains no list items.
-     */
+    /** v1 entry point — LLM shape-spec AC block only. */
     private static List<String> extractAcceptanceCriteriaLines(String specText) {
+        return extractAcceptanceCriteriaLines(specText, SpecArchetype.LLM_SHAPE);
+    }
+
+    /**
+     * Locate and parse the acceptance block.
+     *
+     * <p>Three fixes over v1, all of which caused a silent 0:</p>
+     * <ol>
+     *   <li>The heading is matched by the exact v1 pattern FIRST (preserving LLM
+     *       behaviour), then by the carriage prefix form, then by the
+     *       archetype's ({@link #AC_FALLBACK_HEADING}) — so archetypes whose
+     *       acceptance role is carried by another section are scored on the
+     *       statements they DO make.</li>
+     *   <li>The block boundary is a heading at the SAME OR SHALLOWER depth than
+     *       the AC heading. v1 broke on ANY ATX heading, so an AC block
+     *       containing sub-headings was truncated at the first one.</li>
+     *   <li>Markdown TABLE ROWS count as entries when the block has no bullets.
+     *       Carriage generators tabulate acceptance rows; v1 recognised only
+     *       bullet/ordered list items and returned empty.</li>
+     * </ol>
+     */
+    private static List<String> extractAcceptanceCriteriaLines(
+            String specText, SpecArchetype archetype) {
         String[] lines = specText.split("\\r?\\n", -1);
         int startIdx = -1;
-        for (int i = 0; i < lines.length; i++) {
+        int headingDepth = 0;
+        for (int i = 0; i < lines.length && startIdx < 0; i++) {
             if (HEADING_ACCEPTANCE_CRITERIA.matcher(lines[i]).matches()) {
                 startIdx = i + 1;
-                break;
+                headingDepth = atxDepth(lines[i]);
+            }
+        }
+        if (startIdx < 0) {
+            Pattern carriageAc = headingPrefixPattern("acceptance criteria");
+            for (int i = 0; i < lines.length && startIdx < 0; i++) {
+                if (carriageAc.matcher(lines[i]).matches()) {
+                    startIdx = i + 1;
+                    headingDepth = atxDepth(lines[i]);
+                }
+            }
+        }
+        if (startIdx < 0) {
+            Pattern fallback = archetype == null ? null : AC_FALLBACK_HEADING.get(archetype);
+            if (fallback != null) {
+                for (int i = 0; i < lines.length && startIdx < 0; i++) {
+                    if (fallback.matcher(lines[i]).matches()) {
+                        startIdx = i + 1;
+                        headingDepth = atxDepth(lines[i]);
+                    }
+                }
             }
         }
         if (startIdx < 0) return List.of();
+
         List<String> acs = new ArrayList<>();
+        List<String> tableRows = new ArrayList<>();
         for (int i = startIdx; i < lines.length; i++) {
             String raw = lines[i];
             String trimmed = raw.trim();
             if (trimmed.isEmpty()) continue;
-            if (isAnotherHeading(raw)) break;
+            if (isBlockBoundary(raw, headingDepth)) break;
             Matcher b = LIST_BULLET.matcher(raw);
             if (b.matches()) {
                 acs.add(b.group(1).trim());
@@ -376,16 +621,28 @@ public class SpecQualityScorer {
             Matcher o = LIST_ORDERED.matcher(raw);
             if (o.matches()) {
                 acs.add(o.group(1).trim());
+                continue;
             }
+            String row = tableRowContent(trimmed);
+            if (row != null) tableRows.add(row);
         }
+        // Bullets win; tables are the fallback shape for tabulated acceptance.
+        if (acs.isEmpty()) return List.copyOf(tableRows);
         return acs;
     }
 
+    /** ATX heading depth ({@code ## x} -> 2); 0 when the line is not a heading. */
+    private static int atxDepth(String line) {
+        Matcher m = Pattern.compile("^\\s*([#]{1,6})\\s+\\S").matcher(line);
+        return m.find() ? m.group(1).length() : 0;
+    }
+
     /**
-     * "Another heading" boundary detector for the AC block. Matches any of the
-     * known section headings OR a generic ATX-style heading line.
+     * Block boundary: a known non-AC section heading, or an ATX heading at a
+     * depth at or above {@code headingDepth}. Deeper sub-headings do NOT end
+     * the block.
      */
-    private static boolean isAnotherHeading(String line) {
+    private static boolean isBlockBoundary(String line, int headingDepth) {
         for (SectionDescriptor sd : EXPECTED_SECTIONS) {
             if (sd.pattern().matcher(line).matches()
                 && !HEADING_ACCEPTANCE_CRITERIA.equals(sd.pattern())) {
@@ -393,7 +650,24 @@ public class SpecQualityScorer {
             }
         }
         // Generic ATX heading (## Something) we don't otherwise know about.
-        return line.matches("^\\s*[#]{1,6}\\s+\\S.*$");
+        int depth = atxDepth(line);
+        if (depth == 0) return false;
+        if (headingDepth <= 0) return true;
+        return depth <= headingDepth;
+    }
+
+    /**
+     * Content of a markdown table row, or {@code null} when the line is not a
+     * data row. Separator rows ({@code |---|---|}) and rows whose cells are all
+     * empty are rejected.
+     */
+    private static String tableRowContent(String trimmed) {
+        if (!trimmed.startsWith("|")) return null;
+        String inner = trimmed.replaceAll("^\\||\\|$", "");
+        if (inner.isBlank()) return null;
+        if (inner.matches("[\\s:\\-|]+")) return null;
+        String flattened = inner.replace('|', ' ').replaceAll("\\s+", " ").trim();
+        return flattened.isEmpty() ? null : flattened;
     }
 
     private static String truncate(String s, int max) {
@@ -466,12 +740,24 @@ public class SpecQualityScorer {
         }
         Matcher bm = EVIDENCE_BRACKETED.matcher(specText);
         while (bm.find()) refs++;
+        // Carriage citation notations (see the pattern javadoc): without these
+        // the dimension is dead for every deterministically-assembled spec.
+        refs += countMatches(EVIDENCE_DECISION_CITE, specText);
+        refs += countMatches(EVIDENCE_SOURCE_LINE_CITE, specText);
+        refs += countMatches(EVIDENCE_PACK_STAMP, specText);
         int wordCount = countWords(specText);
         double density = refs / Math.max(1.0, wordCount / 100.0);
         int score = (int) Math.min(100, Math.round(density * 25.0));
         String reason = refs + " evidence refs across ~" + wordCount
             + " words; density = " + String.format(Locale.ROOT, "%.2f", density);
         return new DimensionScore(DIMENSION_EVIDENCE_DENSITY, score, reason);
+    }
+
+    private static int countMatches(Pattern p, String text) {
+        Matcher m = p.matcher(text);
+        int n = 0;
+        while (m.find()) n++;
+        return n;
     }
 
     private static int countWords(String text) {
@@ -488,18 +774,32 @@ public class SpecQualityScorer {
     DimensionScore scoreSiblingParentAlignment(List<Map<String, Object>> warnings) {
         int contradictions = 0;
         int alignments = 0;
+        int unresolved = 0;
         if (warnings != null) {
             for (Map<String, Object> w : warnings) {
                 if (w == null) continue;
+                // Warning rows carry their discriminator under `kind` OR `code`
+                // depending on the emitting stage. v1 read only `kind`, so
+                // every `code`-keyed warning was invisible here.
                 Object kind = w.get("kind");
+                if (kind == null) kind = w.get("code");
                 if (WARNING_KIND_CONTRADICTS_SIBLING.equals(kind)) contradictions++;
                 else if (WARNING_KIND_ALIGNED_WITH_EPIC_DECISION.equals(kind)) alignments++;
+                else if (WARNING_KIND_UNRESOLVED_REFERENCE.equals(kind)) unresolved++;
             }
         }
-        int raw = 50 - (contradictions * 20) + (alignments * 15);
+        int raw = 50 - (contradictions * 20) + (alignments * 15)
+            - (unresolved * UNRESOLVED_REFERENCE_PENALTY);
         int clamped = Math.max(0, Math.min(100, raw));
         String reason = contradictions + " contradictions, " + alignments
             + " alignments; from baseline 50";
+        if (unresolved > 0) {
+            // An unresolved reference IS a referential-integrity failure against
+            // the parent/sibling model, so it belongs in this dimension. Without
+            // it the dimension returned a constant 50 for the entire corpus and
+            // contributed no signal at all.
+            reason = reason + "; " + unresolved + " unresolved reference(s) penalised";
+        }
         return new DimensionScore(DIMENSION_SIBLING_PARENT_ALIGNMENT, clamped, reason);
     }
 

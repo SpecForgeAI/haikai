@@ -173,12 +173,19 @@ export function languageFor(path: string): string {
   return '';
 }
 
+/** House citation notation, identical to the scaffold/SCL carriage form. */
+function citeDecision(...codes: string[]): string {
+  return codes.map((code) => `[decision:${code}]`).join('');
+}
+
 export function buildDbPackSpecText(args: {
   story: LoadedBookOfWorkItem;
   packId: string;
   files: PackFileRow[];
+  /** `manifest.target_db.engine` when the pack declares one. */
+  targetEngine?: string | null;
 }): string {
-  const { story, packId, files } = args;
+  const { story, packId, files, targetEngine } = args;
   const lines: string[] = [];
   lines.push(`${SPEC_TEXT_REQUIRED_PREFIX} ${story.title}`);
   lines.push('');
@@ -232,6 +239,76 @@ export function buildDbPackSpecText(args: {
     );
   }
   lines.push('');
+
+  // -------------------------------------------------------------------------
+  // Acceptance criteria (2026-08-30)
+  //
+  // These specs previously carried NO acceptance-criteria section at all:
+  // every DB-tier spec emitted `## Context` + `## Requirements` + the file
+  // list and stopped there — yet the book-of-work stories DID carry
+  // acceptance criteria. The criteria existed on the item and simply never
+  // reached the spec text, so the acceptance surface was invisible to the
+  // implementer and unscoreable by the quality scorer.
+  // -------------------------------------------------------------------------
+  const storyAc = (story.acceptanceCriteria ?? [])
+    .map((criterion) => String(criterion).trim())
+    .filter((criterion) => criterion.length > 0);
+
+  lines.push('## Acceptance criteria');
+  lines.push('');
+  for (const criterion of storyAc) lines.push(`- ${criterion}`);
+  lines.push(
+    `- All ${inline.length} file(s) in "Files to reproduce byte-for-byte" exist at ` +
+      'their exact repo-relative paths and match the pack content byte-for-byte ' +
+      '(no reflow, no rename, no comment edits).'
+  );
+  lines.push(
+    "- The pack's expected-schema diff returns GREEN after these changesets apply."
+  );
+  lines.push("- No migration file outside this story's file list is modified.");
+  if (overlaid.length > 0) {
+    lines.push(
+      `- The ${overlaid.length} run-assembly file(s) are ABSENT from the branch — ` +
+        'the run-end assembly job writes them, so authoring one here is a defect ' +
+        'rather than a contribution.'
+    );
+  }
+  if (storyAc.length === 0) {
+    lines.push('');
+    lines.push(
+      '> NOTE: the book-of-work story recorded no acceptance criteria of its own, ' +
+        'so the mechanical criteria above are the WHOLE acceptance surface here. ' +
+        'That is expected for pure carriage, but be clear about what it means: ' +
+        'nothing above checks migration BEHAVIOUR, only that the bytes landed.'
+    );
+  }
+  lines.push('');
+
+  // -------------------------------------------------------------------------
+  // Decisions carried (2026-08-30)
+  //
+  // The DB-tier specs cited ZERO decisions. Every other carriage archetype
+  // cites its governing decisions in `[decision:<code>]` form so the
+  // implementer can see what was already settled; the DB tier silently
+  // presented pack output as if it had no provenance.
+  // -------------------------------------------------------------------------
+  lines.push('## Decisions carried (cite, never re-decide)');
+  lines.push('');
+  lines.push(
+    'Every translation choice behind these files was made upstream by the pack ' +
+      'generator. Cite them; do not re-derive, re-open, or "improve" them.'
+  );
+  lines.push('');
+  if (targetEngine) {
+    lines.push(`- Target engine: \`${targetEngine}\` ${citeDecision('db.engine')}`);
+  }
+  lines.push(
+    `- Pack provenance: pack ${packId} — the pack's decision queue is the ` +
+      'authoritative record for every per-object translation decision ' +
+      '(translate / rewrite-in-app / drop) that produced this content.'
+  );
+  lines.push('');
+
   lines.push(`## Files to reproduce byte-for-byte (${inline.length})`);
   for (const file of inline) {
     const content = file.content ?? '';
@@ -330,6 +407,32 @@ export async function runDbPackSpecCarriage(args: {
     };
   }
 
+  // The manifest's declared target binding, read UNCONDITIONALLY (2026-08-30).
+  // Previously this was parsed only for the one story carrying the master
+  // changelog, so the engine was unavailable to every other DB-tier spec and
+  // none of them could cite `[decision:db.engine]`.
+  type PackTargetDb = {
+    engine: string;
+    host: string;
+    port: number;
+    database: string;
+    schema: string;
+    username: string;
+    note?: string;
+  };
+  let targetDb: PackTargetDb | null = null;
+  const manifestRow = rows.find((r) => r.file_path === 'manifest.json');
+  if (manifestRow?.content) {
+    try {
+      const manifest = JSON.parse(manifestRow.content) as { target_db?: PackTargetDb };
+      targetDb = manifest.target_db ?? null;
+    } catch {
+      // Malformed manifest — both the binding section and the engine cite are
+      // best-effort and simply stay absent.
+      targetDb = null;
+    }
+  }
+
   // Target-DB binding confirmation (2026-07-20): the story that CARRIES the
   // master changelog is the story that CREATES the target database — its spec
   // must state, verbatim, where it creates it (the manifest's declared
@@ -338,47 +441,32 @@ export async function runDbPackSpecCarriage(args: {
   const carriesMasterChangelog = selection.files.some((f) =>
     f.file_path.endsWith('db.changelog-master.xml'),
   );
-  if (carriesMasterChangelog) {
-    const manifestRow = rows.find((r) => r.file_path === 'manifest.json');
-    if (manifestRow?.content) {
-      try {
-        const manifest = JSON.parse(manifestRow.content) as {
-          target_db?: {
-            engine: string;
-            host: string;
-            port: number;
-            database: string;
-            schema: string;
-            username: string;
-            note?: string;
-          };
-        };
-        const t = manifest.target_db;
-        if (t) {
-          bindingSection = [
-            '',
-            '## Target database (declared binding)',
-            '',
-            'This spec CREATES the target database at the coordinates the plan',
-            'declared — confirm them before applying; override only when your',
-            'environment genuinely differs. Credentials are supplied at apply',
-            'time and are never part of this spec.',
-            '',
-            `- Engine: ${t.engine}`,
-            `- JDBC URL: jdbc:postgresql://${t.host}:${t.port}/${t.database}`,
-            `- Schema: ${t.schema}`,
-            `- Username: ${t.username}`,
-            '',
-          ].join('\n');
-        }
-      } catch {
-        // Malformed manifest content — the binding section is best-effort.
-      }
-    }
+  if (carriesMasterChangelog && targetDb) {
+    const t = targetDb;
+    bindingSection = [
+      '',
+      '## Target database (declared binding)',
+      '',
+      'This spec CREATES the target database at the coordinates the plan',
+      'declared — confirm them before applying; override only when your',
+      'environment genuinely differs. Credentials are supplied at apply',
+      'time and are never part of this spec.',
+      '',
+      `- Engine: ${t.engine}`,
+      `- JDBC URL: jdbc:postgresql://${t.host}:${t.port}/${t.database}`,
+      `- Schema: ${t.schema}`,
+      `- Username: ${t.username}`,
+      '',
+    ].join('\n');
   }
 
   const specText =
-    buildDbPackSpecText({ story, packId, files: selection.files }) + bindingSection;
+    buildDbPackSpecText({
+      story,
+      packId,
+      files: selection.files,
+      targetEngine: targetDb?.engine ?? null,
+    }) + bindingSection;
   const warnings: Array<Record<string, unknown>> = [];
   if (specText.length > DB_PACK_CARRIAGE_SIZE_WARNING_CHARS) {
     warnings.push({

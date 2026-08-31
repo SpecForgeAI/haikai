@@ -169,7 +169,13 @@ function makePlan(): SclCorpusPlan {
         controllerClass: 'com.app.NightlyJob',
       },
     ],
-    stats: { sharedContractCount: 2, controllerCount: 2, splitCount: 0, rowBudget: 40 },
+    stats: {
+      sharedContractCount: 2,
+      controllerCount: 2,
+      splitCount: 0,
+      foundationSplitCount: 0,
+      rowBudget: 40,
+    },
   };
 }
 
