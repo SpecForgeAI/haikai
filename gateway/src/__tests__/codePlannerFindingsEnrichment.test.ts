@@ -31,12 +31,13 @@ jest.mock('../services/migrationCarryOverCoverageReads', () => ({
 
 import {
   CodeModelView,
+  NON_ESCALATING_FINDING_SEVERITIES,
   attachFindingMentions,
   attachFindingRoutes,
   defaultFetchCodeModelView,
   findingRouteRefsOf,
   flagEndpoint,
-  isInformationalFinding,
+  isNonEscalatingFinding,
 } from '../services/migrationCodeStreamPlanner';
 import {
   DiscoveryFindingWire,
@@ -77,12 +78,20 @@ const EP_REST = endpoint('ep-1', 'GET /views/{viewId}', 'GET', '/views/{viewId}'
 const EP_REST2 = endpoint('ep-2', 'PUT /filters/create', 'PUT', '/filters/create');
 const EP_BATCH = endpoint('ep-3', 'BATCH_MAIN com.app.NightlySnapshot', null, null);
 
-describe('isInformationalFinding', () => {
-  it('info is informational (case/space tolerant); every other severity is a real signal', () => {
-    expect(isInformationalFinding({ severity: 'info' })).toBe(true);
-    expect(isInformationalFinding({ severity: '  INFO ' })).toBe(true);
-    for (const severity of ['low', 'medium', 'high', 'critical', null, undefined]) {
-      expect(isInformationalFinding({ severity } as DiscoveryFindingWire)).toBe(false);
+describe('isNonEscalatingFinding', () => {
+  it('info and low ride as carriage (case/space tolerant); medium/high/critical escalate', () => {
+    expect(NON_ESCALATING_FINDING_SEVERITIES).toEqual(new Set(['info', 'low']));
+    expect(isNonEscalatingFinding({ severity: 'info' })).toBe(true);
+    expect(isNonEscalatingFinding({ severity: '  INFO ' })).toBe(true);
+    expect(isNonEscalatingFinding({ severity: 'low' })).toBe(true);
+    for (const severity of ['medium', 'high', 'critical']) {
+      expect(isNonEscalatingFinding({ severity } as DiscoveryFindingWire)).toBe(false);
+    }
+  });
+
+  it('an UNKNOWN or missing severity still escalates — never quietly demoted', () => {
+    for (const severity of [null, undefined, '', 'weird_new_level']) {
+      expect(isNonEscalatingFinding({ severity } as DiscoveryFindingWire)).toBe(false);
     }
   });
 });
@@ -245,6 +254,12 @@ describe('defaultFetchCodeModelView — the producer is finally wired', () => {
               detail_json: { codeEndpointMethod: 'GET', codeEndpointPath: '/views/{id}' },
             },
             {
+              id: 'f-low',
+              severity: 'low',
+              title: 'minor note',
+              detail_json: { codeEndpointMethod: 'GET', codeEndpointPath: '/views/{id}' },
+            },
+            {
               id: 'f-high',
               severity: 'high',
               title: 'real problem',
@@ -264,7 +279,9 @@ describe('defaultFetchCodeModelView — the producer is finally wired', () => {
 
     const result = await defaultFetchCodeModelView('p1', 'arch-1');
     expect(result).not.toBeNull();
-    expect(result!.findingIdsByEndpointId.get('ep-1')).toEqual(['f-high', 'f-info']);
+    // info + low ride as carriage on the story...
+    expect(result!.findingIdsByEndpointId.get('ep-1')).toEqual(['f-high', 'f-info', 'f-low']);
+    // ...but only the material finding escalates.
     expect(result!.escalatingFindingIdsByEndpointId?.get('ep-1')).toEqual(['f-high']);
   });
 

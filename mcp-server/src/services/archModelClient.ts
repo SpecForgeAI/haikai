@@ -137,6 +137,31 @@ export interface CandidateEntityMappingDto {
 }
 
 /**
+ * Create payload for the bulk provenance-mapping write (2026-09-01), following
+ * the {@link DiscoveryFindingCreatePayload} convention: server-generated
+ * fields are OPTIONAL and must be OMITTED, never sent as empty strings.
+ *
+ * The writer previously reused the response DTO and sent `id: ''` /
+ * `created_at: ''` "for the server to fill" — but the Java side types `id` as
+ * UUID and Jackson cannot parse `""`, so the entire batch 400'd on every
+ * save-back and the caller's warn swallowed it: the provenance table stayed
+ * empty while everything else persisted. The Java side needs no change — it
+ * was already written expecting ABSENT, never blank
+ * (`dto.id() != null ? dto.id() : UUID.randomUUID()`).
+ */
+export interface CandidateEntityMappingCreatePayload {
+  /** Server-generated when omitted. NEVER send an empty string. */
+  id?: string | null;
+  candidate_id: string;
+  run_id: string;
+  entity_type: string;
+  entity_id: string;
+  action: string;
+  /** Server-generated when omitted. NEVER send an empty string. */
+  created_at?: string | null;
+}
+
+/**
  * Loud-failure validator for required architectureId arguments.
  *
  * Throws synchronously if the architectureId is empty / missing. The discovery
@@ -933,7 +958,7 @@ class ArchModelClient {
     projectId: string,
     architectureId: string,
     runId: string,
-    mappings: CandidateEntityMappingDto[]
+    mappings: CandidateEntityMappingCreatePayload[]
   ): Promise<CandidateEntityMappingDto[]> {
     requireArchitectureId(architectureId, 'bulkCreateCandidateEntityMappings');
     const response = await this.client.post<CandidateEntityMappingDto[]>(

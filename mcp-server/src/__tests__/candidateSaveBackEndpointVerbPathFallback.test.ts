@@ -113,4 +113,33 @@ describe('candidateSaveBackService - endpoint verb/path camelCase fallbacks', ()
     expect(entity.operation_verb).toBeNull();
     expect(entity.path_or_address).toBeNull();
   });
+
+  it('reads the web.xml handler-detector shape: plain data.method fills the verb (2026-09-01)', () => {
+    // The exact candidate shape the webxml-handler detector emits: the verb
+    // arrives as plain `method`, which no other slot covered — so every
+    // web.xml-mapped servlet committed with operation_verb = NULL while
+    // path_or_address populated fine from `data.path`.
+    const candidate = makeEndpointCandidate({
+      path: '/refreshCache',
+      method: 'POST',
+      _addedBy: 'webxml-handler-detector',
+    });
+
+    const entity = convertCandidateToEntity(candidate, 'TestProject', PARENT_MAP);
+
+    expect(entity.operation_verb).toBe('POST');
+    expect(entity.path_or_address).toBe('/refreshCache');
+  });
+
+  it('data.method sits LAST in precedence — every existing shape still wins over it', () => {
+    const candidate = makeEndpointCandidate({
+      httpMethod: 'PUT',
+      method: 'DELETE', // must NOT override the camelCase JAX-RS alias
+      path: '/owners/{id}',
+    });
+
+    const entity = convertCandidateToEntity(candidate, 'TestProject', PARENT_MAP);
+
+    expect(entity.operation_verb).toBe('PUT');
+  });
 });
