@@ -56,6 +56,7 @@ import { generateId } from '../utils/generateId';
 import { applyDecisionsToEntities } from './foundationDecisionApplyService';
 import {
   DiscoveryCandidateDto,
+  CandidateEntityMappingCreatePayload,
   CandidateEntityMappingDto,
   archModelClient,
   DiscoveryFindingCreatePayload,
@@ -1428,8 +1429,15 @@ export function convertCandidateToEntity(
       // `http_method`/`path` and the merge-normalized `operation_verb`/
       // `path_or_address` canonical slots still win, and the JAX-RS aliases only
       // fill the gap when no canonical value is present.
+      // 2026-09-01: the web.xml handler detector emits the verb as plain
+      // `method` ({"path": "/x", "method": "POST", "_addedBy":
+      // "webxml-handler-detector"}), which no slot below looked for — so every
+      // web.xml-mapped servlet committed with operation_verb = NULL while
+      // path_or_address populated fine from `data.path`. Placed LAST so all
+      // existing precedence is preserved and it only fills a gap nothing else
+      // covers.
       entity.operation_verb =
-        data.http_method ?? data.operation_verb ?? data.httpMethod ?? null;
+        data.http_method ?? data.operation_verb ?? data.httpMethod ?? data.method ?? null;
       entity.path_or_address =
         data.path ?? data.path_or_address ?? data.fullPath ?? null;
       // SOAP Discovery -- Spring Classic Phase 1 (2026-05-17), Group 10:
@@ -4294,24 +4302,30 @@ export async function saveDiscoveryCandidatesToModel(
   // ===========================================================================
   // Step 12: Persist provenance mappings
   // ===========================================================================
-  const mappings: CandidateEntityMappingDto[] = candidateActions.map((action) => ({
-    id: '', // server will generate
+  // Server-generated fields (id / created_at) are OMITTED, never sent as
+  // empty strings (2026-09-01): the Java side types `id` as UUID and Jackson
+  // cannot parse "", so the previous DTO-shaped write 400'd the ENTIRE batch
+  // on every save-back — and the warn below swallowed it, leaving the
+  // provenance table empty while everything else persisted.
+  const mappings: CandidateEntityMappingCreatePayload[] = candidateActions.map((action) => ({
     candidate_id: action.candidateId,
     run_id: runId,
     entity_type: action.entityType,
     entity_id: action.entityId,
     action: action.action,
-    created_at: '', // server will set
   }));
 
   try {
     if (commit) await archModelClient.bulkCreateCandidateEntityMappings(projectId, architectureId, runId, mappings);
   } catch (err) {
-    // Log but do not fail -- the model and status updates are already persisted
+    // Log but do not fail -- the model and status updates are already
+    // persisted. State the count and the consequence: a silent warn is
+    // exactly how the empty-string write survived unnoticed.
     console.warn(
-      `[save-back] Provenance mapping persistence failed: ${
-        err instanceof Error ? err.message : String(err)
-      }`
+      `[save-back] Provenance mapping persistence failed for ${mappings.length} mapping(s) ` +
+        `(run ${runId}); re-save idempotency + discovery-origin provenance will be degraded: ${
+          err instanceof Error ? err.message : String(err)
+        }`
     );
   }
 

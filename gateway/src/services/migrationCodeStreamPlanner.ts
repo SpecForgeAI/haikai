@@ -137,7 +137,8 @@ export interface CodeModelView {
   findingIdsByEndpointId: Map<string, string[]>;
   /**
    * The subset of {@link findingIdsByEndpointId} that WARRANTS individual
-   * attention, i.e. excluding `info`-severity findings (2026-09-01).
+   * attention, i.e. excluding {@link NON_ESCALATING_FINDING_SEVERITIES}
+   * (`info` + `low`, 2026-09-01).
    *
    * <p>Carriage and escalation are deliberately different questions. Every
    * attached finding should ride on its story (`findingIds`), but only a
@@ -340,7 +341,7 @@ export const defaultFetchCodeModelView: FetchCodeModelViewFn = async (
       // so `attached_finding` reflects "needs individual attention" rather
       // than "has any finding at all". Reuses the identical matchers — no
       // second matching rule to keep in step.
-      const material = findings.filter((f) => !isInformationalFinding(f));
+      const material = findings.filter((f) => !isNonEscalatingFinding(f));
       let escalatingView: CodeModelView = {
         endpoints,
         baselineByEndpointId,
@@ -410,12 +411,23 @@ export function attachFindingMentions(
 }
 
 /**
- * `info`-severity findings are INFORMATIONAL: they ride along as story-level
- * carriage but must never escalate an endpoint out of its interface cluster.
- * Every other severity (`low`/`medium`/`high`/`critical`) is a real signal.
+ * Severities that ride along as story-level carriage but must never escalate
+ * an endpoint out of its interface cluster (2026-09-01: `low` joined `info`
+ * after a real plan run — low-severity notes are review material, not
+ * individual-story material). Only `medium`/`high`/`critical` escalate.
+ *
+ * An UNKNOWN or missing severity still escalates: an unrecognised signal gets
+ * surfaced rather than quietly demoted.
  */
-export function isInformationalFinding(finding: DiscoveryFindingWire): boolean {
-  return (finding.severity ?? '').trim().toLowerCase() === 'info';
+export const NON_ESCALATING_FINDING_SEVERITIES: ReadonlySet<string> = new Set([
+  'info',
+  'low',
+]);
+
+export function isNonEscalatingFinding(finding: DiscoveryFindingWire): boolean {
+  return NON_ESCALATING_FINDING_SEVERITIES.has(
+    (finding.severity ?? '').trim().toLowerCase()
+  );
 }
 
 /** One finding's endpoint route, as the code discovery scanners record it. */
