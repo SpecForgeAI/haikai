@@ -50,6 +50,19 @@ import {
   MigrationBookOfWorkWorkstream,
 } from './generatedMigrationBookOfWorkSchema';
 import { fetchEndpointBaselineCoverage } from './apiBehaviourBaselineCoverageClient';
+// Findings enrichment reads the RUN-SCOPED findings list rather than the
+// Migration Discovery Context: the context read is capped (maxFindings=100 by
+// default) AND returns only `highPriorityFindings`, so on a large estate it
+// sees a fraction; and it does not expose `detail_json`, where the code
+// scanners record the endpoint route the route-identity tier joins on.
+import {
+  DiscoveryFindingWire,
+  fetchDiscoveryRunsForArchitecture,
+  fetchFindingsForRun,
+} from './migrationCarryOverCoverageReads';
+// The SAME path normalisation the SCL story->endpoint join uses, so a finding
+// and a story resolve an endpoint by identical rules.
+import { normalisePath } from './sclEndpointIdentityJoin';
 import {
   MANUAL_EXECUTION_TAG,
   recommendedNextActionForItem,
@@ -123,6 +136,24 @@ export interface CodeModelView {
   /** endpoint element id -> attached finding ids (best-effort enrichment). */
   findingIdsByEndpointId: Map<string, string[]>;
   /**
+   * The subset of {@link findingIdsByEndpointId} that WARRANTS individual
+   * attention, i.e. excluding `info`-severity findings (2026-09-01).
+   *
+   * <p>Carriage and escalation are deliberately different questions. Every
+   * attached finding should ride on its story (`findingIds`), but only a
+   * material one should pull an endpoint OUT of its interface cluster into an
+   * individual "exceptional" story. On a live estate every route-matched
+   * finding was severity `info` + status `approved`; flagging on mere presence
+   * escalated three quarters of the endpoints, which breaks this module's
+   * stated anti-story-explosion guarantee (see the header: ~40 cluster stories
+   * for 400 endpoints, never 400).</p>
+   *
+   * <p>Optional and ABSENT-tolerant: {@link flagEndpoint} falls back to
+   * `findingIdsByEndpointId` when this is not supplied, so existing callers and
+   * tests keep their current behaviour.</p>
+   */
+  escalatingFindingIdsByEndpointId?: Map<string, string[]>;
+  /**
    * Endpoints the DB-change consumer computation marked DIALECT-AFFECTED
    * (Spec 2026-07-06-f — touches a translated proc, carries T-SQL SQL, or
    * touches a shape-altered table). Optional + absent by default: the
@@ -181,8 +212,11 @@ function resolveVerb(operationVerb: string, name: string): string | null {
  * `{ metaModel: { entities: { interfaces, endpoints } } }`) joined with the
  * canonical endpoint→baseline coverage. Returns null on ANY read failure —
  * the caller degrades to the explicit PREREQUISITE skeleton, never a guess.
- * Findings enrichment is a separate best-effort pass the caller may apply
- * via {@link attachFindingMentions}.
+ * Findings enrichment is applied HERE as a best-effort pass (it was previously
+ * left to callers, and no caller ever applied it), in two tiers:
+ * {@link attachFindingMentions} by endpoint name, then
+ * {@link attachFindingRoutes} by structured route identity — see the
+ * enrichment block below.
  */
 export const defaultFetchCodeModelView: FetchCodeModelViewFn = async (
   projectId,
@@ -253,7 +287,97 @@ export const defaultFetchCodeModelView: FetchCodeModelViewFn = async (
       });
     }
 
-    return { endpoints, baselineByEndpointId, findingIdsByEndpointId: new Map() };
+    // Findings enrichment (2026-08-30 carriage gap). This pass used to be
+    // left to "the caller", but NO caller ever applied it, so
+    // `findingIdsByEndpointId` was ALWAYS empty in production. Two things
+    // silently died as a result: the `attached_finding` endpoint flag could
+    // never fire (no endpoint was ever routed to the exceptional epic for a
+    // finding), and every corpus story's `findingIds` came out `[]` — the
+    // carry-over discovery findings had no story-level home even though the
+    // consumer in `buildCorpusEndpointGroupItems` was built and tested for it.
+    // Applied HERE so the skeleton and the expansion judge flag against
+    // IDENTICAL facts (both read the view through this function).
+    // Fail-soft, matching the baseline-coverage posture above: a findings read
+    // failure leaves the map empty and planning continues unchanged.
+    let findingIdsByEndpointId = new Map<string, string[]>();
+    let escalatingFindingIdsByEndpointId = new Map<string, string[]>();
+    try {
+      // Run-scoped findings across every discovery run of this architecture,
+      // de-duped by finding id (a finding can surface under more than one run).
+      const runs = await fetchDiscoveryRunsForArchitecture(projectId, currentArchitectureId);
+      const findingsById = new Map<string, DiscoveryFindingWire>();
+      for (const run of runs) {
+        if (typeof run.id !== 'string' || run.id.length === 0) continue;
+        const rows = await fetchFindingsForRun(projectId, currentArchitectureId, run.id);
+        for (const row of rows) {
+          if (typeof row.id === 'string' && row.id.length > 0 && !findingsById.has(row.id)) {
+            findingsById.set(row.id, row);
+          }
+        }
+      }
+      const findings = [...findingsById.values()];
+
+      // TIER ORDER IS LOAD-BEARING: the name pass ASSIGNS each endpoint's
+      // list, the route pass MERGES into it. Running routes first would let
+      // the name pass overwrite the route hits.
+      let enriched: CodeModelView = {
+        endpoints,
+        baselineByEndpointId,
+        findingIdsByEndpointId,
+      };
+      enriched = attachFindingMentions(
+        enriched,
+        findings.map((f) => ({
+          findingId: f.id as string,
+          title: f.title ?? '',
+          summary: f.summary ?? null,
+        }))
+      );
+      enriched = attachFindingRoutes(enriched, findingRouteRefsOf(findings));
+      findingIdsByEndpointId = enriched.findingIdsByEndpointId;
+
+      // The ESCALATION subset: the same two tiers over material findings only,
+      // so `attached_finding` reflects "needs individual attention" rather
+      // than "has any finding at all". Reuses the identical matchers — no
+      // second matching rule to keep in step.
+      const material = findings.filter((f) => !isInformationalFinding(f));
+      let escalatingView: CodeModelView = {
+        endpoints,
+        baselineByEndpointId,
+        findingIdsByEndpointId: new Map(),
+      };
+      escalatingView = attachFindingMentions(
+        escalatingView,
+        material.map((f) => ({
+          findingId: f.id as string,
+          title: f.title ?? '',
+          summary: f.summary ?? null,
+        }))
+      );
+      escalatingView = attachFindingRoutes(escalatingView, findingRouteRefsOf(material));
+      escalatingFindingIdsByEndpointId = escalatingView.findingIdsByEndpointId;
+
+      logger.info('Code planner findings enrichment applied', {
+        projectId,
+        runCount: runs.length,
+        findingCount: findings.length,
+        materialFindingCount: material.length,
+        endpointsWithFindings: findingIdsByEndpointId.size,
+        endpointsEscalated: escalatingFindingIdsByEndpointId.size,
+      });
+    } catch (error) {
+      logger.warn('Code planner findings enrichment failed; endpoints carry no finding linkage', {
+        projectId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    return {
+      endpoints,
+      baselineByEndpointId,
+      findingIdsByEndpointId,
+      escalatingFindingIdsByEndpointId,
+    };
   } catch (error) {
     logger.warn('Code planner model read failed', {
       projectId,
@@ -281,6 +405,108 @@ export function attachFindingMentions(
       .filter((f) => normalise(`${f.title} ${f.summary ?? ''}`).includes(needle))
       .map((f) => f.findingId);
     if (hits.length > 0) findingIdsByEndpointId.set(endpoint.id, hits);
+  }
+  return { ...view, findingIdsByEndpointId };
+}
+
+/**
+ * `info`-severity findings are INFORMATIONAL: they ride along as story-level
+ * carriage but must never escalate an endpoint out of its interface cluster.
+ * Every other severity (`low`/`medium`/`high`/`critical`) is a real signal.
+ */
+export function isInformationalFinding(finding: DiscoveryFindingWire): boolean {
+  return (finding.severity ?? '').trim().toLowerCase() === 'info';
+}
+
+/** One finding's endpoint route, as the code discovery scanners record it. */
+export interface FindingRouteRef {
+  findingId: string;
+  /** `detail_json.codeEndpointMethod`, upper-cased; null when absent. */
+  verb: string | null;
+  /** `detail_json.codeEndpointPath`. */
+  path: string;
+}
+
+/**
+ * Read the endpoint ROUTE off each finding's `detail_json`, where the code
+ * discovery scanners record it as `codeEndpointMethod` + `codeEndpointPath`.
+ * Findings without a route are skipped (DB-profiling findings carry
+ * `schemaName`/`tableName` instead — they belong to the DB streams).
+ */
+export function findingRouteRefsOf(findings: DiscoveryFindingWire[]): FindingRouteRef[] {
+  const refs: FindingRouteRef[] = [];
+  for (const finding of findings) {
+    if (typeof finding.id !== 'string' || finding.id.length === 0) continue;
+    const detail = finding.detail_json;
+    if (detail == null || typeof detail !== 'object') continue;
+    const path = (detail as Record<string, unknown>).codeEndpointPath;
+    if (typeof path !== 'string' || path.trim().length === 0) continue;
+    const verb = (detail as Record<string, unknown>).codeEndpointMethod;
+    refs.push({
+      findingId: finding.id,
+      verb:
+        typeof verb === 'string' && verb.trim().length > 0 ? verb.trim().toUpperCase() : null,
+      path,
+    });
+  }
+  return refs;
+}
+
+/**
+ * Attach findings to endpoints by ROUTE IDENTITY (verb + normalised path).
+ *
+ * <p><b>Why this exists (2026-09-01).</b> {@link attachFindingMentions} matches
+ * an endpoint's NAME as a substring of a finding's title/summary. That works
+ * for internal batch entry points, whose committed name IS a fully-qualified
+ * class that appears verbatim in finding prose. It essentially never fires for
+ * REST endpoints, whose names look like `GET /views/{viewId}` and do not
+ * appear verbatim in a human-written summary. Measured on a live estate the
+ * name tier reached a handful of endpoints (almost none of them REST), while
+ * the findings carrying a structured route matched their endpoints on the
+ * EXACT verb+path tier — no fuzzy fallback, never guessed at.</p>
+ *
+ * <p>Matching mirrors the story join: exact verb+path first, then path alone
+ * when the finding records no verb. A route that resolves to nothing is
+ * skipped, never guessed at.</p>
+ *
+ * <p>MERGES into the existing map (unlike the name pass, which assigns), so it
+ * must run AFTER {@link attachFindingMentions} or that assignment would drop
+ * these hits. Pure; copies the map.</p>
+ */
+export function attachFindingRoutes(
+  view: CodeModelView,
+  refs: FindingRouteRef[]
+): CodeModelView {
+  if (refs.length === 0) return view;
+
+  const byVerbPath = new Map<string, string[]>();
+  const byPath = new Map<string, string[]>();
+  const index = (map: Map<string, string[]>, key: string, id: string) => {
+    const list = map.get(key);
+    if (list) list.push(id);
+    else map.set(key, [id]);
+  };
+  for (const endpoint of view.endpoints) {
+    const path = normalisePath(endpoint.path);
+    if (path == null) continue;
+    index(byPath, path, endpoint.id);
+    const verb = (endpoint.verb ?? '').trim().toUpperCase();
+    if (verb.length > 0) index(byVerbPath, `${verb} ${path}`, endpoint.id);
+  }
+
+  const findingIdsByEndpointId = new Map(view.findingIdsByEndpointId);
+  for (const ref of refs) {
+    const path = normalisePath(ref.path);
+    if (path == null) continue;
+    const hits =
+      (ref.verb != null ? byVerbPath.get(`${ref.verb} ${path}`) : undefined) ??
+      byPath.get(path);
+    if (hits == null || hits.length === 0) continue;
+    for (const endpointId of hits) {
+      const existing = findingIdsByEndpointId.get(endpointId) ?? [];
+      if (existing.includes(ref.findingId)) continue;
+      findingIdsByEndpointId.set(endpointId, [...existing, ref.findingId].sort());
+    }
   }
   return { ...view, findingIdsByEndpointId };
 }
@@ -345,7 +571,11 @@ export function flagEndpoint(
   if (kind !== 'internal' && !view.baselineByEndpointId.has(row.id)) {
     flags.push('missing_baseline');
   }
-  if ((view.findingIdsByEndpointId.get(row.id) ?? []).length > 0) {
+  // Escalate on MATERIAL findings only. Falls back to the full carriage map
+  // when the escalating subset was not computed (pre-existing callers/tests).
+  const escalating =
+    view.escalatingFindingIdsByEndpointId ?? view.findingIdsByEndpointId;
+  if ((escalating.get(row.id) ?? []).length > 0) {
     flags.push('attached_finding');
   }
   if (kind === 'soap' && !row.hasProtocolMetadata) {
