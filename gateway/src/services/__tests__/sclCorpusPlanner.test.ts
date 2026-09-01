@@ -7,7 +7,12 @@
  * Exception shape, and 3 DTO shapes (one mutated-in-flight).
  */
 
-import { SclContractDto, deriveCorpusPlan } from '../sclCorpusPlanner';
+import {
+  SclContractDto,
+  composeAnnotationPaths,
+  deriveCorpusPlan,
+  httpRoutesOf,
+} from '../sclCorpusPlanner';
 
 function table(args: {
   key: string;
@@ -259,3 +264,73 @@ describe('deriveCorpusPlan — determinism', () => {
     );
   });
 });
+
+/**
+ * composeAnnotationPaths (2026-09-01). JAX-RS and Spring split a route across
+ * a class-level BASE (`/`-prefixed) and a method-level SUFFIX; the naive
+ * de-dupe emitted the split as TWO bogus routes, neither matching the
+ * committed `/filters/create` — so every split-annotated endpoint silently
+ * failed the route join. `httpRoutesOf` previously had ZERO coverage, which
+ * is exactly how that regression vanished silently.
+ */
+describe('composeAnnotationPaths', () => {
+  it('joins every base to every suffix when both are present', () => {
+    expect(composeAnnotationPaths(['/filters', 'create'])).toEqual(['/filters/create']);
+    expect(composeAnnotationPaths(['/a', '/b', 'x', 'y'].sort())).toEqual([
+      '/a/x',
+      '/a/y',
+      '/b/x',
+      '/b/y',
+    ]);
+  });
+
+  it('absorbs a base trailing slash into ONE separating slash', () => {
+    // NOTE: a `/`-prefixed fragment is ALWAYS a base by the classification
+    // rule — there is deliberately no leading-slash SUFFIX case.
+    expect(composeAnnotationPaths(['/filters/', 'create'])).toEqual(['/filters/create']);
+  });
+
+  it('passes fragments through deduped when either side is absent', () => {
+    expect(composeAnnotationPaths(['/filters', '/views', '/filters'])).toEqual([
+      '/filters',
+      '/views',
+    ]);
+    // A bare suffix stays AS-IS for the join's suffix tier — never fabricated
+    // into a rooted route.
+    expect(composeAnnotationPaths(['create', 'create'])).toEqual(['create']);
+    expect(composeAnnotationPaths([' ', ''])).toEqual([]);
+  });
+});
+
+describe('httpRoutesOf — split-annotation composition', () => {
+  it('a JAX-RS class base + method suffix yields the COMPOSED route, never the two halves', () => {
+    const contract = table({
+      key: 'T-CREATE',
+      symbol: 'com.app.FiltersController#create(Filter)',
+      annotations: ['@Path("/filters")', '@POST', '@Path("create")'],
+      rows: 1,
+    });
+    expect(httpRoutesOf(contract)).toEqual([{ verb: 'POST', path: '/filters/create' }]);
+  });
+
+  it('a Spring class @RequestMapping base + @PostMapping suffix composes the same way', () => {
+    const contract = table({
+      key: 'T-SPRING',
+      symbol: 'com.app.FiltersController#create(Filter)',
+      annotations: ['@RequestMapping("/filters")', '@PostMapping("create")'],
+      rows: 1,
+    });
+    expect(httpRoutesOf(contract)).toEqual([{ verb: 'POST', path: '/filters/create' }]);
+  });
+
+  it('a base-absent bare suffix passes through as-is (for the join suffix tier)', () => {
+    const contract = table({
+      key: 'T-BARE',
+      symbol: 'com.app.FiltersController#create(Filter)',
+      annotations: ['@POST', '@Path("create")'],
+      rows: 1,
+    });
+    expect(httpRoutesOf(contract)).toEqual([{ verb: 'POST', path: 'create' }]);
+  });
+});
+

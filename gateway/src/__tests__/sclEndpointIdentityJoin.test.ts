@@ -12,6 +12,7 @@ import {
   JoinableEndpoint,
   joinSclStoryToEndpoints,
   normalisePath,
+  normalisePathKeepParams,
 } from '../services/sclEndpointIdentityJoin';
 
 describe('normalisePath', () => {
@@ -37,6 +38,94 @@ describe('normalisePath', () => {
     expect(normalisePath(null)).toBeNull();
     expect(normalisePath('   ')).toBeNull();
     expect(normalisePath(undefined)).toBeNull();
+  });
+});
+
+describe('normalisePathKeepParams', () => {
+  it('KEEPS the param name (case-folded) instead of the positional wildcard', () => {
+    // The wildcard form makes distinct suffixes look identical — /{filterId}
+    // and /{viewId} both collapse to /{} — which is exactly what the suffix
+    // tier must be able to tell apart.
+    expect(normalisePathKeepParams('/filters/{filterId}')).toBe('/filters/{filterid}');
+    expect(normalisePathKeepParams('/views/:viewId')).toBe('/views/{viewid}');
+    expect(normalisePathKeepParams('/filters/{filterId}')).not.toBe(
+      normalisePathKeepParams('/views/{viewId}'),
+    );
+  });
+
+  it('shares the rest of the canonical form: scheme/host, query, slashes, ends, case', () => {
+    expect(normalisePathKeepParams('https://host:8443/Filters/{FilterId}/?x=1')).toBe(
+      '/filters/{filterid}',
+    );
+    expect(normalisePathKeepParams('filters//create/')).toBe('/filters/create');
+    expect(normalisePathKeepParams('  ')).toBeNull();
+    expect(normalisePathKeepParams(null)).toBeNull();
+  });
+});
+
+/**
+ * The SUFFIX tier (2026-09-01): a bare method-level fragment (`create`)
+ * arrives as `/create` while the committed endpoint is `/filters/create` —
+ * the class base lives in a deployment descriptor or an unscanned parent, so
+ * exact path identity can never fire.
+ */
+describe('joinSclStoryToEndpoints — suffix tier', () => {
+  const SUFFIX_ENDPOINTS: JoinableEndpoint[] = [
+    { id: 'ep-create', name: 'PUT /filters/create', verb: 'PUT', path: '/filters/create' },
+    { id: 'ep-lookup', name: 'POST /filters/lookup', verb: 'POST', path: '/filters/lookup' },
+    { id: 'ep-lookup2', name: 'POST /views/lookup', verb: 'POST', path: '/views/lookup' },
+    { id: 'ep-fid', name: 'GET /filters/{filterId}', verb: 'GET', path: '/filters/{filterId}' },
+    { id: 'ep-vid', name: 'GET /views/{viewId}', verb: 'GET', path: '/views/{viewId}' },
+  ];
+
+  it('resolves a bare suffix on a UNIQUE hit', () => {
+    const result = joinSclStoryToEndpoints({
+      routes: [{ verb: 'PUT', path: 'create' }],
+      endpoints: SUFFIX_ENDPOINTS,
+    });
+    expect(result.endpointIds).toEqual(['ep-create']);
+    expect(result.unresolved).toEqual([]);
+    expect(result.resolvedByClass).toBe(false);
+  });
+
+  it('REFUSES an ambiguous suffix (two endpoints end the same way) — reported unresolved', () => {
+    const result = joinSclStoryToEndpoints({
+      // No verb: both lookup endpoints tie on every attempt.
+      routes: [{ verb: null, path: 'lookup' }],
+      endpoints: SUFFIX_ENDPOINTS,
+    });
+    expect(result.endpointIds).toEqual([]);
+    expect(result.unresolved).toHaveLength(1);
+  });
+
+  it('the verb-constrained attempt breaks a tie the verb-free one cannot', () => {
+    const withVerbs: JoinableEndpoint[] = [
+      { id: 'ep-get', name: 'GET /filters/save', verb: 'GET', path: '/filters/save' },
+      { id: 'ep-post', name: 'POST /views/save', verb: 'POST', path: '/views/save' },
+    ];
+    const result = joinSclStoryToEndpoints({
+      routes: [{ verb: 'POST', path: 'save' }],
+      endpoints: withVerbs,
+    });
+    expect(result.endpointIds).toEqual(['ep-post']);
+  });
+
+  it('param-NAME disambiguation: the keep-params form resolves what the wildcard form cannot', () => {
+    // Wildcarded, `/{filterId}` and `/{viewId}` both read `/{}` — ambiguous.
+    // The keep-params attempt runs FIRST and lands uniquely.
+    const result = joinSclStoryToEndpoints({
+      routes: [{ verb: 'GET', path: '{filterId}' }],
+      endpoints: SUFFIX_ENDPOINTS,
+    });
+    expect(result.endpointIds).toEqual(['ep-fid']);
+  });
+
+  it('NEVER overrides an exact match: exact tiers run first', () => {
+    const result = joinSclStoryToEndpoints({
+      routes: [{ verb: 'PUT', path: '/filters/create' }],
+      endpoints: SUFFIX_ENDPOINTS,
+    });
+    expect(result.endpointIds).toEqual(['ep-create']);
   });
 });
 
