@@ -433,17 +433,49 @@ export function isNonEscalatingFinding(finding: DiscoveryFindingWire): boolean {
 /** One finding's endpoint route, as the code discovery scanners record it. */
 export interface FindingRouteRef {
   findingId: string;
-  /** `detail_json.codeEndpointMethod`, upper-cased; null when absent. */
+  /** Upper-cased verb from whichever key pair matched; null when absent. */
   verb: string | null;
-  /** `detail_json.codeEndpointPath`. */
+  /**
+   * The endpoint identifier from whichever key pair matched — an HTTP route for
+   * REST endpoints, a fully-qualified class name for internal entry points.
+   */
   path: string;
 }
 
 /**
- * Read the endpoint ROUTE off each finding's `detail_json`, where the code
- * discovery scanners record it as `codeEndpointMethod` + `codeEndpointPath`.
- * Findings without a route are skipped (DB-profiling findings carry
+ * The `detail_json` key spellings the finding emitters use for an endpoint
+ * route, MOST-SPECIFIC FIRST (2026-09-01). Two emitters, two spellings:
+ * the runtime-evidence pipeline (`runtimeEvidence/` via
+ * `findings/emissionSources.ts`) records `codeEndpointMethod` +
+ * `codeEndpointPath` but needs runtime logs to fire; the REST-WADL scanner
+ * (`findings/packFindingScanners/restWadl/`) runs on an ordinary code scan and
+ * records plain `method` + `path`. Reading only the first spelling silently
+ * dropped every WADL-pair finding.
+ */
+const FINDING_ROUTE_KEY_PAIRS: ReadonlyArray<{ verbKey: string; pathKey: string }> = [
+  { verbKey: 'codeEndpointMethod', pathKey: 'codeEndpointPath' },
+  { verbKey: 'method', pathKey: 'path' },
+];
+
+/** Read a non-empty trimmed string off a detail blob, else null. */
+function detailString(detail: Record<string, unknown>, key: string): string | null {
+  const value = detail[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+/**
+ * Read the endpoint ROUTE off each finding's `detail_json`, trying each
+ * emitter key-pair spelling in {@link FINDING_ROUTE_KEY_PAIRS} (most-specific
+ * wins; a finding carrying both spellings attaches ONCE). Findings without a
+ * route in any spelling are skipped (DB-profiling findings carry
  * `schemaName`/`tableName` instead — they belong to the DB streams).
+ *
+ * NOTE: `path` is not always an HTTP route — internal entry points record a
+ * fully-qualified class name that matches the committed `path_or_address`
+ * verbatim. Do NOT add a shape filter (e.g. `startsWith('/')`) here: it was
+ * tried and measurably discarded real matches. {@link attachFindingRoutes}
+ * already fails closed — a value matching no committed endpoint is dropped
+ * there, so shape guessing can only lose real matches.
  */
 export function findingRouteRefsOf(findings: DiscoveryFindingWire[]): FindingRouteRef[] {
   const refs: FindingRouteRef[] = [];
@@ -451,15 +483,18 @@ export function findingRouteRefsOf(findings: DiscoveryFindingWire[]): FindingRou
     if (typeof finding.id !== 'string' || finding.id.length === 0) continue;
     const detail = finding.detail_json;
     if (detail == null || typeof detail !== 'object') continue;
-    const path = (detail as Record<string, unknown>).codeEndpointPath;
-    if (typeof path !== 'string' || path.trim().length === 0) continue;
-    const verb = (detail as Record<string, unknown>).codeEndpointMethod;
-    refs.push({
-      findingId: finding.id,
-      verb:
-        typeof verb === 'string' && verb.trim().length > 0 ? verb.trim().toUpperCase() : null,
-      path,
-    });
+    const blob = detail as Record<string, unknown>;
+    for (const { verbKey, pathKey } of FINDING_ROUTE_KEY_PAIRS) {
+      const path = detailString(blob, pathKey);
+      if (path == null) continue;
+      const verb = detailString(blob, verbKey);
+      refs.push({
+        findingId: finding.id,
+        verb: verb != null ? verb.toUpperCase() : null,
+        path,
+      });
+      break; // most-specific pair wins; never double-attach one finding
+    }
   }
   return refs;
 }
