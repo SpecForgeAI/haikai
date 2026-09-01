@@ -181,8 +181,12 @@ describe('buildCorpusEndpointGroupItems — endpoint-identity join + findings', 
     expect(blob.apiEndpointIds).toEqual([]);
     expect(blob.findingIds).toEqual([]);
     expect(blob.scl_endpoint_join).toBe('not_applicable');
+    // 2026-09-01 re-pin: route identity is no longer the only axis tried, so
+    // the prose now names both (routes + class). The behaviour this test
+    // guards is unchanged — empty ids, not_applicable, no false gap — these
+    // fixtures carry no className, so the class tier correctly declines.
     expect(blob.traceabilitySummary).toContain(
-      'No routing annotations, so no route-identity join is possible',
+      'No routing annotations and the controller class resolves no committed endpoint uniquely',
     );
     expect(blob.traceabilitySummary).toContain('scoped by SCL contract key only');
     // Only the base row-verification criterion — no finding/parity lines.
@@ -202,6 +206,66 @@ describe('buildCorpusEndpointGroupItems — endpoint-identity join + findings', 
     // The story declares routes but nothing committed was supplied — an
     // honestly-partial join, never a fabricated resolution.
     expect(blob.scl_endpoint_join).toBe('partial');
+  });
+
+  it('RESOLVED_BY_CLASS: a route-less story joins via its unique controller class (2026-09-01)', () => {
+    const servletEndpoint: JoinableEndpoint = {
+      id: 'ep-servlet',
+      name: 'refreshServlet',
+      verb: null,
+      path: null,
+      className: 'com.app.web.CacheRefreshServlet',
+    };
+    const items = buildCorpusEndpointGroupItems({
+      epic: EPIC,
+      stream: 'code',
+      plan: plan([
+        plannedStory({
+          title: 'Implement CacheRefreshServlet (1 endpoints)',
+          controllerClass: 'com.app.web.CacheRefreshServlet',
+          httpRoutes: [],
+        }),
+      ]),
+      startSequence: 0,
+      endpoints: [...ENDPOINTS, servletEndpoint],
+      findingIdsByEndpointId: new Map([['ep-servlet', ['f-servlet']]]),
+    });
+    const [blob] = storyItems(items);
+
+    // Class identity gets its OWN provenance value — never read as a route match.
+    expect(blob.apiEndpointIds).toEqual(['ep-servlet']);
+    expect(blob.scl_endpoint_join).toBe('resolved_by_class');
+    expect(blob.traceabilitySummary).toContain(
+      'Joined to 1 committed endpoint(s) by controller class',
+    );
+    // The parity criterion is earned and findings reach the class-resolved endpoint.
+    expect(blob.findingIds).toEqual(['f-servlet']);
+    expect(blob.acceptanceCriteria as string[]).toContainEqual(
+      expect.stringContaining('Parity holds for all 1 committed endpoint(s)'),
+    );
+    expect(blob.acceptanceCriteria as string[]).toContainEqual(
+      expect.stringContaining("The 1 discovery finding(s) attached to this story's endpoints"),
+    );
+  });
+
+  it('a class resolving NO endpoint uniquely stays not_applicable (never fabricated)', () => {
+    const items = buildCorpusEndpointGroupItems({
+      epic: EPIC,
+      stream: 'code',
+      plan: plan([
+        plannedStory({
+          title: 'Implement UnknownServlet (1 endpoints)',
+          controllerClass: 'com.app.web.UnknownServlet',
+          httpRoutes: [],
+        }),
+      ]),
+      startSequence: 0,
+      endpoints: ENDPOINTS, // none carry className
+      findingIdsByEndpointId: FINDINGS,
+    });
+    const [blob] = storyItems(items);
+    expect(blob.apiEndpointIds).toEqual([]);
+    expect(blob.scl_endpoint_join).toBe('not_applicable');
   });
 
   it('the legacy marker set survives: codeStoryKind + contract-key scoping unchanged', () => {
