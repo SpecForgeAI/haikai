@@ -255,6 +255,44 @@ function requestMappingVerb(text: string): string | null {
   return match ? match[1].toUpperCase() : null;
 }
 
+/** One separating slash: absorb a base's trailing slash + a suffix's leading slash. */
+function joinRoutePath(base: string, suffix: string): string {
+  const left = base.replace(/\/+$/, '');
+  const right = suffix.replace(/^\/+/, '');
+  return `${left}/${right}`;
+}
+
+/**
+ * Compose a contract's collected path fragments into full routes (2026-09-01).
+ *
+ * JAX-RS and Spring both split a route across TWO annotations: the class-level
+ * base (`@Path("/filters")` / `@RequestMapping("/filters")`) and the
+ * method-level suffix (`@Path("create")` / `@PostMapping("create")`). The
+ * naive de-dupe here previously emitted that split as TWO bogus routes
+ * (`/filters` and `create`) — neither of which matched the committed
+ * `/filters/create`, so every split-annotated endpoint silently failed the
+ * route join.
+ *
+ * Classification rule: a `/`-prefixed fragment is a BASE; anything else is a
+ * SUFFIX. When both are present, every base joins every suffix; when either
+ * side is absent, the fragments pass through deduped (a bare suffix is kept
+ * as-is for the join's suffix tier to resolve — never fabricated into a
+ * rooted route).
+ */
+export function composeAnnotationPaths(paths: string[]): string[] {
+  const cleaned = paths.map((p) => p.trim()).filter((p) => p.length > 0);
+  const bases = cleaned.filter((p) => p.startsWith('/'));
+  const suffixes = cleaned.filter((p) => !p.startsWith('/'));
+  if (bases.length === 0 || suffixes.length === 0) {
+    return [...new Set(cleaned)].sort();
+  }
+  const composed: string[] = [];
+  for (const base of bases) {
+    for (const suffix of suffixes) composed.push(joinRoutePath(base, suffix));
+  }
+  return [...new Set(composed)].sort();
+}
+
 /**
  * HTTP routes a contract declares, derived from its annotations.
  *
@@ -262,7 +300,9 @@ function requestMappingVerb(text: string): string | null {
  * JAX-RS (`@Path` + `@GET`/`@POST`/...) forms named in
  * {@link SCL_HTTP_ANNOTATION_PREFIXES}. A JAX-RS method splits its route across
  * two annotations (verb on one, path on `@Path`), so verbs and paths are
- * collected separately and combined.</p>
+ * collected separately and combined. Path fragments themselves are composed by
+ * {@link composeAnnotationPaths}: a class-level base + method-level suffix
+ * split yields the JOINED route, never the two halves as separate routes.</p>
  *
  * <p>Returns an EMPTY array for endpoints that carry no routing annotation at
  * all — notably `web.xml`-mapped servlets, whose route lives in a deployment
@@ -297,7 +337,10 @@ export function httpRoutesOf(contract: SclContractDto): SclHttpRoute[] {
   if (!sawRoutingAnnotation) return [];
 
   const uniqueVerbs = [...new Set(verbs)].sort();
-  const uniquePaths = [...new Set(paths)].sort();
+  // Compose class-level bases with method-level suffixes (see
+  // composeAnnotationPaths) — a naive de-dupe emitted the two halves of a
+  // split annotation as two bogus routes.
+  const uniquePaths = composeAnnotationPaths(paths);
   if (uniqueVerbs.length === 0 && uniquePaths.length === 0) return [];
   if (uniqueVerbs.length === 0) return uniquePaths.map((path) => ({ verb: null, path }));
   if (uniquePaths.length === 0) return uniqueVerbs.map((verb) => ({ verb, path: null }));

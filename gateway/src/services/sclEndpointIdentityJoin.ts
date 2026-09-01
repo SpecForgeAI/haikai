@@ -119,6 +119,28 @@ export function normalisePath(path: string | null | undefined): string | null {
   return value.toLowerCase();
 }
 
+/**
+ * Like {@link normalisePath} but KEEPS the param name (`{filterId}` ->
+ * `{filterid}`, `:filterId` -> `{filterid}`) rather than collapsing to the
+ * positional wildcard `{}` — because the wildcard form makes DISTINCT
+ * suffixes look identical (`/{filterId}` and `/{viewId}` both become `/{}`),
+ * which is exactly what the suffix tier must be able to tell apart.
+ */
+export function normalisePathKeepParams(
+  path: string | null | undefined
+): string | null {
+  if (path == null) return null;
+  let value = path.trim();
+  if (value.length === 0) return null;
+  value = value.replace(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^/]+/, '');
+  value = value.replace(/[?#].*$/, '');
+  value = value.replace(/:([A-Za-z_][A-Za-z0-9_]*)/g, '{$1}');
+  value = value.replace(/\/{2,}/g, '/');
+  if (!value.startsWith('/')) value = `/${value}`;
+  if (value.length > 1) value = value.replace(/\/+$/, '');
+  return value.toLowerCase();
+}
+
 function normaliseVerb(verb: string | null | undefined): string | null {
   if (verb == null) return null;
   const value = verb.trim().toUpperCase();
@@ -163,8 +185,12 @@ function resolveByControllerClass(
  * Matching, in order of decreasing strictness:
  *   1. verb + path both present and equal
  *   2. path equal, and the route declares no verb (or the endpoint does not)
- *   3. no path on the route: endpoint NAME equals the route's verb-less token
- *   4. LAST-RESORT class tier (no routes at all): the story's controller
+ *   3. SUFFIX tier (2026-09-01): a bare method-level fragment whose class
+ *      base was unrecoverable (deployment descriptor / unscanned parent) —
+ *      endpoints whose path ENDS WITH the route, unique hit only, param-name
+ *      form tried before the wildcard form
+ *   4. no path on the route: endpoint NAME equals the route's verb-less token
+ *   5. LAST-RESORT class tier (no routes at all): the story's controller
  *      class resolves to exactly one committed endpoint (see the header).
  */
 export function joinSclStoryToEndpoints(args: {
@@ -185,6 +211,12 @@ export function joinSclStoryToEndpoints(args: {
   const byVerbPath = new Map<string, string[]>();
   const byPath = new Map<string, string[]>();
   const byName = new Map<string, string[]>();
+  const endpointPaths: Array<{
+    id: string;
+    verb: string | null;
+    path: string;
+    pathKeepParams: string | null;
+  }> = [];
   const push = (map: Map<string, string[]>, key: string | null, id: string) => {
     if (key == null) return;
     const list = map.get(key);
@@ -198,9 +230,54 @@ export function joinSclStoryToEndpoints(args: {
     if (path != null) {
       push(byPath, path, endpoint.id);
       if (verb != null) push(byVerbPath, `${verb} ${path}`, endpoint.id);
+      endpointPaths.push({
+        id: endpoint.id,
+        verb,
+        path,
+        pathKeepParams: normalisePathKeepParams(endpoint.path),
+      });
     }
     push(byName, normaliseName(endpoint.name), endpoint.id);
   }
+
+  // Suffix tier (2026-09-01): a bare method-level fragment arrives as
+  // `/create` while the committed endpoint is `/filters/create` — its class
+  // base lives in a deployment descriptor or an unscanned parent, so exact
+  // path identity can never fire. Endpoints whose CHOSEN path form ends with
+  // the tail, optionally verb-constrained.
+  const bySuffix = (tail: string, keepParams: boolean, verb: string | null): string[] => {
+    const hits: string[] = [];
+    for (const entry of endpointPaths) {
+      if (verb != null && entry.verb !== verb) continue;
+      const chosen = keepParams ? entry.pathKeepParams : entry.path;
+      if (chosen == null) continue;
+      if (chosen.endsWith(tail)) hits.push(entry.id);
+    }
+    return hits;
+  };
+
+  // Four attempts, MOST-DISCRIMINATING first (the param-name form before the
+  // wildcard form, verb-constrained before verb-free), returning ONLY on a
+  // unique hit — an ambiguous suffix is refused, never guessed at, and the
+  // name tier below still gets its chance.
+  const resolveBySuffix = (
+    pathKeepParams: string | null,
+    path: string | null,
+    verb: string | null
+  ): string[] | undefined => {
+    const attempts: Array<{ tail: string | null; keepParams: boolean; verb: string | null }> = [
+      { tail: pathKeepParams, keepParams: true, verb },
+      { tail: pathKeepParams, keepParams: true, verb: null },
+      { tail: path, keepParams: false, verb },
+      { tail: path, keepParams: false, verb: null },
+    ];
+    for (const attempt of attempts) {
+      if (attempt.tail == null || attempt.tail.length <= 1) continue;
+      const hits = [...new Set(bySuffix(attempt.tail, attempt.keepParams, attempt.verb))];
+      if (hits.length === 1) return hits;
+    }
+    return undefined;
+  };
 
   const matched = new Set<string>();
   const unresolved: SclHttpRoute[] = [];
@@ -208,10 +285,12 @@ export function joinSclStoryToEndpoints(args: {
   for (const route of routes) {
     const verb = normaliseVerb(route.verb);
     const path = normalisePath(route.path);
+    const pathKeepParams = normalisePathKeepParams(route.path);
 
     let hits: string[] | undefined;
     if (verb != null && path != null) hits = byVerbPath.get(`${verb} ${path}`);
     if (!hits && path != null) hits = byPath.get(path);
+    if (!hits) hits = resolveBySuffix(pathKeepParams, path, verb);
     if (!hits && path == null && verb != null) hits = byName.get(normaliseName(verb)!);
 
     if (hits && hits.length > 0) {
