@@ -1457,8 +1457,38 @@ export function resolveBatchSize(input?: number): number {
  *     story. Every other manual shape (pack review gates, prerequisite gates)
  *     stays excluded: their description + acceptanceCriteria ARE the spec.
  *   - items without a `workItemId` (story not yet saved to backlog)
- *   - rows already at `status='generated'` (unless `regenerateAll=true`)
+ *   - rows already generated — `status='generated'` OR
+ *     `status='generated_with_warnings'`, both non-stale (unless
+ *     `regenerateAll=true`). See {@link isAlreadyGeneratedRow}: counting a
+ *     warned row as unfinished deadlocked the batch in production.
  */
+/**
+ * A row that needs NO further generation work (2026-09-01).
+ *
+ * `generated_with_warnings` is a COMPLETED state: the spec text exists and
+ * the warnings are advisory (oversized-carriage notices, parser notes) — the
+ * batch loop itself files these rows under the batch_completed counters. The
+ * eligibility skip nevertheless tested `status === 'generated'` alone, so
+ * every warned row read as UNFINISHED forever: each new batch re-selected the
+ * same warned rows first, filled itself with work that produced the identical
+ * warned result, and never reached the stories behind them. A live book sat
+ * frozen at the same spec count for a full day of repeated batch clicks —
+ * every batch "succeeded" while doing zero new work.
+ *
+ * Two call sites shared the faulty test (`selectEligibleStories` and
+ * `computeNextBatchStart`), which is exactly how the UI's "next batch starts
+ * at" stayed plausible while the batch spun: both were wrong the same way.
+ * They now share THIS predicate so they cannot drift apart again. Stale rows
+ * stay re-generable regardless of status — the stale carve-out (2026-07-26)
+ * is deliberately senior to completion.
+ *
+ * Do not "simplify" this back to a bare status compare.
+ */
+function isAlreadyGeneratedRow(row: MigrationStorySpecGenerationDto): boolean {
+  if (row.stale === true) return false;
+  return row.status === 'generated' || row.status === 'generated_with_warnings';
+}
+
 export function selectEligibleStories(
   bow: LoadedBookOfWork,
   existing: MigrationStorySpecGenerationDto[],
@@ -1492,12 +1522,7 @@ export function selectEligibleStories(
     // MUST regenerate through this same batch flow (regeneration clears the
     // stamp on success). Without this carve-out an amended story would stay
     // stale forever unless the user found the per-story Regenerate.
-    if (
-      existingRow &&
-      existingRow.status === 'generated' &&
-      existingRow.stale !== true &&
-      !regenerateAll
-    ) {
+    if (existingRow && isAlreadyGeneratedRow(existingRow) && !regenerateAll) {
       continue;
     }
     eligible.push(it);
@@ -1599,15 +1624,21 @@ export function computeConfidenceDowngrade(
  * Compute the next batch start index (1-based BoW sequenceOrder) for the
  * summary surface. Returns the first un-attempted story's sequenceOrder, or
  * 0 if no stories are eligible.
+ *
+ * Exported (2026-09-01) so the deadlock pin can assert it agrees with
+ * {@link selectEligibleStories} by construction.
  */
-function computeNextBatchStart(
+export function computeNextBatchStart(
   bow: LoadedBookOfWork,
   existing: MigrationStorySpecGenerationDto[],
   regenerateAll: boolean
 ): number {
+  // Must use the SAME completion test as selectEligibleStories, or the
+  // reported "next batch starts at" disagrees with what the next batch
+  // actually picks.
   const eligibility = new Set(
     existing
-      .filter((e) => e.status === 'generated' && !regenerateAll)
+      .filter((e) => isAlreadyGeneratedRow(e) && !regenerateAll)
       .map((e) => e.workItemId)
   );
   const sorted = bow.items
