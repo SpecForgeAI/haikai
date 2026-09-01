@@ -117,6 +117,55 @@ describe('findingRouteRefsOf', () => {
     ]);
     expect(refs).toEqual([]);
   });
+
+  it('reads the WADL-pair spelling too: plain method/path (2026-09-01 — previously silently dropped)', () => {
+    const refs = findingRouteRefsOf([
+      { id: 'f-wadl', detail_json: { method: 'put', path: '/filters/create' } },
+    ]);
+    expect(refs).toEqual([{ findingId: 'f-wadl', verb: 'PUT', path: '/filters/create' }]);
+  });
+
+  it('a finding carrying BOTH spellings attaches ONCE — the most-specific pair wins', () => {
+    const refs = findingRouteRefsOf([
+      {
+        id: 'f-both',
+        detail_json: {
+          codeEndpointMethod: 'GET',
+          codeEndpointPath: '/views/{id}',
+          method: 'POST',
+          path: '/stale/route',
+        },
+      },
+    ]);
+    expect(refs).toEqual([{ findingId: 'f-both', verb: 'GET', path: '/views/{id}' }]);
+  });
+
+  it('a blank specific pair falls through to the WADL pair (pairs are tried in order)', () => {
+    const refs = findingRouteRefsOf([
+      {
+        id: 'f-fallthrough',
+        detail_json: { codeEndpointPath: '   ', method: 'GET', path: '/views/all' },
+      },
+    ]);
+    expect(refs).toEqual([{ findingId: 'f-fallthrough', verb: 'GET', path: '/views/all' }]);
+  });
+
+  it('NO shape filter: an internal entry point route (fully-qualified class name) is kept and joins verbatim', () => {
+    // The path is not always an HTTP route — internal entry points record the
+    // class name, which matches path_or_address through the same
+    // normalisation. attachFindingRoutes fails closed, so shape guessing here
+    // could only lose real matches.
+    const refs = findingRouteRefsOf([
+      { id: 'f-batch', detail_json: { method: 'BATCH_MAIN', path: 'com.app.NightlySnapshot' } },
+    ]);
+    expect(refs).toEqual([
+      { findingId: 'f-batch', verb: 'BATCH_MAIN', path: 'com.app.NightlySnapshot' },
+    ]);
+
+    const batchEndpoint = endpoint('ep-b', 'BATCH_MAIN com.app.NightlySnapshot', null, 'com.app.NightlySnapshot');
+    const out = attachFindingRoutes(view([batchEndpoint]), refs);
+    expect(out.findingIdsByEndpointId.get('ep-b')).toEqual(['f-batch']);
+  });
 });
 
 describe('attachFindingRoutes', () => {
