@@ -36,13 +36,27 @@
  *  - `unresolved`      — routes that resolved to nothing (a real gap: the
  *                        story declares a route the committed model does not
  *                        contain)
- *  - `joinable: false` — the story declared no routes at all, so
- *                        route-joining is not applicable. This is the
- *                        `web.xml` servlet case: the route lives in a
- *                        deployment descriptor, not on the class, so NO
- *                        derivation from SCL symbols can recover it. This is
- *                        NOT the same as "no endpoints" and must never be
- *                        reported as a gap.
+ *  - `joinable: false` — NO join of any kind applied (neither routes nor the
+ *                        class tier below). This is NOT the same as "no
+ *                        endpoints" and must never be reported as a gap.
+ *
+ * ## The class tier (2026-09-01, last-resort)
+ *
+ * This header used to claim the `web.xml` servlet case was unrecoverable —
+ * "the route lives in a deployment descriptor, not on the class, so NO
+ * derivation from SCL symbols can recover it". That became false when the
+ * 2026-07-23 commit change started persisting each endpoint's owning class
+ * into `protocol_metadata_json.className`: stories already carry their
+ * declaring `controllerClass`, so a SECOND identity axis exists.
+ *
+ * Class identity is deliberately WEAKER than route identity and must never
+ * read as a route match: one class can own many endpoints, and a row-budget
+ * "part 2 of 3" story implements only some of them — attaching all would be
+ * wrong. The tier therefore applies ONLY when (a) the story declared no
+ * routes at all (route identity had nothing to say), and (b) the class
+ * resolves to EXACTLY ONE committed endpoint — a 1:many class is refused
+ * rather than claimed. Results are reported separately (`resolvedByClass`)
+ * so consumers can tell the axes apart.
  */
 
 import type { SclHttpRoute } from './sclCorpusPlanner';
@@ -53,6 +67,13 @@ export interface JoinableEndpoint {
   name: string;
   verb: string | null;
   path: string | null;
+  /**
+   * Owning class from the committed endpoint's
+   * `protocol_metadata_json.className`, when present (2026-09-01). Optional so
+   * existing callers and test fixtures are unaffected; absent simply means the
+   * class tier cannot consider this endpoint.
+   */
+  className?: string | null;
 }
 
 export interface SclEndpointJoinResult {
@@ -61,10 +82,17 @@ export interface SclEndpointJoinResult {
   /** Declared routes that matched no committed endpoint. */
   unresolved: SclHttpRoute[];
   /**
-   * False when the story declared NO routes, so route identity cannot apply.
-   * Callers must not treat this as an unresolved gap.
+   * False when NO join of any kind applied — the story declared no routes AND
+   * the class tier declined. Callers must not treat this as an unresolved gap.
    */
   joinable: boolean;
+  /**
+   * True when the ids came from the LAST-RESORT class tier (no routes
+   * declared; the controller class resolved to exactly one committed
+   * endpoint). Class identity is weaker than route identity, so it is
+   * reported separately and must never read as a route match.
+   */
+  resolvedByClass: boolean;
 }
 
 /**
@@ -103,6 +131,32 @@ function normaliseName(name: string | null | undefined): string | null {
   return value.length > 0 ? value : null;
 }
 
+/** Trim + case-fold a class name; null when absent/blank. */
+function normaliseClassName(value: string | null | undefined): string | null {
+  if (value == null) return null;
+  const trimmed = value.trim().toLowerCase();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+/**
+ * The class tier's resolver: the story's controller class against the
+ * committed endpoints' owning classes. Returns the endpoint ids ONLY on a
+ * unique 1:1 hit — a class owning several endpoints is refused (a split
+ * story implements only some of them; claiming all would be wrong), and a
+ * class matching nothing returns null so the caller stays not-joinable.
+ */
+function resolveByControllerClass(
+  controllerClass: string | null | undefined,
+  endpoints: JoinableEndpoint[]
+): string[] | null {
+  const wanted = normaliseClassName(controllerClass);
+  if (wanted == null) return null;
+  const hits = endpoints
+    .filter((endpoint) => normaliseClassName(endpoint.className) === wanted)
+    .map((endpoint) => endpoint.id);
+  return hits.length === 1 ? hits : null;
+}
+
 /**
  * Resolve a story's declared routes against the committed endpoint surface.
  *
@@ -110,14 +164,22 @@ function normaliseName(name: string | null | undefined): string | null {
  *   1. verb + path both present and equal
  *   2. path equal, and the route declares no verb (or the endpoint does not)
  *   3. no path on the route: endpoint NAME equals the route's verb-less token
+ *   4. LAST-RESORT class tier (no routes at all): the story's controller
+ *      class resolves to exactly one committed endpoint (see the header).
  */
 export function joinSclStoryToEndpoints(args: {
   routes: SclHttpRoute[] | undefined | null;
   endpoints: JoinableEndpoint[];
+  /** The story's declaring controller class, for the last-resort class tier. */
+  controllerClass?: string | null;
 }): SclEndpointJoinResult {
   const routes = args.routes ?? [];
   if (routes.length === 0) {
-    return { endpointIds: [], unresolved: [], joinable: false };
+    const byClass = resolveByControllerClass(args.controllerClass, args.endpoints);
+    if (byClass != null) {
+      return { endpointIds: byClass, unresolved: [], joinable: true, resolvedByClass: true };
+    }
+    return { endpointIds: [], unresolved: [], joinable: false, resolvedByClass: false };
   }
 
   const byVerbPath = new Map<string, string[]>();
@@ -163,5 +225,6 @@ export function joinSclStoryToEndpoints(args: {
     endpointIds: [...matched].sort(),
     unresolved,
     joinable: true,
+    resolvedByClass: false,
   };
 }

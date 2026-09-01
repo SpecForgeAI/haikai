@@ -2237,6 +2237,10 @@ export function buildCorpusEndpointGroupItems(args: {
         const join = joinSclStoryToEndpoints({
           routes: planned.httpRoutes,
           endpoints: joinEndpoints,
+          // Last-resort class tier (2026-09-01): this is the exact value the
+          // grouping above keys on, matched against the endpoints' persisted
+          // protocol_metadata_json.className when no routes were declared.
+          controllerClass: controller,
         });
         // Discovery findings attached to the endpoints this story implements.
         // Deduped + sorted so the blob stays deterministic.
@@ -2260,13 +2264,15 @@ export function buildCorpusEndpointGroupItems(args: {
               'this story implements, against their captured behaviour baselines.'
           );
         }
-        const traceabilityTail =
-          join.endpointIds.length > 0
+        const traceabilityTail = join.resolvedByClass
+          ? ` Joined to ${join.endpointIds.length} committed endpoint(s) by controller` +
+            ' class (no routes declared; class resolved uniquely).'
+          : join.endpointIds.length > 0
             ? ` Joined to ${join.endpointIds.length} committed endpoint(s) by route identity.`
             : join.joinable
               ? ` Declared ${join.unresolved.length} route(s) that match NO committed endpoint.`
-              : ' No routing annotations, so no route-identity join is possible' +
-                ' (deployment-descriptor mapping); scoped by SCL contract key only.';
+              : ' No routing annotations and the controller class resolves no' +
+                ' committed endpoint uniquely; scoped by SCL contract key only.';
         items.push(
           corpusItem({
             id: `${featureId}-s-${i + 1}`,
@@ -2302,11 +2308,15 @@ export function buildCorpusEndpointGroupItems(args: {
               ),
               // Explicit, inspectable provenance for the join outcome so a gap
               // is visible in the blob instead of looking like "no endpoints".
-              scl_endpoint_join: join.joinable
-                ? join.unresolved.length > 0
-                  ? 'partial'
-                  : 'resolved'
-                : 'not_applicable',
+              // Class identity is weaker than route identity, so it must not
+              // read as a route match — it gets its own provenance value.
+              scl_endpoint_join: join.resolvedByClass
+                ? 'resolved_by_class'
+                : join.joinable
+                  ? join.unresolved.length > 0
+                    ? 'partial'
+                    : 'resolved'
+                  : 'not_applicable',
               scl_unresolved_routes: join.unresolved.map(
                 (r) => `${r.verb ?? 'ANY'} ${r.path ?? '(no path)'}`
               ),

@@ -126,6 +126,14 @@ export interface CodeEndpointRow {
   direction: string;
   /** True when protocol_metadata_json is present (SOAP completeness signal). */
   hasProtocolMetadata: boolean;
+  /**
+   * Owning class from `protocol_metadata_json.className` (persisted since the
+   * 2026-07-23 commit change), for the join's last-resort class tier.
+   * Optional so the row constructor in `buildCodeEpicStories` — which rebuilds
+   * rows from stamped feature facts and only ever joins by route — needs no
+   * change.
+   */
+  className?: string | null;
 }
 
 /** Everything the planner needs about the committed code surface, one read. */
@@ -257,6 +265,14 @@ export const defaultFetchCodeModelView: FetchCodeModelViewFn = async (
       const operationVerb = raw.operation_verb ?? raw.operationVerb ?? '';
       const verb = resolveVerb(operationVerb, name);
       const path = raw.path_or_address ?? raw.pathOrAddress ?? null;
+      // The owning class rides in protocol_metadata_json (persisted since the
+      // 2026-07-23 commit change) — previously this blob was read only to
+      // compute the boolean below and its content discarded.
+      const protocolMetadata = raw.protocol_metadata_json ?? raw.protocolMetadataJson;
+      const className =
+        protocolMetadata != null && typeof protocolMetadata === 'object'
+          ? ((protocolMetadata as Record<string, unknown>).className as string | undefined)
+          : undefined;
       endpoints.push({
         id: raw.id,
         name,
@@ -268,8 +284,8 @@ export const defaultFetchCodeModelView: FetchCodeModelViewFn = async (
         verb,
         path: path && path.length > 0 ? path : null,
         direction: (raw.direction ?? '').toLowerCase(),
-        hasProtocolMetadata:
-          (raw.protocol_metadata_json ?? raw.protocolMetadataJson) != null,
+        hasProtocolMetadata: protocolMetadata != null,
+        className: typeof className === 'string' && className.length > 0 ? className : null,
       });
     }
 
