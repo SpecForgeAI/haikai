@@ -33,6 +33,9 @@ import {
   dataTypeDefaultsPreview,
   type DataTypeDefaultsPreviewResponse,
   createBaselineItemsBatch,
+  chunkBaselineItemsForBatch,
+  MAX_BASELINE_ITEMS_PER_BATCH,
+  MAX_BASELINE_ITEMS_BATCH_BYTES,
   updateCapturesBatch,
   type BatchCreateBaselineItemsResponse,
   type BatchUpdateCapturesResponse,
@@ -584,6 +587,125 @@ describe('apiBehaviourClient -- createBaselineItemsBatch (Task 3.1 #1)', () => {
     expect(body.items).toHaveLength(2);
     expect(body.items[0].capture_id).toBe('cap-ok');
     expect(body.items[1].capture_id).toBe('cap-bad');
+  });
+});
+
+describe('apiBehaviourClient -- createBaselineItemsBatch chunking (413 / 500-cap fix 2026-09-02)', () => {
+  // A whole-session save used to go out as ONE request and hit two caps at
+  // once: the gateway's 30 MB body-parser limit (413 `request entity too
+  // large`) and AMS's 500-item batch cap (400). The client now splits by
+  // size AND count, sends chunks sequentially, and re-bases per-request
+  // failure indexes onto the caller's original items[].
+  const originalFetch = globalThis.fetch;
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  function tinyItem(i: number): CreateApiBehaviourBaselineItemRequest {
+    return {
+      baseline_id: 'bl-1',
+      capture_id: `cap-${i}`,
+      operation_id: `op-${i}`,
+      scenario_id: 'scn-1',
+    };
+  }
+
+  function jsonResponse(body: BatchCreateBaselineItemsResponse) {
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: (h: string) => (h === 'content-type' ? 'application/json' : null) },
+      json: async () => body,
+    };
+  }
+
+  it('splits at the AMS item cap: 501 tiny items -> a 500-item chunk + a 1-item chunk with correct startIndex', () => {
+    const items = Array.from({ length: MAX_BASELINE_ITEMS_PER_BATCH + 1 }, (_, i) => tinyItem(i));
+
+    const chunks = chunkBaselineItemsForBatch(items);
+
+    expect(chunks).toHaveLength(2);
+    expect(chunks[0].items).toHaveLength(MAX_BASELINE_ITEMS_PER_BATCH);
+    expect(chunks[0].startIndex).toBe(0);
+    expect(chunks[1].items).toHaveLength(1);
+    expect(chunks[1].startIndex).toBe(MAX_BASELINE_ITEMS_PER_BATCH);
+    expect(chunks[1].items[0].capture_id).toBe(`cap-${MAX_BASELINE_ITEMS_PER_BATCH}`);
+  });
+
+  it('splits on the BYTE budget, not the count: four ~3 MB items -> two chunks, every chunk fits, nothing dropped or reordered', () => {
+    // Size is the trigger here: 4 items is nowhere near the 500 cap.
+    const bigBody = 'x'.repeat(3 * 1024 * 1024);
+    const items = Array.from({ length: 4 }, (_, i) => ({
+      ...tinyItem(i),
+      response_json: { body: bigBody },
+    }));
+
+    const chunks = chunkBaselineItemsForBatch(items);
+
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const chunk of chunks) {
+      const serialised = new TextEncoder().encode(JSON.stringify({ items: chunk.items })).length;
+      expect(serialised).toBeLessThanOrEqual(MAX_BASELINE_ITEMS_BATCH_BYTES);
+    }
+    // Flattening the chunks reproduces the original list exactly (order + identity).
+    const flattened = chunks.flatMap((c) => c.items.map((it) => it.capture_id));
+    expect(flattened).toEqual(items.map((it) => it.capture_id));
+    // startIndex values are the running offsets of each chunk.
+    let expectedStart = 0;
+    for (const chunk of chunks) {
+      expect(chunk.startIndex).toBe(expectedStart);
+      expectedStart += chunk.items.length;
+    }
+  });
+
+  it('sends chunks as separate sequential requests and re-bases failed[].index onto the original items[]', async () => {
+    const items = Array.from({ length: MAX_BASELINE_ITEMS_PER_BATCH + 1 }, (_, i) => tinyItem(i));
+    // Chunk 1: index 2 failed. Chunk 2: ITS index 0 failed -- which is
+    // original index 500; the modal names failures by index as the fallback
+    // identity, so an un-rebased index would blame the wrong capture.
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          created: [{ id: 'item-0' } as ApiBehaviourBaselineItemDto],
+          failed: [{ index: 2, capture_id: 'cap-2', reason: 'capture_id not found' }],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          created: [],
+          failed: [
+            { index: 0, capture_id: `cap-${MAX_BASELINE_ITEMS_PER_BATCH}`, reason: 'duplicate' },
+          ],
+        }),
+      );
+
+    const result = await createBaselineItemsBatch(PROJECT_ID, ARCH_ID, items);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const firstBody = JSON.parse(fetchMock.mock.calls[0][1].body);
+    const secondBody = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(firstBody.items).toHaveLength(MAX_BASELINE_ITEMS_PER_BATCH);
+    expect(secondBody.items).toHaveLength(1);
+    expect(secondBody.items[0].capture_id).toBe(`cap-${MAX_BASELINE_ITEMS_PER_BATCH}`);
+    // Merged created + re-based failures.
+    expect(result.created).toHaveLength(1);
+    expect(result.failed.map((f) => f.index)).toEqual([2, MAX_BASELINE_ITEMS_PER_BATCH]);
+    expect(result.failed[1].capture_id).toBe(`cap-${MAX_BASELINE_ITEMS_PER_BATCH}`);
+  });
+
+  it('an empty items[] makes ZERO requests and returns empty created/failed', async () => {
+    const result = await createBaselineItemsBatch(PROJECT_ID, ARCH_ID, []);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result).toEqual({ created: [], failed: [] });
   });
 });
 

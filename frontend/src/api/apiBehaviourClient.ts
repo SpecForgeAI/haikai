@@ -1495,25 +1495,123 @@ export interface BatchUpdateCapturesResponse {
 }
 
 /**
- * Persist many baseline items in ONE best-effort batch (replaces the per-item
+ * AMS per-call cap on a baseline-items batch
+ * (`ApiBehaviourBaselineItemService.MAX_BATCH_ITEMS`). Over the cap AMS
+ * rejects the WHOLE call with 400 rather than truncating, so the client must
+ * never submit more than this in one request.
+ */
+export const MAX_BASELINE_ITEMS_PER_BATCH = 500;
+
+/**
+ * Per-request byte budget for a baseline-items batch.
+ *
+ * The binding constraint is NOT the item count, it is the payload size: each
+ * item embeds a full `request_json` + `response_json` envelope, so a few
+ * hundred captures of large response bodies run to tens of megabytes. The
+ * gateway parses the body before proxying (`express.json({ limit: '30mb' })`,
+ * server.ts), and an over-limit POST is rejected by body-parser with
+ * `413 request entity too large` -- which is what a whole-session save hit.
+ *
+ * 8 MB keeps ~4x headroom under the gateway cap for the `{ items: [...] }`
+ * envelope and any transport overhead, and keeps each request small enough to
+ * stay responsive.
+ */
+export const MAX_BASELINE_ITEMS_BATCH_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Serialised BYTE length of a value. Deliberately not `JSON.stringify(v).length`:
+ * that counts UTF-16 code units, and a response body with non-ASCII content is
+ * larger in UTF-8 than its string length suggests. Undercounting is exactly what
+ * would let a chunk slip past the gateway's 30 MB cap.
+ */
+function jsonByteLength(value: unknown): number {
+  return new TextEncoder().encode(JSON.stringify(value ?? null)).length;
+}
+
+/**
+ * Split baseline items into request-sized chunks: each chunk stays under BOTH
+ * the AMS item cap and the per-request byte budget. Order is preserved and
+ * every chunk records the ORIGINAL index of its first item so per-request
+ * `failed[].index` values can be re-based onto the caller's `items[]`.
+ *
+ * The byte check is guarded by `current.length > 0`, so a single item larger
+ * than the budget gets its own request rather than producing an empty chunk
+ * or looping forever -- an item cannot be split.
+ *
+ * Exported as a pure function so the sizing rules are unit-testable.
+ */
+export function chunkBaselineItemsForBatch(
+  items: CreateApiBehaviourBaselineItemRequest[],
+): Array<{ items: CreateApiBehaviourBaselineItemRequest[]; startIndex: number }> {
+  const chunks: Array<{
+    items: CreateApiBehaviourBaselineItemRequest[];
+    startIndex: number;
+  }> = [];
+  let current: CreateApiBehaviourBaselineItemRequest[] = [];
+  let currentBytes = 0;
+  let startIndex = 0;
+
+  for (let i = 0; i < items.length; i += 1) {
+    const itemBytes = jsonByteLength(items[i]);
+    const overBytes =
+      current.length > 0 && currentBytes + itemBytes > MAX_BASELINE_ITEMS_BATCH_BYTES;
+    const overCount = current.length >= MAX_BASELINE_ITEMS_PER_BATCH;
+    if (overBytes || overCount) {
+      chunks.push({ items: current, startIndex });
+      current = [];
+      currentBytes = 0;
+      startIndex = i;
+    }
+    current.push(items[i]);
+    currentBytes += itemBytes;
+  }
+  if (current.length > 0) chunks.push({ items: current, startIndex });
+  return chunks;
+}
+
+/**
+ * Persist many baseline items in best-effort batches (replaces the per-item
  * `createBaselineItem` save loop). POSTs `{ items }` to
- * `.../baseline-items/batch` and returns `{ created, failed }`. Callers render
- * `failed[]` as a warning naming the captures that did not persist; the
- * `created` rows are committed even when `failed[]` is non-empty.
+ * `.../baseline-items/batch` and returns the merged `{ created, failed }`.
+ * Callers render `failed[]` as a warning naming the captures that did not
+ * persist; the `created` rows are committed even when `failed[]` is non-empty.
+ *
+ * Chunked (2026-09-02): a whole-session save used to go out as ONE request and
+ * hit two caps at once -- the gateway's 30 MB body-parser limit (413
+ * `request entity too large`) and AMS's 500-item batch cap (400). Items are
+ * split by {@link chunkBaselineItemsForBatch} and the chunks are sent
+ * SEQUENTIALLY (not in parallel -- the gateway rate-limits per IP). Each
+ * chunk's `failed[].index` is re-based onto the caller's original `items[]`
+ * so the modal names the right capture. A transport/server failure on a chunk
+ * still throws (as the single request did); chunks already sent stay
+ * committed. An empty `items[]` makes zero requests.
  */
 export async function createBaselineItemsBatch(
   projectId: string,
   architectureId: string,
   items: CreateApiBehaviourBaselineItemRequest[],
 ): Promise<BatchCreateBaselineItemsResponse> {
-  return jsonRequest<BatchCreateBaselineItemsResponse>(
-    `${gatewayUrl(projectId, architectureId, 'baseline-items')}/batch`,
-    {
+  const url = `${gatewayUrl(projectId, architectureId, 'baseline-items')}/batch`;
+  const chunks = chunkBaselineItemsForBatch(items);
+  const created: ApiBehaviourBaselineItemDto[] = [];
+  const failed: BatchCreateBaselineItemFailure[] = [];
+
+  for (const chunk of chunks) {
+    const response = await jsonRequest<BatchCreateBaselineItemsResponse>(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items }),
-    },
-  );
+      body: JSON.stringify({ items: chunk.items }),
+    });
+    if (Array.isArray(response?.created)) created.push(...response.created);
+    if (Array.isArray(response?.failed)) {
+      for (const failure of response.failed) {
+        // Re-base the per-request index onto the caller's original items[].
+        failed.push({ ...failure, index: chunk.startIndex + failure.index });
+      }
+    }
+  }
+
+  return { created, failed };
 }
 
 /**
