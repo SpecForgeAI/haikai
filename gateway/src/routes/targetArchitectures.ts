@@ -795,3 +795,43 @@ targetArchitecturesRouter.get(
     }
   },
 );
+
+// ---------------------------------------------------------------------------
+// GET /api/projects/:projectId/saved-target-architecture-id
+//
+// Sibling of the active-id proxy above (2026-09-02): closing the target-state
+// conversation stamps `conversation_saved_at` WITHOUT making the target
+// active, so "which target do the decisions live on" needs the most-recent-
+// saved lookup as the second step. Added for the frontend's DB-pack
+// decision-binding resolution (active first, then saved — the same fallback
+// order `defaultFetchDbDecisions` applies server-side).
+//
+// AMS returns 200 with `{ "savedTargetArchitectureId": "<uuid-or-null>" }`.
+// ---------------------------------------------------------------------------
+
+targetArchitecturesRouter.get(
+  '/projects/:projectId/saved-target-architecture-id',
+  async (req: Request, res: ExpressResponse) => {
+    const requestId = (req as { requestId?: string }).requestId ?? 'unknown';
+    const { projectId } = req.params;
+    const url =
+      `${baseUrl()}/api/projects/${encodeURIComponent(projectId)}` +
+      `/saved-target-architecture-id`;
+    const start = Date.now();
+    try {
+      const upstream = await fetch(url, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+      });
+      console.log(
+        `[diag-gw] route=target-architectures-saved-target ` +
+          `status=${upstream.status} elapsed_ms=${Date.now() - start}`,
+      );
+      await pipeUpstream(upstream, res);
+    } catch (error) {
+      handleUpstreamError(res, error, 'saved-target', requestId, {
+        projectId,
+      });
+    }
+  },
+);

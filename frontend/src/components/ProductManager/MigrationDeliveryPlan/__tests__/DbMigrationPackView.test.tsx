@@ -89,6 +89,22 @@ vi.mock('../../../../api/migrationBookOfWorkApi', async () => {
   };
 });
 
+// --- Mock the target-id lookups (decision-binding resolution, 2026-09-02) ----
+const mockGetActiveTarget = vi.fn();
+const mockGetSavedTarget = vi.fn();
+vi.mock('../../../../api/architectConversationApi', async () => {
+  const actual = await vi.importActual<
+    typeof import('../../../../api/architectConversationApi')
+  >('../../../../api/architectConversationApi');
+  return {
+    ...actual,
+    getActiveTargetArchitectureId: (...args: unknown[]) =>
+      mockGetActiveTarget(...args),
+    getSavedTargetArchitectureId: (...args: unknown[]) =>
+      mockGetSavedTarget(...args),
+  };
+});
+
 import { DbMigrationPackView } from '../DbMigrationPackView';
 import MigrationBookOfWorkItemDrawer from '../MigrationBookOfWorkItemDrawer';
 import type {
@@ -251,6 +267,11 @@ beforeEach(() => {
   mockListDriftReports.mockReset();
   mockListBooks.mockReset();
   mockListBooks.mockResolvedValue([]);
+  mockGetActiveTarget.mockReset();
+  mockGetSavedTarget.mockReset();
+  // Default: no target resolvable — existing tests exercise the unbound path.
+  mockGetActiveTarget.mockResolvedValue(null);
+  mockGetSavedTarget.mockResolvedValue(null);
 });
 
 describe('DbMigrationPackView (Task 6.1)', () => {
@@ -425,6 +446,102 @@ describe('DbMigrationPackView (Task 6.1)', () => {
     expect(screen.getByTestId('db-pack-regenerate-button')).toBeEnabled();
     expect(mockRegenerate).not.toHaveBeenCalled();
     expect(mockGenerate).not.toHaveBeenCalled();
+  });
+
+  // --- decision-binding target threading (2026-09-02) -----------------------
+  // The generated manifest used to persist `target_architecture_id: null`
+  // because this client omitted the target entirely; the plan's
+  // ensureFreshDbMigrationPack then saw "different binding" and regenerated
+  // the pack needlessly. Generate/Regenerate now resolve active → saved and
+  // thread the id; resolution failure is fail-soft (never blocks the action).
+
+  it('Generate resolves the binding target (saved fallback) and threads it to the API call', async () => {
+    mockListPacks.mockResolvedValue([]); // empty state -> Generate button
+    mockGetActiveTarget.mockResolvedValue(null);
+    mockGetSavedTarget.mockResolvedValue('target-saved-1');
+    mockGenerate.mockResolvedValue({
+      pack: buildPack(),
+      input_snapshot_hash: 'hash-2',
+      counts: { translated_count: 2, skipped_count: 1, flagged_count: 1 },
+      file_count: 3,
+      decision_count: 0,
+    });
+    mockGetPack.mockResolvedValue(buildPack());
+    mockListFiles.mockResolvedValue(FILES);
+
+    renderView();
+
+    const generate = await screen.findByTestId('db-pack-generate-button');
+    fireEvent.click(generate);
+
+    await waitFor(() =>
+      expect(mockGenerate).toHaveBeenCalledWith(
+        PROJECT_ID,
+        ARCH_ID,
+        undefined,
+        'target-saved-1',
+      ),
+    );
+    expect(mockGetActiveTarget).toHaveBeenCalledWith(PROJECT_ID);
+    expect(mockGetSavedTarget).toHaveBeenCalledWith(PROJECT_ID);
+  });
+
+  it('Regenerate binds to the ACTIVE target when one exists (saved never consulted)', async () => {
+    const stalePack = buildPack({
+      status: 'stale',
+      is_stale: true,
+      staleness_reason: 'inputs changed since generation',
+    });
+    mockListPacks.mockResolvedValue([stalePack]);
+    mockGetPack.mockResolvedValue(stalePack);
+    mockListFiles.mockResolvedValue(FILES);
+    mockGetActiveTarget.mockResolvedValue('target-active-1');
+    mockRegenerate.mockResolvedValue({
+      pack: buildPack(),
+      input_snapshot_hash: 'hash-3',
+      counts: { translated_count: 2, skipped_count: 1, flagged_count: 1 },
+      file_count: 3,
+      decision_count: 0,
+    });
+
+    renderView();
+
+    const regenerate = await screen.findByTestId('db-pack-regenerate-button');
+    fireEvent.click(regenerate);
+
+    await waitFor(() =>
+      expect(mockRegenerate).toHaveBeenCalledWith(
+        PROJECT_ID,
+        ARCH_ID,
+        undefined,
+        'target-active-1',
+      ),
+    );
+    expect(mockGetSavedTarget).not.toHaveBeenCalled();
+  });
+
+  it('target resolution failure is FAIL-SOFT: generation still fires, unbound', async () => {
+    mockListPacks.mockResolvedValue([]);
+    mockGetActiveTarget.mockRejectedValue(new Error('lookup down'));
+    mockGenerate.mockResolvedValue({
+      pack: buildPack(),
+      input_snapshot_hash: 'hash-2',
+      counts: { translated_count: 2, skipped_count: 1, flagged_count: 1 },
+      file_count: 3,
+      decision_count: 0,
+    });
+    mockGetPack.mockResolvedValue(buildPack());
+    mockListFiles.mockResolvedValue(FILES);
+
+    renderView();
+
+    fireEvent.click(await screen.findByTestId('db-pack-generate-button'));
+
+    // The action proceeds with a null binding — the gateway reader resolves
+    // server-side and the manifest still records the actual binding.
+    await waitFor(() =>
+      expect(mockGenerate).toHaveBeenCalledWith(PROJECT_ID, ARCH_ID, undefined, null),
+    );
   });
 
   it('epic picker attaches the chosen book-of-work epic via PATCH work_item_id', async () => {

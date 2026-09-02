@@ -1655,9 +1655,16 @@ export async function generateDbMigrationPack(
     // staleness recompute (and any later regenerate) reads decisions from the
     // SAME target the pack was generated for. Persistence metadata only — the
     // zip's manifest.json file documents the transform, not the binding.
+    //
+    // The receipt is the target the db.* decisions were ACTUALLY read from
+    // (2026-09-02): echoing the request id wrote null whenever the caller
+    // omitted it (the frontend Generate button did), and
+    // `ensureFreshDbMigrationPack` then saw "different binding" on the next
+    // plan run and regenerated needlessly.
     manifest_json: {
       ...(artifacts.manifest as unknown as Record<string, unknown>),
-      target_architecture_id: request.targetArchitectureId ?? null,
+      target_architecture_id:
+        inputs.resolvedTargetArchitectureId ?? request.targetArchitectureId ?? null,
     },
     files: artifacts.files.map((f) => ({
       file_path: f.filePath,

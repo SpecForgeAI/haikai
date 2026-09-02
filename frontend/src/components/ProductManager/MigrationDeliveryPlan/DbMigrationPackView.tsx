@@ -43,6 +43,10 @@ import {
   type DbMigrationPackWithStaleness,
   type VerifyDbMigrationPackRequest,
 } from '../../../api/dbMigrationPackApi';
+import {
+  getActiveTargetArchitectureId,
+  getSavedTargetArchitectureId,
+} from '../../../api/architectConversationApi';
 import DbMigrationPackCredentialsModal, {
   type DbMigrationPackCredentialsMode,
 } from './DbMigrationPackCredentialsModal';
@@ -169,6 +173,24 @@ export const DbMigrationPackView: React.FC<DbMigrationPackViewProps> = ({
 
   // --- generate / EXPLICIT regenerate ---------------------------------------
 
+  /**
+   * Resolve the decision-binding target for generate/regenerate: active
+   * first, then most-recent-saved (closing the target-state conversation
+   * stamps saved, not active — mirrors the gateway reader's own fallback,
+   * 2026-09-02). Fail-soft null: resolution trouble must never block the
+   * explicit action — the gateway reader re-resolves server-side and the
+   * manifest records the binding it ACTUALLY read from either way.
+   */
+  const resolveDecisionBindingTargetId = useCallback(async (): Promise<string | null> => {
+    try {
+      const active = await getActiveTargetArchitectureId(projectId);
+      if (active) return active;
+      return await getSavedTargetArchitectureId(projectId);
+    } catch {
+      return null;
+    }
+  }, [projectId]);
+
   const runGeneration = useCallback(
     async (kind: 'generate' | 'regenerate') => {
       if (generating) return;
@@ -176,10 +198,21 @@ export const DbMigrationPackView: React.FC<DbMigrationPackViewProps> = ({
       setError(null);
       setNotice(null);
       try {
+        const targetArchitectureId = await resolveDecisionBindingTargetId();
         const result =
           kind === 'generate'
-            ? await generateDbMigrationPack(projectId, architectureId)
-            : await regenerateDbMigrationPack(projectId, architectureId);
+            ? await generateDbMigrationPack(
+                projectId,
+                architectureId,
+                undefined,
+                targetArchitectureId,
+              )
+            : await regenerateDbMigrationPack(
+                projectId,
+                architectureId,
+                undefined,
+                targetArchitectureId,
+              );
         const packId = result.pack.id;
         await Promise.all([refreshPack(packId), loadFiles(packId)]);
         setNotice(
@@ -196,7 +229,14 @@ export const DbMigrationPackView: React.FC<DbMigrationPackViewProps> = ({
         setGenerating(false);
       }
     },
-    [generating, projectId, architectureId, refreshPack, loadFiles],
+    [
+      generating,
+      projectId,
+      architectureId,
+      resolveDecisionBindingTargetId,
+      refreshPack,
+      loadFiles,
+    ],
   );
 
   // --- decision resolve callback: refetch staleness only --------------------

@@ -53,6 +53,10 @@ import {
   GenerationInputs,
   InputFetchDeps,
 } from '../services/dbMigrationPack/inputs';
+import {
+  generateDbMigrationPack,
+  UpsertPackBody,
+} from '../services/dbMigrationPackHandler';
 import { UnsupportedEnginePairError } from '../services/dbMigrationPack/types';
 
 const PROJECT_ID = 'project-binding-1';
@@ -271,5 +275,109 @@ describe('engine gate over the saved-fallback read (end-to-end)', () => {
     const inputs = await inputsViaDefaultReader();
 
     expect(() => assertSupportedEnginePair(inputs)).toThrow(UnsupportedEnginePairError);
+  });
+});
+
+describe('manifest binding receipt (generateDbMigrationPack, 2026-09-02)', () => {
+  // The persisted manifest used to echo the REQUEST target id — null whenever
+  // the caller omitted it (the frontend Generate button did) — and
+  // `ensureFreshDbMigrationPack` then treated the unbound pack as a different
+  // binding on the next plan run and regenerated it needlessly. The receipt
+  // now records the target the db.* decisions were ACTUALLY read from.
+
+  /** Minimal viable model: one PK'd table (mirrors the routes-suite fixture). */
+  const VIABLE_MODEL: GenerationInputs['model'] = {
+    physicalDataEntities: [
+      {
+        id: 'pe-1',
+        name: 'dbo.orders',
+        physical_type: 'table',
+        constraints_metadata: {
+          primary_key: { name: 'pk_orders', columns: ['order_id'] },
+        },
+      },
+    ],
+    physicalDataAttributes: [
+      {
+        id: 'pa-1',
+        name: 'order_id',
+        physical_entity_id: 'pe-1',
+        source_type: 'int',
+        is_primary_key: true,
+        is_nullable: false,
+        ordinal: 1,
+        is_identity: true,
+      },
+    ],
+    dataEntityPoints: [],
+    dataEntityRelationships: [],
+  };
+
+  function handlerDeps(read: {
+    decisions: GenerationInputs['dbDecisions'];
+    resolvedTargetArchitectureId: string | null;
+  }): { deps: Record<string, unknown>; persisted: UpsertPackBody[] } {
+    const persisted: UpsertPackBody[] = [];
+    return {
+      persisted,
+      deps: {
+        translationHook: async () => null,
+        fetchModel: async () => VIABLE_MODEL,
+        fetchFindings: async () => [],
+        fetchDbDecisions: async () => read,
+        fetchResolvedPackDecisions: async () => [],
+        persistPack: async (_projectId: string, body: UpsertPackBody) => {
+          persisted.push(body);
+          return {
+            id: 'pack-1',
+            project_id: PROJECT_ID,
+            architecture_id: 'arch-current-1',
+            status: 'generated',
+            input_snapshot_hash: body.input_snapshot_hash,
+            translated_count: body.translated_count,
+            skipped_count: body.skipped_count,
+            flagged_count: body.flagged_count,
+            seed_margin: body.seed_margin,
+          };
+        },
+      },
+    };
+  }
+
+  it('records the target the reader ACTUALLY bound to when the request omits one', async () => {
+    const { deps, persisted } = handlerDeps({
+      decisions: [{ decisionCode: 'db.engine', answerValue: ENGINE_ENVELOPE }],
+      resolvedTargetArchitectureId: SAVED_TARGET_ID,
+    });
+
+    await generateDbMigrationPack(
+      { projectId: PROJECT_ID, architectureId: 'arch-current-1' }, // no target
+      deps
+    );
+
+    expect(persisted).toHaveLength(1);
+    expect(
+      (persisted[0].manifest_json as Record<string, unknown>).target_architecture_id
+    ).toBe(SAVED_TARGET_ID);
+  });
+
+  it('keeps the explicit request binding when an injected reader reports none', async () => {
+    const { deps, persisted } = handlerDeps({
+      decisions: [{ decisionCode: 'db.engine', answerValue: ENGINE_ENVELOPE }],
+      resolvedTargetArchitectureId: null,
+    });
+
+    await generateDbMigrationPack(
+      {
+        projectId: PROJECT_ID,
+        architectureId: 'arch-current-1',
+        targetArchitectureId: 'target-explicit-1',
+      },
+      deps
+    );
+
+    expect(
+      (persisted[0].manifest_json as Record<string, unknown>).target_architecture_id
+    ).toBe('target-explicit-1');
   });
 });
