@@ -420,11 +420,20 @@ export async function getDbMigrationPack(
 /**
  * Run the deterministic generation pipeline (EXPLICIT user action — the only
  * path that creates a pack).
+ *
+ * `targetArchitectureId` is the decision-binding target the pack's `db.*`
+ * decisions are read from, recorded in `manifest_json.target_architecture_id`
+ * as the binding receipt (2026-09-02). Omitting it used to persist a null
+ * receipt, which `ensureFreshDbMigrationPack` treated as a DIFFERENT binding
+ * on the next plan run and regenerated the pack needlessly. Absent/null is
+ * still tolerated — the gateway reader resolves active-then-saved server-side
+ * and records the target it actually bound to.
  */
 export async function generateDbMigrationPack(
   projectId: string,
   architectureId: string,
   seedMargin?: number,
+  targetArchitectureId?: string | null,
 ): Promise<GenerateDbMigrationPackResponse> {
   return sendJson<GenerateDbMigrationPackResponse>(
     `${packsBase(projectId)}/generate`,
@@ -432,6 +441,9 @@ export async function generateDbMigrationPack(
     {
       architecture_id: architectureId,
       ...(typeof seedMargin === 'number' ? { seed_margin: seedMargin } : {}),
+      ...(typeof targetArchitectureId === 'string' && targetArchitectureId.length > 0
+        ? { target_architecture_id: targetArchitectureId }
+        : {}),
     },
     'DB migration pack generation failed',
   );
@@ -439,12 +451,14 @@ export async function generateDbMigrationPack(
 
 /**
  * EXPLICIT regeneration. Staleness only ever shows a banner — nothing in the
- * client calls this automatically.
+ * client calls this automatically. `targetArchitectureId` as on
+ * {@link generateDbMigrationPack}.
  */
 export async function regenerateDbMigrationPack(
   projectId: string,
   architectureId: string,
   seedMargin?: number,
+  targetArchitectureId?: string | null,
 ): Promise<GenerateDbMigrationPackResponse> {
   return sendJson<GenerateDbMigrationPackResponse>(
     `${packsBase(projectId)}/regenerate`,
@@ -452,6 +466,9 @@ export async function regenerateDbMigrationPack(
     {
       architecture_id: architectureId,
       ...(typeof seedMargin === 'number' ? { seed_margin: seedMargin } : {}),
+      ...(typeof targetArchitectureId === 'string' && targetArchitectureId.length > 0
+        ? { target_architecture_id: targetArchitectureId }
+        : {}),
     },
     'DB migration pack regeneration failed',
   );

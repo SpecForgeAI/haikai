@@ -689,6 +689,17 @@ export interface ActiveTargetArchitectureResponse {
   activeTargetArchitectureId: string | null;
 }
 
+/**
+ * Most-recent-saved target lookup wire shape (2026-09-02). Closing the
+ * target-state conversation stamps `conversation_saved_at` WITHOUT making the
+ * target active, so callers that need "the target the decisions live on" try
+ * active first, then this — the same fallback order the gateway's own
+ * decision readers apply.
+ */
+export interface SavedTargetArchitectureResponse {
+  savedTargetArchitectureId: string | null;
+}
+
 // ============================================================================
 // Error type
 // ============================================================================
@@ -765,6 +776,18 @@ export async function getActiveTargetArchitectureId(
   if (!res.ok) throw await parseError(res);
   const data = (await res.json()) as ActiveTargetArchitectureResponse;
   return data.activeTargetArchitectureId ?? null;
+}
+
+/** Most-recent-saved sibling of the active lookup (fallback step two). */
+export async function getSavedTargetArchitectureId(
+  projectId: string,
+): Promise<string | null> {
+  const url =
+    `${GATEWAY_BASE}/api/projects/${encodeURIComponent(projectId)}/saved-target-architecture-id`;
+  const res = await fetch(url, buildRequestInit('GET'));
+  if (!res.ok) throw await parseError(res);
+  const data = (await res.json()) as SavedTargetArchitectureResponse;
+  return data.savedTargetArchitectureId ?? null;
 }
 
 // ============================================================================
