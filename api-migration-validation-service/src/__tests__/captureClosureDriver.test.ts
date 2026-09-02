@@ -235,6 +235,91 @@ describe('applyAuthCoverageToSummary', () => {
   });
 });
 
+describe('aggregate drift self-heal (2026-09-02)', () => {
+  // The field bug: every patcher recomputed the NUMERATOR fresh from
+  // per_endpoint while only carrying the DENOMINATOR forward incrementally,
+  // so across many closure/retry passes the stored total drifted low and the
+  // headline read past 100% ("415 of 412"). All three patchers now recount
+  // BOTH sides from per_endpoint, healing already-persisted drift on the
+  // next patch.
+  function drifted(): CoverageSummary {
+    const s = summaryOf([
+      {
+        operation_id: 'op1',
+        method: 'GET',
+        path: '/a',
+        score: 0.5,
+        dimensions: [happy(true), dim('not_found probe', 'not_found', false)],
+      },
+      ep('op2', 'GET', '/b', true),
+    ]);
+    // Simulate persisted drift: the stored denominator lost two dimensions.
+    const staleTotal = s.dimensions_total - 2;
+    return { ...s, dimensions_total: staleTotal, overall_score: s.dimensions_achieved / staleTotal };
+  }
+
+  it('applyClosureToSummary recounts the denominator from per_endpoint (heals stored drift)', () => {
+    const out = applyClosureToSummary(drifted(), new Map([['op1', 'cap-heal']]));
+    expect(out.dimensions_total).toBe(4); // 3 endpoint dims + 1 auth — not the drifted 2
+    expect(out.overall_score).toBeLessThanOrEqual(1);
+  });
+
+  it('the dimensional and auth siblings recount too — total and achieved stay in lockstep', () => {
+    const viaDim = applyDimensionClosuresToSummary(drifted(), [
+      { operation_id: 'op1', name: 'not_found probe', capture_id: 'cap-nf' },
+    ]);
+    expect(viaDim.dimensions_total).toBe(4);
+    expect(viaDim.overall_score).toBeLessThanOrEqual(1);
+    const viaAuth = applyAuthCoverageToSummary(drifted(), {
+      achieved: true,
+      representative_operation_id: null,
+      probes: [],
+    });
+    expect(viaAuth.dimensions_total).toBe(4);
+    expect(viaAuth.overall_score).toBeLessThanOrEqual(1);
+  });
+
+  it('NEVER exceeds 100% after repeated closures, even starting from a drifted summary', () => {
+    let s = drifted();
+    for (let i = 0; i < 5; i++) {
+      s = applyClosureToSummary(s, new Map([['op1', `cap-${i}`]]));
+      s = applyDimensionClosuresToSummary(s, [
+        { operation_id: 'op1', name: 'not_found probe', capture_id: `cap-nf-${i}` },
+      ]);
+      s = applyAuthCoverageToSummary(s, {
+        achieved: true,
+        representative_operation_id: null,
+        probes: [],
+      });
+      expect(s.overall_score).toBeLessThanOrEqual(1);
+      expect(s.dimensions_total).toBe(4);
+      expect(s.dimensions_achieved).toBeLessThanOrEqual(s.dimensions_total);
+    }
+    expect(s.dimensions_achieved).toBe(4);
+    expect(s.overall_score).toBe(1);
+  });
+
+  it('excluded dimensions stay OUT of both counts (mirrors assembleCoverageSummary)', () => {
+    const withExcluded = summaryOf([
+      {
+        operation_id: 'op1',
+        method: 'GET',
+        path: '/a',
+        score: 1,
+        dimensions: [happy(true), { ...dim('manual rec', 'not_found', false), excluded: true }],
+      },
+    ]);
+    const out = applyAuthCoverageToSummary(withExcluded, {
+      achieved: true,
+      representative_operation_id: null,
+      probes: [],
+    });
+    expect(out.dimensions_total).toBe(2); // the achieved happy + auth; the excluded dim leaves BOTH sides
+    expect(out.dimensions_achieved).toBe(2);
+    expect(out.overall_score).toBe(1);
+  });
+});
+
 describe('runClosureOrchestration', () => {
   it('Pass A closes a path-param endpoint on its first 2xx and stops firing it', async () => {
     const s = summaryOf([ep('op1', 'GET', '/orders/{id}', false)]);

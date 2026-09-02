@@ -431,17 +431,46 @@ function achievedHappyDimension(captureId: string): CoverageDimensionResult {
 }
 
 /**
+ * Recount the aggregate numerator AND denominator from `per_endpoint`,
+ * mirroring `assembleCoverageSummary` exactly: `excluded` dimensions leave
+ * both counts, and the session-level auth dimension contributes exactly one
+ * more to each side. 2026-09-02: the closure patchers used to recompute
+ * `dimensions_achieved` fresh while only carrying `dimensions_total` forward
+ * incrementally, so across many closure/retry passes the denominator drifted
+ * low and the headline read past 100% ("415 of 412"). Deriving both counts
+ * from the same source keeps them in lockstep and self-heals stored drift on
+ * the next patch.
+ */
+function recountAggregate(
+  perEndpoint: CoverageSummary['per_endpoint'],
+  authAchieved: boolean,
+): { dimensionsTotal: number; dimensionsAchieved: number } {
+  let endpointTotal = 0;
+  let endpointAchieved = 0;
+  for (const ep of perEndpoint) {
+    for (const d of ep.dimensions) {
+      if (d.excluded === true) continue;
+      endpointTotal += 1;
+      if (d.achieved) endpointAchieved += 1;
+    }
+  }
+  return {
+    dimensionsTotal: endpointTotal + 1,
+    dimensionsAchieved: endpointAchieved + (authAchieved ? 1 : 0),
+  };
+}
+
+/**
  * Patch a coverage summary so every closed endpoint's happy-path dimension
  * reads achieved (with its closing capture id), then recompute the aggregate
- * counts + scores. PURE. `dimensions_total` is unchanged — closure achieves
- * existing dimensions, it does not add rubric (except injecting a happy
- * dimension for an endpoint that never had one, which also bumps the total).
+ * counts + scores. PURE. Both aggregate counts are recounted from
+ * `per_endpoint` (see {@link recountAggregate}) — an injected happy dimension
+ * for an endpoint that never had one is counted naturally.
  */
 export function applyClosureToSummary(
   summary: CoverageSummary,
   captureIdByOperationId: ReadonlyMap<string, string>,
 ): CoverageSummary {
-  let addedDimensions = 0;
   const perEndpoint = summary.per_endpoint.map((ep) => {
     const captureId = captureIdByOperationId.get(ep.operation_id);
     if (!captureId) return ep;
@@ -451,7 +480,6 @@ export function applyClosureToSummary(
     let dimensions: CoverageDimensionResult[];
     if (idx === -1) {
       dimensions = [achievedHappyDimension(captureId), ...ep.dimensions];
-      addedDimensions += 1;
     } else if (ep.dimensions[idx].achieved) {
       return ep; // already achieved; nothing to do.
     } else {
@@ -467,12 +495,10 @@ export function applyClosureToSummary(
     return { ...ep, dimensions, score: dimensions.length ? achieved / dimensions.length : 0 };
   });
 
-  const endpointAchieved = perEndpoint.reduce(
-    (acc, e) => acc + e.dimensions.filter((d) => d.achieved).length,
-    0,
+  const { dimensionsTotal, dimensionsAchieved } = recountAggregate(
+    perEndpoint,
+    summary.auth_coverage.achieved,
   );
-  const dimensionsTotal = summary.dimensions_total + addedDimensions;
-  const dimensionsAchieved = endpointAchieved + (summary.auth_coverage.achieved ? 1 : 0);
   return {
     ...summary,
     per_endpoint: perEndpoint,
@@ -484,9 +510,9 @@ export function applyClosureToSummary(
 
 /**
  * Replace the session-level auth-negative coverage with a fresh probe result
- * and recompute the aggregate counts/score. PURE. The auth dimension
- * contributes exactly ONE dimension to the totals (already counted in
- * `dimensions_total`), so only `dimensions_achieved`/`overall_score` move.
+ * and recompute the aggregate counts/score. PURE. Both aggregate counts are
+ * recounted from `per_endpoint` (see {@link recountAggregate}); the auth
+ * dimension contributes exactly ONE to each side.
  * Used by the dimensional retry (2026-07-25): the auth dimension lives
  * OUTSIDE `per_endpoint`, so `collectFailedDimensions` never sees it — the
  * route re-runs the deterministic probes and patches the result in here.
@@ -495,17 +521,16 @@ export function applyAuthCoverageToSummary(
   summary: CoverageSummary,
   authCoverage: CoverageSummary['auth_coverage'],
 ): CoverageSummary {
-  const endpointAchieved = summary.per_endpoint.reduce(
-    (acc, e) => acc + e.dimensions.filter((d) => d.achieved).length,
-    0,
+  const { dimensionsTotal, dimensionsAchieved } = recountAggregate(
+    summary.per_endpoint,
+    authCoverage.achieved,
   );
-  const dimensionsAchieved = endpointAchieved + (authCoverage.achieved ? 1 : 0);
   return {
     ...summary,
     auth_coverage: authCoverage,
+    dimensions_total: dimensionsTotal,
     dimensions_achieved: dimensionsAchieved,
-    overall_score:
-      summary.dimensions_total > 0 ? dimensionsAchieved / summary.dimensions_total : 0,
+    overall_score: dimensionsTotal > 0 ? dimensionsAchieved / dimensionsTotal : 0,
   };
 }
 
@@ -513,8 +538,8 @@ export function applyAuthCoverageToSummary(
  * Patch a coverage summary so each closed NAMED dimension reads achieved (with
  * its closing capture id), then recompute the per-endpoint scores + aggregate
  * counts. PURE — the dimensional sibling of {@link applyClosureToSummary}.
- * Unknown operation/dimension names are ignored (never throws); the total
- * dimension count is unchanged (a named dimension exists by definition).
+ * Unknown operation/dimension names are ignored (never throws); both aggregate
+ * counts are recounted from `per_endpoint` (see {@link recountAggregate}).
  */
 export function applyDimensionClosuresToSummary(
   summary: CoverageSummary,
@@ -541,16 +566,15 @@ export function applyDimensionClosuresToSummary(
     const achieved = dimensions.filter((d) => d.achieved).length;
     return { ...ep, dimensions, score: dimensions.length ? achieved / dimensions.length : 0 };
   });
-  const endpointAchieved = perEndpoint.reduce(
-    (acc, e) => acc + e.dimensions.filter((d) => d.achieved).length,
-    0,
+  const { dimensionsTotal, dimensionsAchieved } = recountAggregate(
+    perEndpoint,
+    summary.auth_coverage.achieved,
   );
-  const dimensionsAchieved = endpointAchieved + (summary.auth_coverage.achieved ? 1 : 0);
   return {
     ...summary,
     per_endpoint: perEndpoint,
+    dimensions_total: dimensionsTotal,
     dimensions_achieved: dimensionsAchieved,
-    overall_score:
-      summary.dimensions_total > 0 ? dimensionsAchieved / summary.dimensions_total : 0,
+    overall_score: dimensionsTotal > 0 ? dimensionsAchieved / dimensionsTotal : 0,
   };
 }
