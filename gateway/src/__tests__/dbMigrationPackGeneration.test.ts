@@ -303,7 +303,10 @@ describe('dbMigrationPack generation core (Group 2)', () => {
       translationHook: async () => null,
       fetchModel: async () => makeInputs().model,
       fetchFindings: async () => makeInputs().findings,
-      fetchDbDecisions: async () => makeInputs().dbDecisions,
+      fetchDbDecisions: async () => ({
+        decisions: makeInputs().dbDecisions,
+        resolvedTargetArchitectureId: null,
+      }),
       fetchResolvedPackDecisions: async () => [],
       persistPack: async (_projectId: string, body: UpsertPackBody) => {
         persisted.push(body);
@@ -476,7 +479,10 @@ describe('dbMigrationPack Group 7 — generate -> resolve -> regenerate cycle', 
       translationHook: async () => null,
       fetchModel: async () => makeInputs().model,
       fetchFindings: async () => makeInputs().findings,
-      fetchDbDecisions: async () => makeInputs().dbDecisions,
+      fetchDbDecisions: async () => ({
+        decisions: makeInputs().dbDecisions,
+        resolvedTargetArchitectureId: null,
+      }),
       fetchResolvedPackDecisions: async () => resolved,
       persistPack: async (_projectId: string, body: UpsertPackBody) => {
         persisted.push(body);
@@ -658,7 +664,10 @@ describe('dbMigrationPack Group 7 — coverage violation fails the pipeline befo
       translationHook: async () => null,
       fetchModel: async () => inputs.model,
       fetchFindings: async () => inputs.findings,
-      fetchDbDecisions: async () => inputs.dbDecisions,
+      fetchDbDecisions: async () => ({
+        decisions: inputs.dbDecisions,
+        resolvedTargetArchitectureId: null,
+      }),
       fetchResolvedPackDecisions: async () => [],
       persistPack,
     };

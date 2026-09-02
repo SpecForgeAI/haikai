@@ -171,7 +171,10 @@ describe('pipeline integration — the five sync files ride the pack', () => {
       {
         fetchModel: async () => inputs.model,
         fetchFindings: async () => inputs.findings,
-        fetchDbDecisions: async () => inputs.dbDecisions,
+        fetchDbDecisions: async () => ({
+          decisions: inputs.dbDecisions,
+          resolvedTargetArchitectureId: null,
+        }),
         fetchResolvedPackDecisions: async () => inputs.resolvedPackDecisions,
         persistPack: async (_projectId, body) => {
           persistedBody = body as unknown as Record<string, unknown>;
