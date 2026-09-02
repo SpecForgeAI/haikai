@@ -582,7 +582,7 @@ const actionUpload = multer({
 async function proxyActionToService(
   req: Request,
   res: Response,
-  action: ApiBehaviourAction | 'compensation-preflight',
+  action: ApiBehaviourAction | 'compensation-preflight' | 'closure-status',
   method: 'POST' | 'GET' = 'POST',
 ): Promise<void> {
   const requestId = (req as any).requestId || 'unknown';
@@ -725,6 +725,16 @@ apiMigrationValidationRouter.get(
   `/projects/:projectId/architectures/:architectureId/` +
     `api-behaviour/capture-sessions/:sessionId/compensation-preflight`,
   (req, res) => proxyActionToService(req, res, 'compensation-preflight', 'GET'),
+);
+
+// Async coverage closure (2026-09-02): `retry-uncovered` now answers 202 and
+// runs in the background on AMVS; this GET is the poll surface the modal uses
+// to stay in its running state until the run is terminal. Registered beside
+// the POST action loop; instant read, no timeout concerns.
+apiMigrationValidationRouter.get(
+  `/projects/:projectId/architectures/:architectureId/` +
+    `api-behaviour/capture-sessions/:sessionId/closure-status`,
+  (req, res) => proxyActionToService(req, res, 'closure-status', 'GET'),
 );
 
 // ============================================================================

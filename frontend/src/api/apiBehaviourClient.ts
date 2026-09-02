@@ -1943,6 +1943,13 @@ export interface RetryUncoveredResponse {
   note?: string;
 }
 
+/** 202 acceptance from the ASYNC `retry-uncovered` action (2026-09-02). */
+export interface RetryUncoveredAccepted {
+  accepted: true;
+  closureRunId: string;
+  sessionId: string;
+}
+
 /**
  * Kick off Coverage Closure over a completed session's uncovered endpoints
  * (Spec 2026-07-20). Proxied by the gateway to the validation service's
@@ -1950,6 +1957,13 @@ export interface RetryUncoveredResponse {
  * Pass B (per-endpoint LLM repair with the supplied attempts/notes), patches
  * the coverage summary, and returns the fresh happy-path gate. Mirrors
  * `reconcileInventory`: `actionUrl(..., 'retry-uncovered')` + a JSON POST.
+ *
+ * ASYNC (2026-09-02): a viable run answers 202 `{accepted, closureRunId}` and
+ * executes in the background — poll {@link fetchClosureStatus} until terminal.
+ * The multi-minute synchronous response used to outlive the gateway proxy's
+ * fetch timeout, surfacing a false "service unavailable" banner while the run
+ * completed fine. An already-complete gate still answers the old synchronous
+ * 200 shape, so callers must branch on {@link isRetryUncoveredAccepted}.
  */
 export async function retryUncoveredApis(
   projectId: string,
@@ -1957,14 +1971,51 @@ export async function retryUncoveredApis(
   sessionId: string,
   config: RetryUncoveredConfigEntry[],
   includeOtherDimensions = false,
-): Promise<RetryUncoveredResponse> {
-  return jsonRequest<RetryUncoveredResponse>(
+): Promise<RetryUncoveredResponse | RetryUncoveredAccepted> {
+  return jsonRequest<RetryUncoveredResponse | RetryUncoveredAccepted>(
     actionUrl(projectId, architectureId, sessionId, 'retry-uncovered'),
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ config, includeOtherDimensions }),
     },
+  );
+}
+
+/** Narrow the union: true for the async 202 acceptance shape. */
+export function isRetryUncoveredAccepted(
+  response: RetryUncoveredResponse | RetryUncoveredAccepted,
+): response is RetryUncoveredAccepted {
+  return (response as RetryUncoveredAccepted).accepted === true;
+}
+
+/** One poll of the background closure run (2026-09-02). */
+export interface ClosureStatusResponse {
+  sessionId: string;
+  closureRunId: string;
+  status: 'running' | 'completed' | 'failed';
+  startedAt: string;
+  completedAt: string | null;
+  /** The full closure result, present when `status === 'completed'`. */
+  result: RetryUncoveredResponse | null;
+  /** Failure message, present when `status === 'failed'`. */
+  error: string | null;
+}
+
+/**
+ * Poll the background closure run. 404 means the in-memory record is gone
+ * (never ran, or AMVS restarted mid-run) — the durable outcome lives on the
+ * session row's patched coverage summary, so callers should refresh the
+ * session and move on rather than treating it as a failure.
+ */
+export async function fetchClosureStatus(
+  projectId: string,
+  architectureId: string,
+  sessionId: string,
+): Promise<ClosureStatusResponse> {
+  return jsonRequest<ClosureStatusResponse>(
+    actionUrl(projectId, architectureId, sessionId, 'closure-status'),
+    { method: 'GET' },
   );
 }
 
