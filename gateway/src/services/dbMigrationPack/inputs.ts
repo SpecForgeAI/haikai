@@ -31,6 +31,7 @@ import { isSybaseSystemObject } from './sybaseSystemObjects';
 import {
   fetchActiveTargetArchitectureId,
   fetchLatestCapturedDecisions,
+  fetchMostRecentSavedTargetArchitectureId,
   TargetStateCapturedDecision,
 } from '../targetStateCapturedDecisionsClient';
 import {
@@ -180,11 +181,36 @@ export interface RawResolvedPackDecision {
   status: string;
 }
 
+/**
+ * What the `db.*` decision read returns: the decisions PLUS the target the
+ * reader actually bound to (2026-09-02). The resolved id is what the pack
+ * manifest must record as its decision-binding receipt — echoing the REQUEST
+ * id instead wrote null whenever the caller omitted it (the frontend Generate
+ * button does), and `dbMigrationPackEnsure.boundTargetOf` then treated the
+ * pack as bound to a different target and regenerated it needlessly on the
+ * next plan run. Mirrors the 2026-05-26 `CapturedDecisionsForCitationFetcher`
+ * reshape: return the resolved id rather than making callers re-resolve it.
+ */
+export interface DbDecisionsRead {
+  decisions: IrDbDecision[];
+  /** Null only when the project has no active AND no saved target. */
+  resolvedTargetArchitectureId: string | null;
+}
+
 export interface GenerationInputs {
   model: CommittedPhysicalModel;
   findings: RawDiscoveryFinding[];
   dbDecisions: IrDbDecision[];
   resolvedPackDecisions: RawResolvedPackDecision[];
+  /**
+   * The target the `db.*` decisions were READ FROM (not the one requested).
+   *
+   * OPTIONAL by design: this is provenance, not an input. Keeping it optional
+   * means the many hand-built `GenerationInputs` fixtures stay valid, and it
+   * is deliberately EXCLUDED from `computeInputSnapshotHash` so adding it does
+   * not churn existing packs' hashes into false staleness.
+   */
+  resolvedTargetArchitectureId?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -200,12 +226,14 @@ export interface InputFetchDeps {
    * saved DRAFT that is not the project's "active" target — decisions live on
    * whatever target the user answered the conversation in, so reading from
    * "active" hid them (same bug class as the 2026-06-27 context fix). Absent
-   * (legacy callers) → fall back to the active target.
+   * (legacy callers) → fall back to the active target, then to the
+   * most-recent-saved target (closing the conversation stamps saved, not
+   * active — an active-only fallback found nothing).
    */
   fetchDbDecisions: (
     projectId: string,
     targetArchitectureId?: string | null
-  ) => Promise<IrDbDecision[]>;
+  ) => Promise<DbDecisionsRead>;
   fetchResolvedPackDecisions: (
     projectId: string,
     architectureId: string
@@ -218,13 +246,22 @@ export async function fetchGenerationInputs(
   deps: InputFetchDeps,
   targetArchitectureId?: string | null
 ): Promise<GenerationInputs> {
-  const [model, findings, dbDecisions, resolvedPackDecisions] = await Promise.all([
+  const [model, findings, decisionsRead, resolvedPackDecisions] = await Promise.all([
     deps.fetchModel(projectId, architectureId),
     deps.fetchFindings(projectId, architectureId),
     deps.fetchDbDecisions(projectId, targetArchitectureId),
     deps.fetchResolvedPackDecisions(projectId, architectureId),
   ]);
-  return { model, findings, dbDecisions, resolvedPackDecisions };
+  return {
+    model,
+    findings,
+    dbDecisions: decisionsRead.decisions,
+    resolvedPackDecisions,
+    // Prefer what the reader actually bound to; fall back to the requested id
+    // so an injected test double that reports nothing still records intent.
+    resolvedTargetArchitectureId:
+      decisionsRead.resolvedTargetArchitectureId ?? targetArchitectureId ?? null,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1134,22 +1171,37 @@ export const defaultFetchDbDecisions: InputFetchDeps['fetchDbDecisions'] = async
   targetArchitectureId
 ) => {
   // Bind to the EXPLICIT target when the caller supplied one (the target the
-  // pack/plan is generated FOR); fall back to the active target only for
-  // legacy callers that omit it — mirrors the 2026-06-27 migration-discovery-
-  // context binding fix.
+  // pack/plan is generated FOR); fall back for legacy callers that omit it —
+  // mirrors the 2026-06-27 migration-discovery-context binding fix.
+  //
+  // Fallback order is active THEN most-recent-saved (2026-09-02 fix): closing
+  // the target-state conversation stamps `conversation_saved_at` but does NOT
+  // make the target "active", so an active-only fallback resolved to null on a
+  // normally-completed conversation and returned ZERO db.* decisions — which
+  // surfaced as the misleading "No 'db.engine' captured decision found" engine-
+  // pair rejection even though db.engine was captured. Same decoupling every
+  // other plan-sourcing reader already does (Spec 2026-06-26 FR4; cf.
+  // sclModernizationReview.resolveTargetArchitectureId).
   let boundTargetId = targetArchitectureId ?? null;
   if (!boundTargetId) {
     const active = await fetchActiveTargetArchitectureId(projectId);
     boundTargetId = active.activeTargetArchitectureId ?? null;
   }
-  if (!boundTargetId) return [];
+  if (!boundTargetId) {
+    const saved = await fetchMostRecentSavedTargetArchitectureId(projectId);
+    boundTargetId = saved.savedTargetArchitectureId ?? null;
+  }
+  if (!boundTargetId) return { decisions: [], resolvedTargetArchitectureId: null };
   const decisions: TargetStateCapturedDecision[] = await fetchLatestCapturedDecisions(
     projectId,
     boundTargetId
   );
-  return decisions
-    .filter((d) => d.decisionCode.startsWith('db.'))
-    .map((d) => ({ decisionCode: d.decisionCode, answerValue: d.answerValue }));
+  return {
+    decisions: decisions
+      .filter((d) => d.decisionCode.startsWith('db.'))
+      .map((d) => ({ decisionCode: d.decisionCode, answerValue: d.answerValue })),
+    resolvedTargetArchitectureId: boundTargetId,
+  };
 };
 
 export const defaultFetchResolvedPackDecisions: InputFetchDeps['fetchResolvedPackDecisions'] =

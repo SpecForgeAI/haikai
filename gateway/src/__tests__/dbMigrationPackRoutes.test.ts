@@ -137,7 +137,9 @@ function inputDeps(inputs: GenerationInputs) {
   return {
     fetchModel: jest.fn().mockResolvedValue(inputs.model),
     fetchFindings: jest.fn().mockResolvedValue(inputs.findings),
-    fetchDbDecisions: jest.fn().mockResolvedValue(inputs.dbDecisions),
+    fetchDbDecisions: jest
+      .fn()
+      .mockResolvedValue({ decisions: inputs.dbDecisions, resolvedTargetArchitectureId: null }),
     fetchResolvedPackDecisions: jest.fn().mockResolvedValue(inputs.resolvedPackDecisions),
   };
 }

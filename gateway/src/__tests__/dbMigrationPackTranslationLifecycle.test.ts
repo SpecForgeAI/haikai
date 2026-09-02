@@ -605,7 +605,10 @@ describe('Group 6 — regenerate -> re-link/demote through the real generateDbMi
       {
         fetchModel: async () => inputs.model,
         fetchFindings: async () => inputs.findings,
-        fetchDbDecisions: async () => inputs.dbDecisions,
+        fetchDbDecisions: async () => ({
+          decisions: inputs.dbDecisions,
+          resolvedTargetArchitectureId: null,
+        }),
         fetchResolvedPackDecisions: async () => [],
         persistPack: async (_projectId: string, body: UpsertPackBody) => {
           // Stage-6 wholesale persist: files replaced, manifest stored.
