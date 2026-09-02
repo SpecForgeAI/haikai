@@ -52,6 +52,7 @@ const mockAttachWorkItem = vi.fn();
 const mockGenerate = vi.fn();
 const mockRegenerate = vi.fn();
 const mockListDriftReports = vi.fn();
+const mockListStructuralFindings = vi.fn();
 
 vi.mock('../../../../api/dbMigrationPackApi', async () => {
   const actual = await vi.importActual<
@@ -74,6 +75,8 @@ vi.mock('../../../../api/dbMigrationPackApi', async () => {
     regenerateDbMigrationPack: (...args: unknown[]) => mockRegenerate(...args),
     listDbMigrationPackDriftReports: (...args: unknown[]) =>
       mockListDriftReports(...args),
+    listDbMigrationPackStructuralFindings: (...args: unknown[]) =>
+      mockListStructuralFindings(...args),
   };
 });
 
@@ -272,6 +275,10 @@ beforeEach(() => {
   // Default: no target resolvable — existing tests exercise the unbound path.
   mockGetActiveTarget.mockResolvedValue(null);
   mockGetSavedTarget.mockResolvedValue(null);
+  mockListStructuralFindings.mockReset();
+  // Default: no findings — the panel resolves deterministically (it renders
+  // null until its list call settles).
+  mockListStructuralFindings.mockResolvedValue({ findings: [] });
 });
 
 describe('DbMigrationPackView (Task 6.1)', () => {
@@ -695,6 +702,62 @@ describe('untranslated-block key uniqueness (2026-08-30 duplicate-key bug)', () 
       // Every entry renders exactly once (2 requires-translation + 1 manual).
       const section = screen.getByTestId('db-pack-untranslated');
       expect(section.querySelectorAll('p').length).toBe(3);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('the structural-findings panel renders exactly ONCE across sub-tab switches (2026-09-02 sibling-key collision)', async () => {
+    // Pre-fix the always-mounted findings panel and the conditionally-mounted
+    // decision queue were SIBLINGS carrying the identical remount key
+    // `${pack.id}-${pack.generated_at}`. Mounting the queue (Decisions
+    // sub-tab) collided with the panel's key, reconciliation lost track of
+    // which child was which, and a duplicated "Structural findings" section
+    // stuck around across the Drift-reports / Translations switches. The keys
+    // are now role-namespaced; this drives the exact click path.
+    mockListPacks.mockResolvedValue([buildPack()]);
+    mockGetPack.mockResolvedValue(buildPack());
+    mockListFiles.mockResolvedValue(FILES);
+    mockListDecisions.mockResolvedValue([]);
+    mockListDriftReports.mockResolvedValue([]);
+    // One open finding so the panel actually renders its section.
+    mockListStructuralFindings.mockResolvedValue({
+      findings: [
+        {
+          key: 'missing_fk_columns:all_relationships',
+          kind: 'missing_fk_columns',
+          subject: 'all_relationships',
+          message:
+            '28 relationship(s) carry no fk_columns join metadata — 020-foreign-keys.sql will be EMPTY.',
+          disposition: null,
+          note: null,
+          open: true,
+        },
+      ],
+    });
+
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      renderView();
+      await waitFor(() =>
+        expect(screen.getAllByTestId('db-pack-structural-findings')).toHaveLength(1),
+      );
+
+      // The collision fired on the queue MOUNT and the duplicate persisted
+      // across later switches — walk the reported path.
+      for (const section of ['decisions', 'contents', 'drift', 'decisions'] as const) {
+        fireEvent.click(screen.getByTestId(`db-pack-section-${section}`));
+        // Exactly one findings section after EVERY switch — the duplicate
+        // panel was visible immediately, so a plain length assert catches it.
+        await waitFor(() =>
+          expect(screen.getAllByTestId('db-pack-structural-findings')).toHaveLength(1),
+        );
+      }
+
+      const keyWarnings = errorSpy.mock.calls.filter((args) =>
+        String(args[0] ?? '').includes('two children with the same key'),
+      );
+      expect(keyWarnings).toEqual([]);
     } finally {
       errorSpy.mockRestore();
     }
