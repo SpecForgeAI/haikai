@@ -96,8 +96,22 @@ import {
   minePathParamValues,
   type ExportCapture,
 } from './postmanExport';
-import { retryUncoveredApis, listCaptures, excludeEndpoint, refreshOasCache, listDiagnostics } from '../../api/apiBehaviourClient';
-import type { ApiBehaviourDiagnosticDto } from '../../api/apiBehaviourClient';
+import {
+  retryUncoveredApis,
+  isRetryUncoveredAccepted,
+  fetchClosureStatus,
+  listCaptures,
+  excludeEndpoint,
+  refreshOasCache,
+  listDiagnostics,
+} from '../../api/apiBehaviourClient';
+import type {
+  ApiBehaviourDiagnosticDto,
+  ClosureStatusResponse,
+  RetryUncoveredResponse,
+} from '../../api/apiBehaviourClient';
+
+
 import { groupDiagnostics, groupIdenticalMessages, labelFor, serializeDiagnosticsReport, shouldOfferS0Restore } from './captureDiagnosticsSupport';
 import { S0RestorePanel } from './S0RestorePanel';
 import { useArchitectureDispatch } from '../../contexts/ArchitectureContext';
@@ -360,46 +374,15 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
     URL.revokeObjectURL(url);
   }, [diagReport, sessionId]);
 
-  // Coverage Closure: run the "Retry uncovered APIs" pass, then refresh the
-  // session so the patched coverage summary + gate re-render. Closes the modal
-  // when the gate is complete; otherwise leaves it open with a progress note so
-  // the user can adjust attempts/notes and retry the remainder (or move to the
-  // Postman/exclude wizard, CC4).
-  const handleRunClosure = useCallback(
-    async (
-      config: EndpointRetryConfig[],
-      includeOtherDimensions = false,
-      contractFiles?: File[],
-    ) => {
-      setClosureBusy(true);
-      setClosureNote(null);
-      try {
-        // Optional contract refresh (2026-08-08): when the operator supplied
-        // a contract, repopulate the service's parse cache first (parse-only,
-        // no rows persisted). The retry itself works WITHOUT a contract — the
-        // service rebuilds context from the session's persisted operations.
-        if (contractFiles && contractFiles.length > 0) {
-          try {
-            await refreshOasCache(projectId, architectureId, sessionId, contractFiles);
-          } catch (refreshErr) {
-            setClosureNote(
-              `Contract refresh failed: ${
-                refreshErr instanceof Error ? refreshErr.message : 'unknown error'
-              } — fix the file or clear it to retry from the session's captured operations.`,
-            );
-            setClosureBusy(false);
-            return;
-          }
-        }
-        const result = await retryUncoveredApis(
-          projectId,
-          architectureId,
-          sessionId,
-          config.map((c) => ({ operationId: c.operation_id, attempts: c.attempts, notes: c.notes })),
-          includeOtherDimensions,
-        );
-        const fresh = await fetchOnce();
-        const closed = result.passA.closed.length + result.passB.closed.length;
+  // Shared result processing for BOTH closure shapes (2026-09-02): the
+  // synchronous already-complete 200, and the polled terminal result of an
+  // async 202 run. Refreshes the session so the patched coverage summary +
+  // gate re-render, closes the modal when the gate is complete, otherwise
+  // leaves it open with a progress note.
+  const applyClosureResult = useCallback(
+    async (result: RetryUncoveredResponse) => {
+      const fresh = await fetchOnce();
+      const closed = result.passA.closed.length + result.passB.closed.length;
         const dimsClosed = result.dimensional?.closed.length ?? 0;
         const dimsAttempted = result.dimensional?.attempted ?? 0;
         const authNote = result.authReprobe
@@ -437,15 +420,111 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
           setClosureNote(
             `Closed ${closed} endpoint${closed === 1 ? '' : 's'}; ${result.gate.unresolved.length} still unresolved${passBNote}.${dimsNote}${authNote}`,
           );
+      }
+      void fresh;
+    },
+    [fetchOnce],
+  );
+
+  // Coverage Closure: launch the "Retry uncovered APIs" pass. ASYNC since
+  // 2026-09-02: a viable run answers 202 and executes on the validation
+  // service in the background — the modal stays in its running state while we
+  // poll `closure-status`, then the terminal result flows through
+  // `applyClosureResult` exactly as the synchronous response used to. (The
+  // multi-minute synchronous proxy call previously hit the gateway fetch
+  // timeout and surfaced a false "service unavailable" banner while the run
+  // completed fine — the outcome only appeared after a full-page refresh.)
+  const handleRunClosure = useCallback(
+    async (
+      config: EndpointRetryConfig[],
+      includeOtherDimensions = false,
+      contractFiles?: File[],
+    ) => {
+      setClosureBusy(true);
+      setClosureNote(null);
+      try {
+        // Optional contract refresh (2026-08-08): when the operator supplied
+        // a contract, repopulate the service's parse cache first (parse-only,
+        // no rows persisted). The retry itself works WITHOUT a contract — the
+        // service rebuilds context from the session's persisted operations.
+        if (contractFiles && contractFiles.length > 0) {
+          try {
+            await refreshOasCache(projectId, architectureId, sessionId, contractFiles);
+          } catch (refreshErr) {
+            setClosureNote(
+              `Contract refresh failed: ${
+                refreshErr instanceof Error ? refreshErr.message : 'unknown error'
+              } — fix the file or clear it to retry from the session's captured operations.`,
+            );
+            setClosureBusy(false);
+            return;
+          }
         }
-        void fresh;
+        const launch = await retryUncoveredApis(
+          projectId,
+          architectureId,
+          sessionId,
+          config.map((c) => ({ operationId: c.operation_id, attempts: c.attempts, notes: c.notes })),
+          includeOtherDimensions,
+        );
+
+        if (!isRetryUncoveredAccepted(launch)) {
+          // Old synchronous shape (already-complete gate, or an older AMVS
+          // during mixed-version pickup) — process it directly.
+          await applyClosureResult(launch);
+          return;
+        }
+
+        // 202 accepted: poll until the background run is terminal. The modal
+        // stays busy ("Running closure…") the whole time; the note carries a
+        // live elapsed count so a long run reads as alive, not hung.
+        setClosureNote('Closure running on the validation service…');
+        const startedMs = Date.now();
+        for (;;) {
+          // Same cadence knob as the session poll (pollIntervalMs, 2.5s
+          // default) — tests shorten both together.
+          await new Promise((resolve) => window.setTimeout(resolve, pollIntervalMs));
+          let status: ClosureStatusResponse;
+          try {
+            status = await fetchClosureStatus(projectId, architectureId, sessionId);
+          } catch (pollErr) {
+            if (pollErr instanceof ApiBehaviourApiError && pollErr.status === 404) {
+              // The in-memory run record is gone (AMVS restarted mid-run).
+              // The durable outcome is the session row's patched coverage —
+              // refresh it and say so honestly.
+              await fetchOnce();
+              setClosureNote(
+                'Closure status expired (service restarted) — session refreshed; ' +
+                  'review the coverage panel and re-run for anything still open.',
+              );
+              return;
+            }
+            // Transient poll failure (gateway blip): keep polling — the run
+            // itself is unaffected on the validation service.
+            continue;
+          }
+          if (status.status === 'completed' && status.result) {
+            await applyClosureResult(status.result);
+            return;
+          }
+          if (status.status === 'failed') {
+            setClosureNote(status.error ?? 'Coverage closure failed');
+            return;
+          }
+          const elapsedMin = Math.floor((Date.now() - startedMs) / 60_000);
+          setClosureNote(
+            elapsedMin > 0
+              ? `Closure running on the validation service… (${elapsedMin} min elapsed)`
+              : 'Closure running on the validation service…',
+          );
+        }
       } catch (err) {
         setClosureNote(err instanceof Error ? err.message : 'Coverage closure failed');
       } finally {
         setClosureBusy(false);
       }
     },
-    [projectId, architectureId, sessionId, fetchOnce],
+    [projectId, architectureId, sessionId, fetchOnce, applyClosureResult, pollIntervalMs],
   );
 
   // Coverage Closure Pass C: exclude-with-reason for a genuinely uncapturable
