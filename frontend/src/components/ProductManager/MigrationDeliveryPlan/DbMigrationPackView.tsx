@@ -491,9 +491,14 @@ export const DbMigrationPackView: React.FC<DbMigrationPackViewProps> = ({
           generation + Migrate, so the panel sits ABOVE the section tabs where
           it is always visible. Renders nothing when the pack has no findings.
           Keyed by pack id + generation timestamp so an explicit Regenerate
-          remounts it with the fresh pack's findings. */}
+          remounts it with the fresh pack's findings.
+          The `structural-findings:` PREFIX is load-bearing: the decision queue
+          below is a SIBLING in this same div and uses the same pack-id +
+          generated_at remount key. React keys must be unique among siblings
+          regardless of component type, and the bare collision made this panel
+          render twice when switching to the Decisions sub-tab. */}
       <DbMigrationPackStructuralFindingsPanel
-        key={`${pack.id}-${pack.generated_at ?? ''}`}
+        key={`structural-findings:${pack.id}-${pack.generated_at ?? ''}`}
         projectId={projectId}
         packId={pack.id}
         architectureId={architectureId}
@@ -758,10 +763,11 @@ export const DbMigrationPackView: React.FC<DbMigrationPackViewProps> = ({
           completed HARVEST runs server-side — re-derives the decision set
           (stale opens pruned AMS-side), so the queue must remount and
           refetch instead of showing the pre-harvest list until a manual
-          page refresh. */}
+          page refresh. The `decision-queue:` prefix keeps this distinct from
+          the structural-findings panel's sibling key (see that comment). */}
       {activeSection === 'decisions' && (
         <DbMigrationPackDecisionQueue
-          key={`${pack.id}-${pack.generated_at ?? ''}`}
+          key={`decision-queue:${pack.id}-${pack.generated_at ?? ''}`}
           projectId={projectId}
           packId={pack.id}
           onResolved={handleDecisionResolved}
