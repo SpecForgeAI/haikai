@@ -75,6 +75,8 @@ export interface SclCarriageMarkers {
   sclContractKeys: string[] | null;
   /** Q- boundaries reached transitively by the story's rows (2026-09-03). */
   sclBoundaryKeys: string[] | null;
+  /** "VERB /path" routes declared by the story's endpoint contracts. */
+  sclDeclaredRoutes: string[] | null;
   sclLayer: string | null;
   sclControllerClass: string | null;
   sclRowCount: number | null;
@@ -96,6 +98,7 @@ export function sclCarriageMarkersFromBlob(
   return {
     sclContractKeys: strings(obj.scl_contract_keys ?? obj.sclContractKeys),
     sclBoundaryKeys: strings(obj.scl_boundary_keys ?? obj.sclBoundaryKeys),
+    sclDeclaredRoutes: strings(obj.scl_declared_routes ?? obj.sclDeclaredRoutes),
     sclLayer: str(obj.scl_layer ?? obj.sclLayer),
     sclControllerClass: str(obj.scl_controller_class ?? obj.sclControllerClass),
     sclRowCount: num(obj.scl_row_count ?? obj.sclRowCount),
@@ -1012,6 +1015,35 @@ export function runSclSpecCarriage(args: {
       'conditions/outcomes are the contract — representation may modernize per the ' +
       'cited decisions, semantics may not.'
   );
+  // Replay criteria (2026-09-03, Kiro review MECH-02 / IMPL-07): name the
+  // verification assets that exist. Each resolved endpoint gets one criterion
+  // naming the active baseline that covers it (the AMVS replay harness's
+  // machine-readable target); an uncovered endpoint says so instead of
+  // pretending.
+  const acEndpointIds = story.apiEndpointIds ?? [];
+  const baselineByEndpoint = story.baselineByEndpointId ?? {};
+  const declaredRoutes = story.sclDeclaredRoutes ?? [];
+  let acIndex = 4;
+  for (const endpointId of acEndpointIds) {
+    const baselineId = baselineByEndpoint[endpointId] ?? null;
+    if (baselineId) {
+      lines.push(
+        `${acIndex}. Endpoint \`${endpointId}\`: replay EVERY accepted capture of baseline ` +
+          `\`${baselineId}\` against the target (AMVS replay) — status, declared headers ` +
+          'and body must match; a divergence is a failed criterion, not a note.'
+      );
+    } else {
+      lines.push(
+        `${acIndex}. Endpoint \`${endpointId}\`: NO active baseline covers it — capture and ` +
+          'save a baseline before this story can be verified (missing_baseline).'
+      );
+    }
+    acIndex += 1;
+  }
+  if (declaredRoutes.length > 0) {
+    lines.push('');
+    lines.push(`Declared routes under verification: ${declaredRoutes.map((r) => `\`${r}\``).join(', ')}`);
+  }
   lines.push('');
 
   // -- Stack + wire sections (same helpers + order as the LLM path). NOTE:
@@ -1026,6 +1058,9 @@ export function runSclSpecCarriage(args: {
     status: state.warnings.length > 0 ? 'generated_with_warnings' : 'generated',
     confidence: 'high',
     generatedSpecText: text,
+    // D9 groundwork finally populated for deterministic carriages (2026-09-03):
+    // the endpoint coverage gate and Join 4 read this column.
+    coveredEndpointIds: story.apiEndpointIds ?? [],
     warningsJson: state.warnings.length > 0 ? state.warnings : null,
     missingInputsJson: [],
     focusedContextRefsJson: {

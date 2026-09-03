@@ -219,3 +219,28 @@ describe('boundariesReachedBy (planner)', () => {
     expect(boundariesReachedBy(['S-RESP', 'X-NOPE'], (ref) => byKey.get(ref))).toEqual([]);
   });
 });
+
+
+describe('SCL carriage acceptance criteria name the verification assets (2026-09-03)', () => {
+  it('one replay criterion per resolved endpoint naming its baseline (or missing_baseline), plus coveredEndpointIds', () => {
+    const s = {
+      ...story(null),
+      apiEndpointIds: ['ep-1', 'ep-2'],
+      baselineByEndpointId: { 'ep-1': 'bl-77' },
+      sclDeclaredRoutes: ['GET /orders/{id}'],
+    } as LoadedBookOfWorkItem;
+    const row = runSclSpecCarriage({
+      story: s,
+      baseRow: baseRow(),
+      contracts: [table(['S-RESP'])],
+      decisions: [decision()],
+      wireFactsSectionText: null,
+      targetStackSectionText: null,
+    });
+    const text = row.generatedSpecText as string;
+    expect(text).toContain('4. Endpoint `ep-1`: replay EVERY accepted capture of baseline `bl-77`');
+    expect(text).toContain('5. Endpoint `ep-2`: NO active baseline covers it');
+    expect(text).toContain('Declared routes under verification: `GET /orders/{id}`');
+    expect(row.coveredEndpointIds).toEqual(['ep-1', 'ep-2']);
+  });
+});

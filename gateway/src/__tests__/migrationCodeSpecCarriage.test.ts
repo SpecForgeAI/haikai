@@ -678,3 +678,30 @@ describe('DATA-EFFECT FLOORS (2026-09-03, Kiro review MECH-01 / BEHAV-06 / IMPL-
     expect(none).toContain('**NOT CAPTURED**');
   });
 });
+
+
+describe('CODE CARRIAGE ACCEPTANCE CRITERIA + coveredEndpointIds (2026-09-03)', () => {
+  it('names the baseline to replay per endpoint (or missing_baseline) and populates coveredEndpointIds', async () => {
+    const row = await runCodeSpecCarriage({
+      projectId: 'p1',
+      currentArchitectureId: 'arch-1',
+      story: story({ apiEndpointIds: ['e-1'], baselineByEndpointId: { 'e-1': 'bl-9' } }),
+      baseRow: baseRow(),
+      deps: { fetchCodeSpecFacts: jest.fn().mockResolvedValue(facts()) },
+    });
+    expect(row.coveredEndpointIds).toEqual(['e-1']);
+    const text = row.generatedSpecText as string;
+    expect(text).toContain('## Acceptance criteria');
+    expect(text).toContain('1. `GET /owners/{id}` (e-1): replay EVERY accepted capture of baseline `bl-9`');
+    expect(text.indexOf('## Acceptance criteria')).toBeLessThan(text.indexOf('## Parity obligation'));
+
+    const uncovered = await runCodeSpecCarriage({
+      projectId: 'p1',
+      currentArchitectureId: 'arch-1',
+      story: story({ apiEndpointIds: ['e-1'], baselineByEndpointId: {} }),
+      baseRow: baseRow(),
+      deps: { fetchCodeSpecFacts: jest.fn().mockResolvedValue(facts()) },
+    });
+    expect(uncovered.generatedSpecText).toContain('(e-1): NO active baseline covers it');
+  });
+});

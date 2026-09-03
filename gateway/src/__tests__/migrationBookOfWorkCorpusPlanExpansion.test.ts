@@ -232,6 +232,13 @@ describe('Corpus plan PRESENT — interfaces epic (clean-slate replacement)', ()
     expect(externalBlob.codeStoryKind).toBe('scl-endpoint-group');
     expect(externalBlob.scl_contract_keys).toEqual(['T-ORD-GET', 'T-ORD-VAL', 'T-ORD-LIST']);
     expect(externalBlob.scl_row_count).toBe(7);
+    // Join 4 (2026-09-03): every resolved endpoint's ACTIVE baseline rides on
+    // the story so acceptance criteria can name the captures to replay.
+    const resolvedIds = (externalBlob.apiEndpointIds as string[]) ?? [];
+    for (const id of resolvedIds) {
+      expect((externalBlob.baselineByEndpointId as Record<string, string>)[id]).toBe(`baseline-${id}`);
+    }
+    expect(Object.keys(externalBlob.baselineByEndpointId as Record<string, string>)).toHaveLength(resolvedIds.length);
     expect(externalBlob.scl_controller_class).toBe('com.app.OrdersController');
     expect(externalBlob.apiEndpointIds).toEqual([]);
 
