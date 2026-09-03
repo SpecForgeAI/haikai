@@ -193,6 +193,16 @@ describe('markers + recognition', () => {
     const llmStory = story({ tags: ['stream:x'], apiEndpointIds: null });
     expect(isCodeCarriageStory(llmStory)).toBe(false);
   });
+
+  it('an SCL corpus story is NEVER a code-fact-carriage story, even with resolved endpoint ids (2026-09-03)', () => {
+    const corpus = story({
+      tags: ['provenance:plan-deterministic', 'provenance:scl_corpus', 'scl', 'scl:endpoint:external'],
+      codeStoryKind: 'scl-endpoint-group',
+      apiEndpointIds: ['e-1', 'e-2'],
+    });
+    expect(isCodeFactCarriageStory(corpus)).toBe(false);
+    expect(isCodeCarriageStory(corpus)).toBe(false);
+  });
 });
 
 describe('VERBATIM + FENCE pins', () => {
