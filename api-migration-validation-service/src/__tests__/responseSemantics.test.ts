@@ -159,3 +159,23 @@ describe('resolveConfig -- absent config and the built-in-defaults sentinel', ()
     expect(fromSentinel.statusBucketOverride).toEqual({});
   });
 });
+
+describe('classifyObservedBehaviour -- estate bad-input vocabulary (2026-09-03)', () => {
+  it('treats ILLEGAL_PARAM / FATAL / "is not a valid" / "must be specified" bodies on a 5xx as observed client_error', () => {
+    for (const body of [
+      { code: 'ILLEGAL_PARAM', message: 'bad id' },
+      { level: 'FATAL', message: 'cannot continue' },
+      { message: '2026-13-01 is not a valid date' },
+      { message: 'the view id must be specified' },
+    ]) {
+      const r = classifyObservedBehaviour(500, body);
+      expect(r.bucket).toBe('client_error');
+      expect(r.observed).toBe(true);
+      expect(r.anomaly).toBeNull();
+    }
+    // The four are part of the built-in defaults (mirrored in the frontend step).
+    for (const m of ['ILLEGAL_PARAM', 'FATAL', 'is not a valid', 'must be specified']) {
+      expect(DEFAULT_BAD_REQUEST_MARKERS).toContain(m);
+    }
+  });
+});

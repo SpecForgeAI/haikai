@@ -55,6 +55,11 @@ export const DEFAULT_BAD_REQUEST_MARKERS: readonly string[] = [
   'malformed',
   'bad request',
   'required',
+  // 2026-09-03: estate vocabulary for bad-input failures (often wrapped in a 5xx).
+  'ILLEGAL_PARAM',
+  'FATAL',
+  'is not a valid',
+  'must be specified',
 ];
 
 // ===========================================================================
