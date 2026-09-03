@@ -440,9 +440,10 @@ function renderOutcome(
       : [];
     if (targetKeys.length > 1) {
       const [first, ...rest] = targetKeys;
+      // Slash-separated: a pipe inside a markdown table cell is escaped.
       const label = targetKey
-        ? `${first} (primary, DI-wired) | ${rest.join(' | ')}`
-        : targetKeys.join(' | ');
+        ? `${first} (primary, DI-wired) / ${rest.join(' / ')}`
+        : targetKeys.join(' / ');
       return (
         `call → [${label}] ${targetSymbol} — multi-candidate dispatch ` +
         `(${targetKeys.length} implementations, all carried below)`
