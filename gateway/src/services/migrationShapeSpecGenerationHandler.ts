@@ -2747,6 +2747,11 @@ async function runSinglePassBatch(
         decisions: scaffoldDecisions,
         wireFactsSectionText: wireFidelitySectionText,
         targetStackSectionText,
+        // Every shape in the corpus, so the endpoint spec can join its roots'
+        // declared return types to the shapes that describe them (2026-09-03).
+        shapeIndex: sclContractsByKey
+          ? [...sclContractsByKey.values()].filter((c) => c.kind === 'shape')
+          : [],
       });
       perStoryResults.push(row);
       logStoryResult(row);

@@ -511,6 +511,88 @@ function renderBehaviourBlock(
   return lines;
 }
 
+/** JDK / framework result types that never have a corpus shape contract. */
+const NON_SHAPE_RETURN_TYPES = new Set([
+  'void', 'Void', 'boolean', 'Boolean', 'byte', 'short', 'int', 'Integer', 'long', 'Long',
+  'float', 'Float', 'double', 'Double', 'char', 'Character', 'String', 'Object',
+  'List', 'Map', 'Set', 'Collection', 'Optional', 'Response', 'ResponseEntity', 'Iterable',
+]);
+
+/** `value:com.app.Foo<Bar>[]` -> `com.app.Foo` (outer type only, generics/arrays stripped). */
+function returnedTypeOf(label: string): string | null {
+  if (!label.startsWith('value:')) return null;
+  let type = label.slice('value:'.length).trim();
+  const lt = type.indexOf('<');
+  if (lt >= 0) type = type.slice(0, lt);
+  type = type.replace(/\[\s*\]/g, '').trim();
+  if (type.length === 0) return null;
+  const simple = type.includes('.') ? type.slice(type.lastIndexOf('.') + 1) : type;
+  if (NON_SHAPE_RETURN_TYPES.has(simple)) return null;
+  if (/^(java|javax|jakarta)\./.test(type)) return null;
+  return type;
+}
+
+export interface JoinedResponseShape {
+  label: string;
+  rootSymbol: string;
+  /** The joined shape; null when `unmatched` names a returned type with no corpus shape. */
+  contract: SclContractDto | null;
+  unmatched: string[];
+}
+
+/**
+ * Join the returned types named by the story's behaviour-table outcome
+ * signatures to shape contracts. Exact FQN match first, then a UNIQUE
+ * simple-name match; shapes already carried by the story are not repeated.
+ * Exported for tests.
+ */
+export function joinResponseShapes(
+  storyContracts: ReadonlyArray<SclContractDto>,
+  shapeIndex: ReadonlyArray<SclContractDto>
+): JoinedResponseShape[] {
+  if (shapeIndex.length === 0) return [];
+  const carriedKeys = new Set(storyContracts.map((c) => c.contract_key ?? symbolOf(c)));
+  const byFqn = new Map<string, SclContractDto>();
+  const bySimple = new Map<string, SclContractDto[]>();
+  for (const shape of shapeIndex) {
+    if (shape.kind !== 'shape') continue;
+    const sym = symbolOf(shape);
+    if (!sym) continue;
+    byFqn.set(sym, shape);
+    const simple = sym.includes('.') ? sym.slice(sym.lastIndexOf('.') + 1) : sym;
+    bySimple.set(simple, [...(bySimple.get(simple) ?? []), shape]);
+  }
+  const out: JoinedResponseShape[] = [];
+  const seenKeys = new Set<string>();
+  const unmatchedSeen = new Set<string>();
+  for (const contract of storyContracts) {
+    if (contract.kind !== 'behaviour_table') continue;
+    const body = bodyOf(contract);
+    const signature = Array.isArray(body.outcomeSignature) ? body.outcomeSignature : [];
+    for (const raw of signature) {
+      const label = asString((raw as Rec)?.label);
+      if (!label) continue;
+      const type = returnedTypeOf(label);
+      if (!type) continue;
+      const simple = type.includes('.') ? type.slice(type.lastIndexOf('.') + 1) : type;
+      const candidates = byFqn.has(type) ? [byFqn.get(type)!] : bySimple.get(simple) ?? [];
+      const match = candidates.length === 1 ? candidates[0] : null;
+      if (!match) {
+        if (candidates.length === 0 && !unmatchedSeen.has(type)) {
+          unmatchedSeen.add(type);
+          out.push({ label, rootSymbol: symbolOf(contract), contract: null, unmatched: [type] });
+        }
+        continue;
+      }
+      const key = match.contract_key ?? symbolOf(match);
+      if (carriedKeys.has(key) || seenKeys.has(key)) continue;
+      seenKeys.add(key);
+      out.push({ label, rootSymbol: symbolOf(contract), contract: match, unmatched: [] });
+    }
+  }
+  return out;
+}
+
 function renderShapeBlock(contract: SclContractDto): string[] {
   const body = bodyOf(contract);
   const lines: string[] = [];
@@ -604,8 +686,15 @@ export function runSclSpecCarriage(args: {
   wireFactsSectionText: string | null;
   /** Pre-built target-stack section (buildTargetStackSpecSection), or null. */
   targetStackSectionText: string | null;
+  /**
+   * Every SHAPE contract of the corpus (2026-09-03), not just the story's own
+   * keys, so an endpoint spec can JOIN its roots' declared return types to the
+   * shape contracts that describe them. Optional: absent = no join rendered.
+   */
+  shapeIndex?: ReadonlyArray<SclContractDto>;
 }): MigrationStorySpecGenerationDto {
   const { story, baseRow, contracts, decisions } = args;
+  const shapeIndex = args.shapeIndex ?? [];
 
   // -- Contract resolution: NO partial specs -------------------------------
   const orderedKeys = story.sclContractKeys ?? [];
@@ -736,6 +825,44 @@ export function runSclSpecCarriage(args: {
       lines.push(...renderShapeBlock(contract));
     } else {
       lines.push(...renderBehaviourBlock(contract, state));
+    }
+  }
+
+  // -- Response shapes joined by declared return type (2026-09-03) ------------
+  // Kiro review IMPL-03 / C-3: the corpus held a full field table for the
+  // exact type every resource method returns, while the endpoint spec said
+  // "no committed response contract" in a different document with no
+  // cross-reference. The root tables' outcome signatures name the returned
+  // type (`value:<Type>`); join it to the shape contract and carry the shape
+  // verbatim here. Duplicated by design — each endpoint spec must be
+  // implementable alone.
+  const joinedShapes = joinResponseShapes(orderedContracts, shapeIndex);
+  if (joinedShapes.length > 0) {
+    lines.push('## Response shapes (joined by declared return type)');
+    lines.push('');
+    lines.push(
+      'The shape contracts below describe the types the behaviour tables above RETURN ' +
+        '(`value:<Type>` outcomes). They are carried verbatim from the corpus so the ' +
+        'response wire shape is constructible from this spec alone.'
+    );
+    lines.push('');
+    for (const joined of joinedShapes) {
+      if (!joined.contract) {
+        for (const missing of joined.unmatched) {
+          lines.push(
+            `_No shape contract in the corpus for returned type \`${missing}\` ` +
+              `(from \`${joined.label}\` on \`${joined.rootSymbol}\`)._`
+          );
+          lines.push('');
+        }
+        continue;
+      }
+      lines.push(
+        `Joined from \`${joined.label}\` on \`${joined.rootSymbol}\` → contract ` +
+          `\`${joined.contract.contract_key ?? symbolOf(joined.contract)}\``
+      );
+      lines.push('');
+      lines.push(...renderShapeBlock(joined.contract));
     }
   }
 

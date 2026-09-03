@@ -175,3 +175,54 @@ describe('candidateSaveBackService - endpoints request_contract pass-through', (
     expect(entity.request_contract).toEqual(REQUEST_CONTRACT);
   });
 });
+
+describe('response_contract from static annotation facts (2026-09-03, Kiro review BEHAV-01)', () => {
+  // JAX-RS resources declare their media types (@Produces) and return type
+  // statically; pre-fix `produces` rode only inside the endpoint's display
+  // name and the return type was dropped at save-back, so a JAX-RS estate
+  // committed ZERO response contracts while @Consumes DID land.
+  it('assembles response_contract from produces + returnType when no scanner block exists', () => {
+    const candidate = makeEndpointCandidate({
+      data: {
+        http_method: 'GET',
+        path: '/orders/{id}',
+        produces: ['application/json', 'application/xml'],
+        returnType: 'com.app.OrderResponse',
+      },
+    });
+    const entity = convertCandidateToEntity(candidate, 'TestProject', PARENT_MAP);
+    expect(entity.response_contract).toEqual({
+      schema_version: 'response_contract.static.v1',
+      source: 'static_annotations',
+      produces: ['application/json', 'application/xml'],
+      content_type: 'application/json',
+      return_type: 'com.app.OrderResponse',
+    });
+  });
+
+  it('keeps a scanner-built block and only ENRICHES it with produces / return_type when absent', () => {
+    const scanned = { schema_version: 'response_contract.v1', error_responses: [], confidence: 0.9 };
+    const candidate = makeEndpointCandidate({
+      data: {
+        http_method: 'GET',
+        path: '/orders/{id}',
+        response_contract: scanned,
+        produces: ['application/json'],
+        unwrappedReturnType: 'OrderResponse',
+      },
+    });
+    const entity = convertCandidateToEntity(candidate, 'TestProject', PARENT_MAP);
+    expect(entity.response_contract).toMatchObject(scanned);
+    expect(entity.response_contract.produces).toEqual(['application/json']);
+    expect(entity.response_contract.content_type).toBe('application/json');
+    expect(entity.response_contract.return_type).toBe('OrderResponse');
+  });
+
+  it('leaves response_contract unset when there are no facts (void return, no produces)', () => {
+    const candidate = makeEndpointCandidate({
+      data: { http_method: 'DELETE', path: '/orders/{id}', returnType: 'void' },
+    });
+    const entity = convertCandidateToEntity(candidate, 'TestProject', PARENT_MAP);
+    expect(entity.response_contract).toBeUndefined();
+  });
+});
