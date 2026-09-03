@@ -65,6 +65,15 @@ export interface SclPlannedStory {
   /** Declaring legacy controller class (endpoint groups only). */
   controllerClass?: string;
   /**
+   * Q- boundary contracts this story's rows reach TRANSITIVELY through
+   * `references` (2026-09-03, Kiro review A-2 / C-2). Boundaries live in the
+   * data-access foundation layer and are never in `contractKeys`; pre-fix an
+   * endpoint story never named the DAO SQL its rows delegate to, so
+   * "### Boundary:" appeared in one spec of 116. The carriage renders these
+   * as a compact "boundaries reached" section with the verbatim SQL.
+   */
+  boundaryKeys?: string[];
+  /**
    * HTTP routes this story's endpoint contracts declare, for joining SCL
    * stories to committed endpoint element ids. EMPTY for foundation layers and
    * for endpoints with no routing annotation (e.g. `web.xml` servlets).
@@ -353,6 +362,36 @@ export function httpRoutesOf(contract: SclContractDto): SclHttpRoute[] {
 
 function keyOf(contract: SclContractDto): string {
   return contract.contract_key ?? symbolOf(contract);
+}
+
+/**
+ * Q- boundary keys transitively reachable from `startKeys` via `references`.
+ * Boundaries themselves are collected, not descended into; shared behaviour
+ * tables ARE traversed (a root may reach a DAO through a shared fragment).
+ * Exported for tests.
+ */
+export function boundariesReachedBy(
+  startKeys: ReadonlyArray<string>,
+  resolve: (ref: string) => SclContractDto | undefined
+): string[] {
+  const seen = new Set<string>(startKeys);
+  const boundaries = new Set<string>();
+  const queue = [...startKeys];
+  while (queue.length > 0) {
+    const key = queue.shift()!;
+    const contract = resolve(key);
+    if (!contract) continue;
+    if (isBoundary(contract)) {
+      boundaries.add(keyOf(contract));
+      continue;
+    }
+    for (const ref of referencesOf(contract)) {
+      if (seen.has(ref)) continue;
+      seen.add(ref);
+      queue.push(ref);
+    }
+  }
+  return [...boundaries].sort();
 }
 
 /** Deterministic contract ordering: by symbol, then contract key. */
@@ -806,7 +845,19 @@ export function deriveCorpusPlan(
     onController,
   });
 
-  return { foundationStories, externalEndpointGroups, internalEndpointGroups, stats };
+  // Boundaries reached (2026-09-03): walk each story's contracts over
+  // `references`; collect every Q- boundary encountered; never descend past a
+  // boundary. Deterministic (sorted) so the blob stays stable.
+  const withBoundaries = (story: SclPlannedStory): SclPlannedStory => ({
+    ...story,
+    boundaryKeys: boundariesReachedBy(story.contractKeys, resolve),
+  });
+  return {
+    foundationStories: foundationStories.map(withBoundaries),
+    externalEndpointGroups: externalEndpointGroups.map(withBoundaries),
+    internalEndpointGroups: internalEndpointGroups.map(withBoundaries),
+    stats,
+  };
 }
 
 // ---------------------------------------------------------------------------

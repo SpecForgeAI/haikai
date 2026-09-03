@@ -456,6 +456,8 @@ export interface LoadedBookOfWorkItem {
    * resolver, no LLM.
    */
   sclContractKeys?: string[] | null;
+  /** Q- boundaries reached transitively by this story's rows (2026-09-03). */
+  sclBoundaryKeys?: string[] | null;
   sclLayer?: string | null;
   sclControllerClass?: string | null;
   sclRowCount?: number | null;
@@ -2565,6 +2567,14 @@ async function runSinglePassBatch(
   // carriage reports honest `insufficient_context` naming `scl_contracts`
   // (never a crashed batch, never a fall-through to the LLM path).
   let sclContractsByKey: Map<string, SclContractDto> | null = null;
+  // key -> the book item that CARRIES the contract (its scl_contract_keys),
+  // for References/index navigation across specs (2026-09-03).
+  const sclContractCarriers = new Map<string, { itemId: string; title: string }>();
+  for (const item of bow.items) {
+    for (const key of item.sclContractKeys ?? []) {
+      if (!sclContractCarriers.has(key)) sclContractCarriers.set(key, { itemId: item.id, title: item.title });
+    }
+  }
   if (eligible.some(isSclCorpusStory)) {
     try {
       const fetchSclContracts =
@@ -2752,6 +2762,11 @@ async function runSinglePassBatch(
         shapeIndex: sclContractsByKey
           ? [...sclContractsByKey.values()].filter((c) => c.kind === 'shape')
           : [],
+        // The whole corpus + which book item carries each key, so References
+        // render as symbols and the spec ends with a navigable contract index
+        // (Kiro review IMPL-02 / C-1) and reached boundaries carry their SQL.
+        corpusIndex: sclContractsByKey ? [...sclContractsByKey.values()] : [],
+        contractCarriers: sclContractCarriers,
       });
       perStoryResults.push(row);
       logStoryResult(row);
