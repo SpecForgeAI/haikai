@@ -426,6 +426,33 @@ export interface ShapeExtractionResult {
   shapes: SclShapeContract[];
   /** symbol (FQN) → S-key. */
   keyBySymbol: Map<string, string>;
+  /**
+   * Field-bearing classes deliberately NOT modelled as shapes (2026-09-03,
+   * spec-quality review IMPL-04): test sources and framework-managed beans.
+   * Recorded so the exclusion is inspectable, never silent.
+   */
+  excluded: Array<{ symbol: string; reason: 'test_source' | 'managed_bean' }>;
+}
+
+/** Stereotypes that make a class a managed component, not a data carrier. */
+const MANAGED_BEAN_ANNOTATIONS = [
+  'Service', 'Component', 'Repository', 'Controller', 'RestController', 'Configuration',
+  'Path', 'Provider', 'Named', 'Singleton', 'Stateless', 'Stateful', 'Aspect',
+  'ControllerAdvice', 'RestControllerAdvice', 'WebServlet', 'WebFilter',
+];
+
+function isTestSourcePath(filePath: string): boolean {
+  const p = filePath.replace(/\\/g, '/');
+  return /(^|\/)(src\/)?test\//.test(p) || /(^|\/)tests?\//.test(p);
+}
+
+function isManagedBean(cls: JavaClassInfo): boolean {
+  return cls.annotations.some((a) => {
+    const m = /^@([A-Za-z_][\w.]*)/.exec(a.trim());
+    if (!m) return false;
+    const simple = m[1].slice(m[1].lastIndexOf('.') + 1);
+    return MANAGED_BEAN_ANNOTATIONS.includes(simple);
+  });
 }
 
 /**
@@ -441,10 +468,26 @@ export interface ShapeExtractionResult {
 export function extractShapes(index: JavaProjectIndex): ShapeExtractionResult {
   // Candidates: classes with >=1 instance field, plus all enums. Never interfaces.
   const candidates: JavaClassInfo[] = [];
+  const excluded: ShapeExtractionResult['excluded'] = [];
   for (const cls of index.classesByFqn.values()) {
+    // IMPL-04 (2026-09-03): 24% of one estate's "DTO & domain shapes" were
+    // test classes and 16% were services/DAOs/loaders — every field-bearing
+    // class became a shape, and the modernize.dto.* decision use-counts
+    // (record conversion, mutated-in-flight) were computed over that
+    // population. "Has fields" is not "is a data carrier": test sources and
+    // framework-managed beans are excluded and recorded.
+    if (isTestSourcePath(cls.filePath)) {
+      excluded.push({ symbol: cls.fqn, reason: 'test_source' });
+      continue;
+    }
+    if (cls.kind === 'class' && isManagedBean(cls)) {
+      excluded.push({ symbol: cls.fqn, reason: 'managed_bean' });
+      continue;
+    }
     if (cls.kind === 'enum') candidates.push(cls);
     else if (cls.kind === 'class' && cls.fields.some(isInstanceField)) candidates.push(cls);
   }
+  excluded.sort((a, b) => (a.symbol < b.symbol ? -1 : a.symbol > b.symbol ? 1 : 0));
   candidates.sort((a, b) => (a.fqn < b.fqn ? -1 : a.fqn > b.fqn ? 1 : 0));
   const candidateFqns = new Set(candidates.map((c) => c.fqn));
 
@@ -538,5 +581,5 @@ export function extractShapes(index: JavaProjectIndex): ShapeExtractionResult {
   const shapes = Array.from(finalized.values()).sort((a, b) =>
     a.symbol < b.symbol ? -1 : a.symbol > b.symbol ? 1 : 0
   );
-  return { shapes, keyBySymbol };
+  return { shapes, keyBySymbol, excluded };
 }
