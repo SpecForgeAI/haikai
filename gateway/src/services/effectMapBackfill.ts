@@ -1066,3 +1066,66 @@ export async function runEffectMapBackfill(
     trace,
   };
 }
+
+
+// ---------------------------------------------------------------------------
+// Re-land committed effect candidates (2026-09-03)
+// ---------------------------------------------------------------------------
+
+/** All discovery run ids for the architecture. */
+export async function listDiscoveryRunIds(
+  projectId: string,
+  architectureId: string,
+  fetchFn: typeof fetch = fetch,
+): Promise<string[]> {
+  const base = getConfig().architectureModelServiceBaseUrl;
+  const url =
+    `${base}/api/model/projects/${encodeURIComponent(projectId)}` +
+    `/architectures/${encodeURIComponent(architectureId)}/discovery/runs`;
+  const response = await fetchFn(url, { headers: { Accept: 'application/json' } });
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(`AMS discovery runs fetch failed: HTTP ${response.status} ${text.slice(0, 300)}`);
+  }
+  const runs = (await response.json()) as Array<{ id?: string }>;
+  return (Array.isArray(runs) ? runs : [])
+    .map((r) => (typeof r?.id === 'string' ? r.id : ''))
+    .filter((id) => id.length > 0);
+}
+
+export interface McpRelandResult {
+  runsScanned: number;
+  candidatesSeen: number;
+  relanded: number;
+  alreadyPresent: number;
+  skipped: Array<{ runId: string; candidateId: string; reason: string }>;
+}
+
+export type McpRelandCaller = (
+  projectId: string,
+  architectureId: string,
+  runIds: string[],
+) => Promise<McpRelandResult>;
+
+/**
+ * Re-insert the effect rows of candidates a save-back stamped `committed`
+ * whose phase-2 PUT never landed. Straight re-insert from the intact
+ * candidates: no re-scan, no LLM.
+ */
+export const defaultMcpReland: McpRelandCaller = async (projectId, architectureId, runIds) => {
+  const { mcpBaseUrl } = getConfig();
+  const response = await fetch(`${mcpBaseUrl}/mcp/tools/reland_committed_effects`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ sessionId: 'gateway', projectId, architectureId, runIds }),
+  });
+  const text = await response.text().catch(() => '');
+  if (!response.ok) {
+    throw new Error(
+      `MCP reland_committed_effects failed: HTTP ${response.status} ${text.slice(0, 300)}`,
+    );
+  }
+  return (text
+    ? JSON.parse(text)
+    : { runsScanned: 0, candidatesSeen: 0, relanded: 0, alreadyPresent: 0, skipped: [] }) as McpRelandResult;
+};

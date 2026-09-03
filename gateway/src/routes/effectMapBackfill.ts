@@ -6,6 +6,12 @@
  *        APPLIED (additively, via the MCP model-write owner) before the
  *        response; guarded LLM proposals ride back for human review.
  *
+ *   POST /projects/:projectId/architectures/:architectureId/effect-map-backfill/reland-committed
+ *     body { run_ids?: string[] } — re-inserts the endpoint_data_effects rows
+ *     of candidates a save-back stamped `committed` whose phase-2 PUT never
+ *     landed (2026-09-03). All discovery runs of the architecture when
+ *     run_ids is omitted. Additive + idempotent; asserts rows after the PUT.
+ *
  *   POST /projects/:projectId/architectures/:architectureId/effect-map-backfill/apply
  *     body { effects: [{ endpoint_id, table_name }] } — the APPROVED
  *     proposal subset; applied additively with source 'llm' (the MCP apply
@@ -21,6 +27,8 @@ import { logger } from '../services/logger';
 import {
   McpApplyEffect,
   defaultMcpApply,
+  defaultMcpReland,
+  listDiscoveryRunIds,
   runEffectMapBackfill,
 } from '../services/effectMapBackfill';
 
@@ -66,6 +74,28 @@ effectMapBackfillRouter.post(`${BASE}/apply`, async (req: Request, res: Response
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     logger.error('[effect-map-backfill] apply failed', { projectId, architectureId, error: message });
+    res.status(502).json({ error: message });
+  }
+});
+
+
+effectMapBackfillRouter.post(`${BASE}/reland-committed`, async (req: Request, res: Response) => {
+  const { projectId, architectureId } = req.params;
+  const body = (req.body ?? {}) as { run_ids?: unknown };
+  try {
+    const runIds =
+      Array.isArray(body.run_ids) && body.run_ids.length > 0
+        ? body.run_ids.filter((r): r is string => typeof r === 'string' && r.length > 0)
+        : await listDiscoveryRunIds(projectId, architectureId);
+    if (runIds.length === 0) {
+      res.status(200).json({ runsScanned: 0, candidatesSeen: 0, relanded: 0, alreadyPresent: 0, skipped: [] });
+      return;
+    }
+    const result = await defaultMcpReland(projectId, architectureId, runIds);
+    res.status(200).json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    logger.error('[effect-map-backfill] reland-committed failed', { projectId, architectureId, error: message });
     res.status(502).json({ error: message });
   }
 });
