@@ -279,6 +279,23 @@ export interface SaveBackResult {
    * Additive: pre-reason-arm callers simply ignore it.
    */
   reasons: SaveBackReasonEntry[];
+  /**
+   * Outcome of the SECOND model PUT (2026-09-03) — the one that lands the
+   * relationship rows held out of phase 1 because they FK to entities phase 1
+   * creates (`logical_data_entity_relationships`, `interface_logical_entities`,
+   * `endpoint_data_effects`). Pre-fix a phase-2 failure was a console.warn
+   * and every candidate was stamped `committed` regardless, while the
+   * replace-all PUT had already deleted the PRIOR effect rows — a whole
+   * architecture's effect map vanished while the run reported success.
+   * `landed` is null when the post-PUT re-read itself failed (assertion
+   * skipped, nothing blocked). Null when no relationship rows were held out.
+   */
+  relationshipsPhase: {
+    attempted: number;
+    landed: number | null;
+    failed: number;
+    error: string | null;
+  } | null;
 }
 
 // ============================================================================
@@ -2738,6 +2755,7 @@ export async function saveDiscoveryCandidatesToModel(
       linksCreated: 0,
       findingsEmitted: [],
       reasons: alreadySavedReasons,
+      relationshipsPhase: null,
     };
   }
 
@@ -4208,7 +4226,43 @@ export async function saveDiscoveryCandidatesToModel(
     throw phaseOneErr;
   }
 
-  if (newLers.length > 0 || newIles.length > 0 || newEdes.length > 0) {
+  // ---------------------------------------------------------------------------
+  // Phase 2 (relationship rows held out of phase 1) — FAIL LOUD (2026-09-03).
+  //
+  // Pre-fix this was a console.warn and every candidate was stamped
+  // `committed` regardless of whether the second PUT landed. Because AMS's
+  // model PUT is replace-all (it deletes every effect row for the model file,
+  // then re-inserts what the body carries), phase 1 had ALREADY deleted the
+  // prior effect rows — so a failed phase 2 left ZERO rows while 525
+  // candidates read `committed` with pre-allocated ids. The same
+  // swallow-and-warn was fixed for provenance mappings a day earlier; this
+  // was the other instance.
+  //
+  // Now: a phase-2 failure removes the held-out rows' actions (they are
+  // neither stamped committed nor provenance-mapped) and records each as a
+  // BLOCKED reason naming the HTTP status; and after a successful phase 2 the
+  // model is re-read and every held-out id must be present — a store that
+  // dropped rows silently is treated exactly like a failed PUT.
+  // ---------------------------------------------------------------------------
+  const heldOutRelationshipIds = new Set<string>(
+    [...newLers, ...newIles, ...newEdes]
+      .map((r: any) => (r?.id != null ? String(r.id) : ''))
+      .filter((id: string) => id.length > 0),
+  );
+  let relationshipsPhase: SaveBackResult['relationshipsPhase'] = null;
+  const blockHeldOut = (ids: Set<string>, why: string): number => {
+    let blocked = 0;
+    for (let i = candidateActions.length - 1; i >= 0; i -= 1) {
+      const action = candidateActions[i];
+      if (!ids.has(String(action.entityId))) continue;
+      candidateActions.splice(i, 1);
+      blocked += 1;
+      const candidate = sortedCandidates.find((c) => c.id === action.candidateId);
+      if (candidate) recordBlocked(candidate, why, action.entityType);
+    }
+    return blocked;
+  };
+  if (heldOutRelationshipIds.size > 0) {
     if (newLers.length > 0) {
       model.metaModel.relationships.logical_data_entity_relationships.push(...newLers);
     }
@@ -4218,15 +4272,100 @@ export async function saveDiscoveryCandidatesToModel(
     if (newEdes.length > 0) {
       model.metaModel.relationships.endpoint_data_effects.push(...newEdes);
     }
+    let phaseTwoError: string | null = null;
     try {
       if (commit) await archModelClient.putModel(projectId, architectureId, filename, model);
     } catch (relError: any) {
-      console.warn(
-        `[save-back] Phase-2 relationships PUT failed (status=${relError?.response?.status}). ` +
-        `Base entities saved; ${newLers.length} logical_data_entity_relationships, ` +
-        `${newIles.length} interface_logical_entities and ` +
-        `${newEdes.length} endpoint_data_effects could not be saved.`
+      const status = relError?.response?.status;
+      let bodyStr = '';
+      try {
+        bodyStr = JSON.stringify(relError?.response?.data ?? null).slice(0, 2000);
+      } catch {
+        bodyStr = String(relError?.response?.data ?? '');
+      }
+      phaseTwoError =
+        `Phase-2 relationships PUT failed (HTTP ${status ?? 'n/a'}): ` +
+        `${relError?.message ?? String(relError)}`;
+      console.error(
+        `[save-back] ${phaseTwoError}. Backend body: ${bodyStr}. Held out: ` +
+        `${newLers.length} logical_data_entity_relationships, ${newIles.length} ` +
+        `interface_logical_entities, ${newEdes.length} endpoint_data_effects — NONE ` +
+        `persisted; their candidates stay un-committed (blocked). NOTE: the replace-all ` +
+        `phase-1 PUT has already removed the PRIOR rows of these relationship kinds.`
       );
+    }
+    if (phaseTwoError) {
+      const failed = blockHeldOut(
+        heldOutRelationshipIds,
+        `${phaseTwoError}. The row was not persisted — re-approve and save again, or run the ` +
+          'committed-effects re-land backfill.',
+      );
+      relationshipsPhase = {
+        attempted: heldOutRelationshipIds.size,
+        landed: 0,
+        failed,
+        error: phaseTwoError,
+      };
+    } else if (commit) {
+      // Post-PUT assertion: prove every held-out row is in the store.
+      try {
+        const after = await archModelClient.getModel(projectId, architectureId, filename);
+        const rels = (after?.metaModel?.relationships ?? {}) as Record<string, unknown>;
+        const present = new Set<string>();
+        for (const key of [
+          'logical_data_entity_relationships',
+          'interface_logical_entities',
+          'endpoint_data_effects',
+        ]) {
+          const arr = rels[key];
+          if (!Array.isArray(arr)) continue;
+          for (const row of arr) if ((row as any)?.id != null) present.add(String((row as any).id));
+        }
+        const missing = new Set<string>(
+          [...heldOutRelationshipIds].filter((id) => !present.has(id)),
+        );
+        const landed = heldOutRelationshipIds.size - missing.size;
+        if (missing.size > 0) {
+          const why =
+            `Phase-2 PUT returned success but the row is ABSENT from the model afterwards ` +
+            `(${landed} of ${heldOutRelationshipIds.size} held-out relationship rows landed). ` +
+            'The store dropped it silently — re-approve and save again, or run the ' +
+            'committed-effects re-land backfill.';
+          console.error(`[save-back] ${why}`);
+          const failed = blockHeldOut(missing, why);
+          relationshipsPhase = {
+            attempted: heldOutRelationshipIds.size,
+            landed,
+            failed,
+            error: 'post-PUT assertion: relationship rows missing after a successful PUT',
+          };
+        } else {
+          relationshipsPhase = {
+            attempted: heldOutRelationshipIds.size,
+            landed,
+            failed: 0,
+            error: null,
+          };
+        }
+      } catch (readErr: any) {
+        console.warn(
+          `[save-back] Post-PUT assertion skipped: model re-read failed ` +
+            `(${readErr?.message ?? String(readErr)}).`
+        );
+        relationshipsPhase = {
+          attempted: heldOutRelationshipIds.size,
+          landed: null,
+          failed: 0,
+          error: null,
+        };
+      }
+    } else {
+      relationshipsPhase = {
+        attempted: heldOutRelationshipIds.size,
+        landed: heldOutRelationshipIds.size,
+        failed: 0,
+        error: null,
+      };
     }
   }
 
@@ -4464,5 +4603,6 @@ export async function saveDiscoveryCandidatesToModel(
     linksCreated,
     findingsEmitted: saveBackFindings,
     reasons,
+    relationshipsPhase,
   };
 }

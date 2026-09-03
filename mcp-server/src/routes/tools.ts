@@ -24,6 +24,7 @@ import { saveDiscoveryCandidatesRouter } from './saveDiscoveryCandidatesRoute';
 import { saveApprovedCandidatesRouter } from './saveApprovedCandidatesRoute';
 import { applyGapMetadataRouter } from './applyGapMetadataRoute';
 import { applyEndpointEffectsRouter } from './applyEndpointEffectsRoute';
+import { relandCommittedEffectsRouter } from './relandCommittedEffectsRoute';
 import { applyFoundationDecisionsRouter } from './applyFoundationDecisionsRoute';
 import { createProjectArtifactRouter } from './createProjectArtifactRoute';
 
@@ -85,6 +86,9 @@ toolsRouter.use('/apply_gap_metadata', applyGapMetadataRouter);
 // additive endpoint -> write-table effect edges, corpus-derived or approved
 // LLM proposals; the table-name resolution is the hallucination guard)
 toolsRouter.use('/apply_endpoint_effects', applyEndpointEffectsRouter);
+// Re-land committed effect candidates whose phase-2 save PUT never landed
+// (2026-09-03) — additive, idempotent, asserts the rows after the PUT.
+toolsRouter.use('/reland_committed_effects', relandCommittedEffectsRouter);
 toolsRouter.use('/apply_foundation_decisions', applyFoundationDecisionsRouter);
 
 // Mount the create_project_artifact route
