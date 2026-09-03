@@ -433,6 +433,13 @@ function renderOutcome(
   if (type === 'call') {
     const targetSymbol = asString(o.targetSymbol) ?? '?';
     const targetKey = asString(o.targetKey);
+    // Verbatim call arguments (2026-09-03, DETAIL-02): the signature alone
+    // hid which feed / flag the callee received.
+    const callArgs = Array.isArray(o.args)
+      ? o.args.filter((a): a is string => typeof a === 'string' && a.length > 0)
+      : [];
+    const argsSuffix =
+      callArgs.length > 0 ? ` ← args (${callArgs.map((a) => `\`${a}\``).join(', ')})` : '';
     // Multi-candidate dispatch (2026-09-03): every implementation is carried;
     // the DI-wired primary leads when the injection site named it.
     const targetKeys = Array.isArray(o.targetKeys)
@@ -446,7 +453,7 @@ function renderOutcome(
         : targetKeys.join(' / ');
       return (
         `call → [${label}] ${targetSymbol} — multi-candidate dispatch ` +
-        `(${targetKeys.length} implementations, all carried below)`
+        `(${targetKeys.length} implementations, all carried below)${argsSuffix}`
       );
     }
     if (!targetKey) {
@@ -459,9 +466,9 @@ function renderOutcome(
           `has no contract key in the corpus (targetKey null) — the row is carried with ` +
           `an UNRESOLVED marker; verify against the reachability report.`,
       });
-      return `call → (UNRESOLVED — no corpus contract) ${targetSymbol}`;
+      return `call → (UNRESOLVED — no corpus contract) ${targetSymbol}${argsSuffix}`;
     }
-    return `call → [${targetKey}] ${targetSymbol}`;
+    return `call → [${targetKey}] ${targetSymbol}${argsSuffix}`;
   }
   if (type === 'absorb') {
     const ref = citeOf(o.ref);

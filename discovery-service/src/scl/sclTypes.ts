@@ -58,6 +58,16 @@ export type SclRowOutcome =
       candidateSymbols?: string[];
       /** The DI-wired candidate symbol, when a `@Qualifier` names it. */
       primarySymbol?: string | null;
+      /**
+       * Verbatim call-site arguments (2026-09-03, DETAIL-02): the literal /
+       * expression text of each argument, with a bare identifier that names a
+       * `static final` constant of the calling class rendered as
+       * `NAME = <initializer>`. The callee signature alone hid the behaviour:
+       * `getHierarchyLoadDatesFor(String,boolean)` says nothing, the call
+       * `("Hierarchy_Loaded", false)` selects the feed and suppresses a cache
+       * refresh.
+       */
+      args?: string[];
     }
   | { type: 'absorb'; exceptionType: string; thenVerbatim: string; ref: SclSourceRef; outcomeLabel: string };
 

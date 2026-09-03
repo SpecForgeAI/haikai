@@ -334,3 +334,34 @@ describe('multi-candidate dispatch rows (2026-09-03, DETAIL-01 / A-1)', () => {
     expect(JSON.stringify(row.warningsJson ?? [])).not.toContain('UNRESOLVED_REFERENCE');
   });
 });
+
+
+describe('verbatim call arguments on rows (2026-09-03, DETAIL-02)', () => {
+  it('renders the call-site arguments after the callee', () => {
+    const withArgs = table(['S-RESP']);
+    (withArgs.body_json as Record<string, unknown>).rows = [
+      {
+        index: 0,
+        kind: 'dispatch',
+        conditionVerbatim: null,
+        outcome: {
+          type: 'call',
+          targetKey: 'T-LOAD',
+          targetSymbol: 'com.app.Loader#loadDatesFor(String,boolean)',
+          args: ['FEED = "Hierarchy_Loaded"', 'false'],
+        },
+      },
+    ];
+    const row = runSclSpecCarriage({
+      story: story(null),
+      baseRow: baseRow(),
+      contracts: [withArgs],
+      decisions: [decision()],
+      wireFactsSectionText: null,
+      targetStackSectionText: null,
+    });
+    expect(row.generatedSpecText).toContain(
+      'call → [T-LOAD] com.app.Loader#loadDatesFor(String,boolean) ← args (`FEED = "Hierarchy_Loaded"`, `false`)',
+    );
+  });
+});
