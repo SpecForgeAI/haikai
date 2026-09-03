@@ -461,7 +461,9 @@ describe('INTERNAL-AWARE CARRIAGE (2026-07-25 fix)', () => {
       baseRow: baseRow(),
       deps: { fetchCodeSpecFacts: jest.fn().mockResolvedValue(mixedFacts) },
     });
-    expect(row.status).toBe('generated');
+    expect(row.status).toBe('generated_with_warnings');
+    // The batch endpoint carries no effect rows -> surfaced, never silent (2026-09-03).
+    expect(JSON.stringify(row.warningsJson)).toContain('DATA_EFFECTS_NOT_CAPTURED');
     const text = row.generatedSpecText as string;
     // HTTP endpoint keeps its contract sections.
     expect(text).toContain('### Request contract (committed, verbatim)');
@@ -488,7 +490,7 @@ describe('INTERNAL-AWARE CARRIAGE (2026-07-25 fix)', () => {
           .mockResolvedValue(facts({ endpoints: [contractlessHttp, batchEndpoint] })),
       },
     });
-    expect(row.status).toBe('generated');
+    expect(row.status).toBe('generated_with_warnings');
   });
 });
 
@@ -614,5 +616,65 @@ describe('TARGET-STACK SECTION pin (2026-08-14)', () => {
       deps: { fetchCodeSpecFacts: jest.fn().mockResolvedValue(facts()) },
     });
     expect(row.generatedSpecText).not.toContain('## Target technology stack');
+  });
+});
+
+
+describe('DATA-EFFECT FLOORS (2026-09-03, Kiro review MECH-01 / BEHAV-06 / IMPL-05)', () => {
+  it('an HTTP story whose endpoints carry ZERO effect rows is insufficient_context naming endpoint_data_effects', async () => {
+    const row = await runCodeSpecCarriage({
+      projectId: 'p1',
+      currentArchitectureId: 'arch-1',
+      story: story(),
+      baseRow: baseRow(),
+      deps: { fetchCodeSpecFacts: jest.fn().mockResolvedValue(facts({ dataEffects: [] })) },
+    });
+    expect(row.status).toBe('insufficient_context');
+    const missing = row.missingInputsJson as Array<{ input: string; reason: string }>;
+    expect(missing[0].input).toBe('endpoint_data_effects');
+    expect(missing[0].reason).toContain('reland-committed');
+    expect(row.generatedSpecText ?? null).toBeNull();
+  });
+
+  it('an INTERNAL story with an empty effect scope refuses to render the DB-delta recipe', async () => {
+    const internalFacts: CodeSpecFacts = {
+      endpoints: [
+        {
+          id: 'job-1',
+          name: 'INTERNAL SCHEDULED OrderSync',
+          verb: 'SCHEDULED',
+          path: null,
+          endpointType: 'INTERNAL_PROCESS',
+          protocol: 'internal',
+          interfaceName: 'Internal Processing',
+          requestContract: null,
+          responseContract: null,
+          protocolMetadata: { endpoint_subtype: 'scheduled', cron: '0 0 * * * *' },
+        },
+      ],
+      dataEffects: [],
+      behaviours: [],
+    };
+    const row = await runCodeSpecCarriage({
+      projectId: 'p1',
+      currentArchitectureId: 'arch-1',
+      story: story({ apiEndpointIds: ['job-1'], protocol: 'internal' }),
+      baseRow: baseRow(),
+      deps: { fetchCodeSpecFacts: jest.fn().mockResolvedValue(internalFacts) },
+    });
+    expect(row.status).toBe('insufficient_context');
+    const missing = row.missingInputsJson as Array<{ input: string; reason: string }>;
+    expect(missing[0].input).toBe('endpoint_data_effects');
+    expect(missing[0].reason).toContain('pass unconditionally');
+    expect(row.generatedSpecText ?? null).toBeNull();
+  });
+
+  it('read-only vs NOT CAPTURED render as distinct markers', () => {
+    const readOnly = buildCodeSpecText({ story: story(), facts: facts(), behaviours: facts().behaviours, omissions: [] });
+    expect(readOnly).toContain('Read-only as captured: 1 read effect(s), no write effects.');
+    expect(readOnly).not.toContain('NOT CAPTURED');
+    const none = buildCodeSpecText({ story: story(), facts: facts({ dataEffects: [] }), behaviours: [], omissions: [] });
+    expect(none).toContain('### Data effects (0)');
+    expect(none).toContain('**NOT CAPTURED**');
   });
 });

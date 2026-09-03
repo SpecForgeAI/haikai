@@ -446,6 +446,30 @@ function fencedText(lines: string[], label: string, body: string): void {
  * This caveat does not pretend the traversal is fixed. It stops a false
  * negative from being read as a verified zero.
  */
+/**
+ * Access-mode summary under every `### Data effects (N)` heading (2026-09-03).
+ * "Data effects (0)" used to read as "writes nothing"; a zero-row endpoint is
+ * NOT CAPTURED (the effect map for it is absent), which is a different fact
+ * from "read-only" (read rows present, no writes). The marker makes the two
+ * states textually distinct so neither a reader nor the DB-delta oracle can
+ * conflate them.
+ */
+function dataEffectCoverageMarker(effects: ReadonlyArray<CarriageDataEffect>): string[] {
+  if (effects.length === 0) {
+    return [
+      '',
+      '_**NOT CAPTURED** — zero effect rows of ANY access mode (read or write) are committed for ' +
+        'this endpoint. The effect map for it is absent, not empty._',
+    ];
+  }
+  const writes = effects.filter((e) => /write/i.test(e.accessMode ?? '')).length;
+  const reads = effects.length - writes;
+  if (writes === 0) {
+    return ['', `_Read-only as captured: ${reads} read effect(s), no write effects._`];
+  }
+  return ['', `_${writes} write effect(s), ${reads} read effect(s) captured._`];
+}
+
 function zeroDataEffectCaveat(kind: 'endpoint' | 'internal process'): string[] {
   return [
     `> **Zero data effects is NOT evidence that this ${kind} writes nothing.**`,
@@ -558,6 +582,7 @@ export function buildCodeSpecText(args: BuildCodeSpecTextArgs): string {
     const effects = facts.dataEffects.filter((e) => e.endpointId === endpoint.id);
     lines.push('');
     lines.push(`### Data effects (${effects.length})`);
+    lines.push(...dataEffectCoverageMarker(effects));
     if (effects.length === 0) {
       lines.push('');
       lines.push('_No committed data-effect edges for this endpoint._');
@@ -706,6 +731,7 @@ export function buildInternalProcessSpecText(args: {
     const effects = facts.dataEffects.filter((e) => e.endpointId === endpoint.id);
     lines.push('');
     lines.push(`### Data effects (${effects.length})`);
+    lines.push(...dataEffectCoverageMarker(effects));
     if (effects.length === 0) {
       lines.push('');
       lines.push(
@@ -747,7 +773,7 @@ export function buildInternalProcessSpecText(args: {
   );
   lines.push(
     `2. **Effect scope.** The comparison scope is the process's effect targets: ` +
-      (effectRefs.size > 0 ? [...effectRefs].map((r) => `\`${r}\``).join(', ') : '(none committed — see above)') +
+      (effectRefs.size > 0 ? [...effectRefs].map((r) => `\`${r}\``).join(', ') : '(none committed — the carriage floors an empty scope; this recipe must not render)') +
       '.'
   );
   lines.push(
@@ -904,6 +930,30 @@ export async function runCodeSpecCarriage(args: {
         errorMessage: null,
       };
     }
+    // FLOOR (2026-09-03): the DB-delta oracle compares deltas over the
+    // process's effect scope. An EMPTY scope made step 3 a no-op that
+    // reported success on every internal spec (Kiro review IMPL-05). Zero
+    // effect rows of any access mode across the whole entry-point set is a
+    // capture gap, never a fact — refuse to render the recipe.
+    const internalEffects = facts.dataEffects.filter((e) => foundInternal.has(e.endpointId));
+    if (internalEffects.length === 0) {
+      return {
+        ...baseRow,
+        status: 'insufficient_context',
+        missingInputsJson: [
+          {
+            input: 'endpoint_data_effects',
+            reason:
+              'None of this story\'s internal entry points carry a committed data-effect edge ' +
+              'of ANY access mode, so the DB-delta verification recipe would compare an EMPTY ' +
+              'scope and pass unconditionally. The effect map was not captured (or was lost): ' +
+              'run the committed-effects re-land (effect-map-backfill/reland-committed) or the ' +
+              'effect-map backfill, or re-run code discovery and commit, then regenerate.',
+          },
+        ],
+        errorMessage: null,
+      };
+    }
     const specText = buildInternalProcessSpecText({ story, facts });
     return {
       ...baseRow,
@@ -971,6 +1021,34 @@ export async function runCodeSpecCarriage(args: {
   // ----- Trim ladder (deterministic; nothing silent) -----
   const maxChars = deps.maxChars ?? CODE_CARRIAGE_MAX_CHARS;
   const omissions: string[] = [];
+  // FLOOR (2026-09-03): zero data-effect rows of ANY access mode across the
+  // whole endpoint set is a capture gap, never a fact ("Data effects (0)" on
+  // 65 of 65 blocks read as "writes nothing"; Kiro review MECH-01/BEHAV-06).
+  // A story whose endpoints carry contracts but no effect edge at all is
+  // refused here — the same discipline the SCL carriage applies to an
+  // unresolvable contract key.
+  const storyEndpointIdSet = new Set(facts.endpoints.map((e) => e.id));
+  const storyEffects = facts.dataEffects.filter((e) => storyEndpointIdSet.has(e.endpointId));
+  if (storyEffects.length === 0) {
+    return {
+      ...baseRow,
+      status: 'insufficient_context',
+      missingInputsJson: [
+        {
+          input: 'endpoint_data_effects',
+          reason:
+            'None of this story\'s endpoints carry a committed data-effect edge of ANY access ' +
+            'mode (read or write). Zero effects across an entire endpoint set is not a plausible ' +
+            'model state — the effect map was not captured (or was lost), and a spec built on it ' +
+            'would assert the endpoints persist nothing. Run the committed-effects re-land ' +
+            '(effect-map-backfill/reland-committed) or the effect-map backfill, or re-run code ' +
+            'discovery and commit, then regenerate.',
+        },
+      ],
+      errorMessage: null,
+    };
+  }
+
   let behaviours = [...facts.behaviours];
   let specText = buildCodeSpecText({
     story,
@@ -1004,6 +1082,31 @@ export async function runCodeSpecCarriage(args: {
   }
 
   const warnings: Array<Record<string, unknown>> = [];
+  // Per-endpoint NOT CAPTURED (2026-09-03): the story passed the floor (some
+  // endpoint has effects) but THIS endpoint has none — surfaced as a warning
+  // so the reader and the scorer see it, never silently as "(0)".
+  for (const endpoint of facts.endpoints) {
+    // Internal endpoints in a MIXED story are NOT exempt: their effects are the
+    // DB-delta scope too, and "(0)" on them is the vacuous-oracle input.
+    if (facts.dataEffects.some((e) => e.endpointId === endpoint.id)) continue;
+    warnings.push({
+      code: 'DATA_EFFECTS_NOT_CAPTURED',
+      endpointId: endpoint.id,
+      endpointName: endpoint.name,
+      message:
+        `Endpoint '${endpoint.name}' carries ZERO committed data-effect rows of any access ` +
+        'mode — its effect map is absent, not empty. Run the effect-map backfill / re-land ' +
+        'and regenerate before treating this endpoint as persisting nothing.',
+    });
+  }
+  if (behaviours.length === 0) {
+    warnings.push({
+      code: 'BEHAVIOUR_BLOCKS_ABSENT',
+      message:
+        'No committed behaviour block lies on this story\'s data-effect paths — the spec carries ' +
+        'contracts and effects only; behaviour is unverified by construction.',
+    });
+  }
   if (omissions.length > 0) {
     warnings.push({
       code: 'code_carriage_trimmed',
