@@ -365,3 +365,42 @@ describe('verbatim call arguments on rows (2026-09-03, DETAIL-02)', () => {
     );
   });
 });
+
+
+describe('captured behaviour facts (2026-09-03, BEHAV-03 / BEHAV-04 / BEHAV-05)', () => {
+  it('renders cache-fronting, advice and data-derived authorisation under the behaviour heading', () => {
+    const facts = table(['S-RESP']);
+    Object.assign(facts.body_json as Record<string, unknown>, {
+      cacheFacts: {
+        cacheField: 'viewCache',
+        cacheType: 'LoadingCache<String, OrderView>',
+        keyType: 'String',
+        valueType: 'OrderView',
+        missLoads: ['com.app.OrderLoader#load(String)'],
+        mutators: [{ symbol: 'com.app.OrdersController#refresh()', operations: ['invalidateAll'] }],
+      },
+      advisedBy: [
+        { aspectSymbol: 'com.app.AuditAspect#audit(ProceedingJoinPoint)', adviceKind: '@Around', pointcut: '@annotation(com.app.Audited)', targetKey: 'T-AUDIT' },
+      ],
+      authorisation: {
+        predicates: ['if (!acl.isReadPermitted(user, view))'],
+        deniedOutcomes: ['value:PERMISSION_DENIED'],
+        boundaryKeys: ['Q-ORD'],
+      },
+    });
+    const row = runSclSpecCarriage({
+      story: story(null),
+      baseRow: baseRow(),
+      contracts: [facts],
+      decisions: [decision()],
+      wireFactsSectionText: null,
+      targetStackSectionText: null,
+    });
+    const text = row.generatedSpecText as string;
+    expect(text).toContain('**Cache-fronting (legacy read path):** reads through `viewCache` (`LoadingCache<String, OrderView>`, keyed by `String`)');
+    expect(text).toContain('a MISS loads via `com.app.OrderLoader#load(String)`');
+    expect(text).toContain('`com.app.OrdersController#refresh()` (invalidateAll)');
+    expect(text).toContain('**Advised by:** `com.app.AuditAspect#audit(ProceedingJoinPoint)` @Around (`@annotation(com.app.Audited)`) → [T-AUDIT]');
+    expect(text).toContain('**Authorisation (data-derived):** access is decided by `if (!acl.isReadPermitted(user, view))`, denying with `value:PERMISSION_DENIED`; the predicate reads [Q-ORD]');
+  });
+});

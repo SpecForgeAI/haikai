@@ -333,6 +333,10 @@ export function computeModernizationInventory(
   const consolidationKinds: Array<{ kind: string; from: string }> = [
     { kind: 'near_duplicate_cluster', from: 'near-duplicate implementation cluster' },
     { kind: 'dispatch_ambiguity', from: 'ambiguous dynamic dispatch site' },
+    // BEHAV-05 (2026-09-03): authorisation decided by data, not annotations —
+    // a decision the target must make explicitly (keep data-derived ACLs).
+    { kind: 'data_derived_authorisation', from: 'data-derived authorisation predicate' },
+    { kind: 'aspect_pointcut_unresolved', from: 'aspect pointcut not resolvable statically' },
   ];
   for (const { kind, from } of consolidationKinds) {
     const acc = newAccumulator();

@@ -44,7 +44,7 @@
 
 import type { JavaClassInfo, JavaMethodInfo, JavaProjectIndex, SyntaxNode } from './javaProjectIndex';
 import type { SclSliceResult } from './slicer';
-import type { SclBehaviourTable, SclContract, SclFinding } from './sclTypes';
+import type { SclAdvice, SclBehaviourTable, SclContract, SclFinding } from './sclTypes';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -473,6 +473,212 @@ interface ContractEdges {
   dispatchClassFqns: string[];
 }
 
+// ---------------------------------------------------------------------------
+// Captured behaviour facts (2026-09-03) — BEHAV-03 / BEHAV-04 / BEHAV-05
+// ---------------------------------------------------------------------------
+
+function classFqnOfSymbol(symbol: string): string {
+  const hash = symbol.indexOf('#');
+  return hash < 0 ? symbol : symbol.slice(0, hash);
+}
+
+function methodSymbolOf(m: JavaMethodInfo): string {
+  return `${m.classFqn}#${m.name}(${m.paramTypes.join(',')})`;
+}
+
+const CACHE_TYPE_RE = /(?:^|[.<])(LoadingCache|Cache|AsyncLoadingCache|ConcurrentHashMap|ConcurrentMap|Map|HashMap|WeakHashMap)\s*(<|$)/;
+const CACHE_MUTATION_OPS = ['put', 'putAll', 'invalidate', 'invalidateAll', 'refresh', 'remove', 'clear', 'cleanUp'];
+
+/** `LoadingCache<LocalDate, Index>` -> ['LocalDate', 'Index']; null entries when absent. */
+function genericArgsOf(typeText: string): [string | null, string | null] {
+  const lt = typeText.indexOf('<');
+  const gt = typeText.lastIndexOf('>');
+  if (lt < 0 || gt <= lt) return [null, null];
+  const inner = typeText.slice(lt + 1, gt);
+  const parts: string[] = [];
+  let depth = 0;
+  let cur = '';
+  for (const ch of inner) {
+    if (ch === '<') depth++;
+    if (ch === '>') depth--;
+    if (ch === ',' && depth === 0) {
+      parts.push(cur.trim());
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  if (cur.trim()) parts.push(cur.trim());
+  return [parts[0] ?? null, parts[1] ?? null];
+}
+
+/**
+ * BEHAV-03: attach cache-fronting facts to every table of a class that reads
+ * through an in-process cache field. Miss loads come from the extractor's
+ * cache-bridge rows (`cache miss -> loader`); mutators are the class's own
+ * methods that call put/invalidate/refresh/remove/clear on that field.
+ */
+export function attachCacheFacts(slice: SclSliceResult): void {
+  const tablesByClass = new Map<string, SclBehaviourTable[]>();
+  for (const table of slice.tables) {
+    const cls = classFqnOfSymbol(table.symbol);
+    tablesByClass.set(cls, [...(tablesByClass.get(cls) ?? []), table]);
+  }
+  for (const [clsFqn, tables] of tablesByClass) {
+    const cls = slice.index.classesByFqn.get(clsFqn);
+    if (!cls) continue;
+    const cacheFields = cls.fields.filter((f) => CACHE_TYPE_RE.test(f.type));
+    if (cacheFields.length === 0) continue;
+    for (const field of cacheFields) {
+      const readRe = new RegExp(`\\b${field.name}\\s*\\.\\s*(get|getUnchecked|getIfPresent|getAll|computeIfAbsent|containsKey)\\s*\\(`);
+      const mutRe = new RegExp(`\\b${field.name}\\s*\\.\\s*(${CACHE_MUTATION_OPS.join('|')})\\s*\\(`, 'g');
+      const mutators: Array<{ symbol: string; operations: string[] }> = [];
+      for (const m of cls.methods) {
+        if (!m.bodyNode) continue;
+        const ops = new Set<string>();
+        for (const hit of m.bodyNode.text.matchAll(mutRe)) ops.add(hit[1]);
+        if (ops.size > 0) mutators.push({ symbol: methodSymbolOf(m), operations: sortStrings(ops) });
+      }
+      mutators.sort((a, b) => (a.symbol < b.symbol ? -1 : a.symbol > b.symbol ? 1 : 0));
+      const [keyType, valueType] = genericArgsOf(field.type);
+      for (const table of tables) {
+        const method = cls.methods.find((m) => methodSymbolOf(m) === table.symbol);
+        const reads = method?.bodyNode ? readRe.test(method.bodyNode.text) : false;
+        const missLoads = sortStrings(
+          new Set(
+            table.rows
+              .filter((r) => r.conditionVerbatim === 'cache miss -> loader' && r.outcome.type === 'call')
+              .map((r) => (r.outcome as { targetSymbol: string }).targetSymbol)
+          )
+        );
+        if (!reads && missLoads.length === 0) continue;
+        if (table.cacheFacts) continue; // first cache field wins, deterministic by field order
+        table.cacheFacts = {
+          cacheField: field.name,
+          cacheType: field.type,
+          keyType,
+          valueType,
+          missLoads,
+          mutators,
+        };
+      }
+    }
+  }
+}
+
+const ADVICE_ANNOTATIONS = ['Around', 'Before', 'After', 'AfterReturning', 'AfterThrowing'];
+const ANNOTATION_POINTCUT_RE = /@(?:annotation|within)\s*\(\s*([A-Za-z_][\w.]*)\s*\)/g;
+
+/**
+ * BEHAV-04: join annotation-driven aspects onto the methods they advise. An
+ * `@Aspect` class's advice method whose pointcut is `@annotation(X)` /
+ * `@within(X)` advises every table carrying `@X`; the advice's own table key
+ * (when it has one) joins the advised table's references so the aspect's
+ * data effects (an audit insert, say) reach every advised endpoint.
+ * `execution(...)`-style pointcuts are recorded as an unresolved finding —
+ * never silently dropped.
+ */
+export function attachAdvice(slice: SclSliceResult, findings: SclFinding[]): void {
+  const aspects = [...slice.index.classesByFqn.values()].filter((c) =>
+    c.annotations.some((a) => /^@(?:[\w.]*\.)?Aspect\b/.test(a.trim()))
+  );
+  if (aspects.length === 0) return;
+  const rules: Array<{ advice: SclAdvice; markers: string[] }> = [];
+  for (const aspect of aspects) {
+    for (const m of aspect.methods) {
+      for (const ann of m.annotations) {
+        const kindMatch = /^@(?:[\w.]*\.)?(Around|Before|After|AfterReturning|AfterThrowing)\b/.exec(ann.trim());
+        if (!kindMatch || !ADVICE_ANNOTATIONS.includes(kindMatch[1])) continue;
+        const pointcutMatch = /\(\s*(?:value\s*=\s*|pointcut\s*=\s*)?"([^"]*)"/.exec(ann);
+        const pointcut = pointcutMatch ? pointcutMatch[1] : '';
+        const markers = [...pointcut.matchAll(ANNOTATION_POINTCUT_RE)].map((h) => {
+          const fq = h[1];
+          return fq.includes('.') ? fq.slice(fq.lastIndexOf('.') + 1) : fq;
+        });
+        const symbol = methodSymbolOf(m);
+        const advice: SclAdvice = {
+          aspectSymbol: symbol,
+          adviceKind: `@${kindMatch[1]}`,
+          pointcut,
+          targetKey: slice.keyBySymbol.get(symbol) ?? null,
+        };
+        if (markers.length === 0) {
+          findings.push({
+            kind: 'aspect_pointcut_unresolved',
+            symbol,
+            detail: `advice pointcut is not annotation-driven (${pointcut || 'no expression'}); advised methods cannot be resolved statically`,
+          });
+          continue;
+        }
+        rules.push({ advice, markers });
+      }
+    }
+  }
+  if (rules.length === 0) return;
+  for (const table of slice.tables) {
+    const carried = table.annotations.map((a) => {
+      const m = /^@(?:[\w.]*\.)?([A-Za-z_]\w*)/.exec(a.trim());
+      return m ? m[1] : '';
+    });
+    const applied: SclAdvice[] = [];
+    for (const rule of rules) {
+      if (!rule.markers.some((mk) => carried.includes(mk))) continue;
+      applied.push(rule.advice);
+      if (rule.advice.targetKey && !table.references.includes(rule.advice.targetKey)) {
+        table.references.push(rule.advice.targetKey);
+      }
+    }
+    if (applied.length > 0) {
+      applied.sort((a, b) => (a.aspectSymbol < b.aspectSymbol ? -1 : a.aspectSymbol > b.aspectSymbol ? 1 : 0));
+      table.advisedBy = applied;
+      table.references.sort();
+    }
+  }
+}
+
+const AUTH_PREDICATE_RE = /\b(?:is|has|can|check|verify|ensure|assert)(?:Any)?(?:Read|Write|Edit|View|Access|Admin|Owner|Role|Permission|Permitted|Allowed|Authori[sz]ed|Entitled|Granted)\w*\s*\(|\b(?:isPermitted|isAllowed|isAuthori[sz]ed|hasRole|hasPermission|hasAccess|hasEntitlement|publicTag|reviewTag|isPublic)\s*\(/;
+const DENIED_OUTCOME_RE = /PERMISSION_DENIED|ACCESS_DENIED|FORBIDDEN|UNAUTHORI[SZ]ED|NOT_PERMITTED|NOT_ALLOWED|AccessDenied|Forbidden|Unauthori[sz]ed|PermissionDenied|NotPermitted|\b40[13]\b/;
+
+/**
+ * BEHAV-05: mark tables whose rows carry authorisation predicates or
+ * permission-denied outcomes, with the boundary contracts they reach (the
+ * tables the predicates read ARE the access-control list). One finding per
+ * table so the modernization review sees it as a decision to make.
+ */
+export function attachAuthorisation(slice: SclSliceResult, findings: SclFinding[]): void {
+  for (const table of slice.tables) {
+    const predicates = new Set<string>();
+    const denied = new Set<string>();
+    for (const row of table.rows) {
+      if (row.conditionVerbatim && AUTH_PREDICATE_RE.test(row.conditionVerbatim)) {
+        predicates.add(row.conditionVerbatim);
+      }
+      const o = row.outcome;
+      if (o.type === 'terminal') {
+        if (DENIED_OUTCOME_RE.test(o.outcomeLabel) || DENIED_OUTCOME_RE.test(o.verbatim)) denied.add(o.outcomeLabel);
+      } else if (o.type === 'absorb') {
+        if (DENIED_OUTCOME_RE.test(o.outcomeLabel)) denied.add(o.outcomeLabel);
+      }
+    }
+    if (predicates.size === 0) continue;
+    const boundaryKeys = sortStrings(table.references.filter((k) => k.startsWith('Q-')));
+    table.authorisation = {
+      predicates: sortStrings(predicates),
+      deniedOutcomes: sortStrings(denied),
+      boundaryKeys,
+    };
+    findings.push({
+      kind: 'data_derived_authorisation',
+      symbol: table.symbol,
+      detail:
+        `${predicates.size} authorisation predicate(s)` +
+        (denied.size > 0 ? `, ${denied.size} denial outcome(s)` : '') +
+        (boundaryKeys.length > 0 ? `, reading ${boundaryKeys.length} boundary contract(s)` : ''),
+      candidates: [...sortStrings(predicates), ...boundaryKeys].slice(0, 10),
+    });
+  }
+}
+
 /**
  * Promote dispatch resolution onto call rows: one candidate -> `targetKey`;
  * several -> `targetKeys[]` (DI-wired primary first, and `targetKey` = the
@@ -615,6 +821,13 @@ export function assembleCorpus(slice: SclSliceResult, options?: AssembleCorpusOp
   // rendered "(UNRESOLVED — no corpus contract)" while both implementations
   // sat in the corpus. Promote the resolution onto the row itself.
   promoteDispatchRows(slice);
+  // Captured behaviour facts the rows alone hid (2026-09-03, spec-quality
+  // review BEHAV-03/04/05): cache-fronting, aspect advice, data-derived
+  // authorisation. Each is a pure join over the index + the tables.
+  const captureFindings: SclFinding[] = [];
+  attachCacheFacts(slice);
+  attachAdvice(slice, captureFindings);
+  attachAuthorisation(slice, captureFindings);
 
   const allContracts: SclContract[] = [...slice.tables, ...slice.shapes, ...slice.boundaries];
   const contractByKey = new Map<string, SclContract>();
@@ -703,7 +916,7 @@ export function assembleCorpus(slice: SclSliceResult, options?: AssembleCorpusOp
   // -------------------------------------------------------------------------
   // 5. Assembler findings: aggregated unresolved calls + near-dup clusters.
   // -------------------------------------------------------------------------
-  const findings: SclFinding[] = [...slice.findings];
+  const findings: SclFinding[] = [...slice.findings, ...captureFindings];
 
   const unresolvedSites: string[] = [];
   for (const t of slice.tables) {

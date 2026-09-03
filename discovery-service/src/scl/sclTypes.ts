@@ -101,6 +101,28 @@ export interface SclBehaviourTable {
   references: string[];
   annotations: string[];
   contentHash: string;
+  /**
+   * Cache-fronting facts (2026-09-03, spec-quality review BEHAV-03): present
+   * when the table's class reads through an in-process cache field. A warm
+   * cache means NO database access; a miss loads whatever the loader loads;
+   * writes are process-local until invalidated — behaviour a target built
+   * from the rows alone would silently change.
+   */
+  cacheFacts?: SclCacheFacts;
+  /**
+   * Aspects advising this method (BEHAV-04): annotation-driven advice whose
+   * pointcut names an annotation this method carries. The advice's own
+   * contract (when it is a table) is also added to `references` so its data
+   * effects reach every advised endpoint.
+   */
+  advisedBy?: SclAdvice[];
+  /**
+   * Data-derived authorisation (BEHAV-05): rows whose condition is an
+   * authorisation predicate and/or whose outcome is a permission denial,
+   * plus the boundary contracts (DAO SQL) this table reaches — the tables
+   * those predicates read ARE the access-control list.
+   */
+  authorisation?: SclAuthorisationFacts;
 }
 
 /**
@@ -164,7 +186,44 @@ export type SclContract = SclBehaviourTable | SclShapeContract | SclBoundaryCont
  *     behaviour tables (identical normalized row sequences); members listed in
  *     `candidates`. Never auto-merged — the merge/keep call is a DECISION.
  */
-export interface SclFinding { kind: 'dispatch_ambiguity' | 'complexity_truncated' | 'parse_error' | 'unresolved_calls' | 'near_duplicate_cluster' | 'proc_repo_drift' | 'proc_live_only' | 'proc_repo_duplicate' | 'proc_repo_only'; symbol: string; detail: string; candidates?: string[]; }
+export interface SclFinding { kind: 'dispatch_ambiguity' | 'complexity_truncated' | 'parse_error' | 'unresolved_calls' | 'near_duplicate_cluster' | 'proc_repo_drift' | 'proc_live_only' | 'proc_repo_duplicate' | 'proc_repo_only' | 'aspect_pointcut_unresolved' | 'data_derived_authorisation'; symbol: string; detail: string; candidates?: string[]; }
+
+/** Cache-fronting facts on a behaviour table (BEHAV-03). */
+export interface SclCacheFacts {
+  /** The cache field on the owning class, e.g. `hierarchyCache`. */
+  cacheField: string;
+  /** The field's declared type verbatim, e.g. `LoadingCache<LocalDate, HierarchyCacheIndex>`. */
+  cacheType: string;
+  /** Key / value type texts parsed from the generic, when present. */
+  keyType: string | null;
+  valueType: string | null;
+  /** What a MISS loads: the call targets of the table's cache-bridge rows. */
+  missLoads: string[];
+  /** Methods of the owning class that mutate the cache (put / invalidate / refresh / remove / clear). */
+  mutators: Array<{ symbol: string; operations: string[] }>;
+}
+
+/** One advice applied to a method (BEHAV-04). */
+export interface SclAdvice {
+  /** Advice method symbol `pkg.Aspect#advice(...)`. */
+  aspectSymbol: string;
+  /** `@Around` / `@Before` / `@After` / `@AfterReturning` / `@AfterThrowing`. */
+  adviceKind: string;
+  /** Verbatim pointcut expression. */
+  pointcut: string;
+  /** The advice method's own contract key when it is a table, else null. */
+  targetKey: string | null;
+}
+
+/** Data-derived authorisation facts on a behaviour table (BEHAV-05). */
+export interface SclAuthorisationFacts {
+  /** Verbatim conditions that read as authorisation predicates. */
+  predicates: string[];
+  /** Outcome labels that read as permission denials. */
+  deniedOutcomes: string[];
+  /** Boundary (Q-) contract keys this table references — the tables the predicates read. */
+  boundaryKeys: string[];
+}
 
 // ---------------------------------------------------------------------------
 // Deterministic serialization + content-hashed keys

@@ -91,6 +91,7 @@ const STATS_WITH_FINDINGS: Record<string, unknown> = {
     { kind: 'near_duplicate_cluster', detail: '3 variants', symbol: 'Utils#formatB' },
     { kind: 'dispatch_ambiguity', detail: '2 impls', contract_key: 'T-dispatch' },
     { kind: 'annotation_failed', detail: 'unrelated finding kind — ignored' },
+    { kind: 'data_derived_authorisation', detail: '1 authorisation predicate(s)', symbol: 'com.app.ViewResource#getView(String)' },
   ],
   parseErrors: [],
 };
@@ -180,10 +181,15 @@ describe('computeModernizationInventory — observed idioms', () => {
     const dispatch = byKey(rows, 'consolidation:dispatch_ambiguity');
     expect(dispatch.usageCount).toBe(1);
     expect(dispatch.provenance).toBe('unmapped');
+    // BEHAV-05 (2026-09-03): data-derived authorisation surfaces as a decision row.
+    const auth = byKey(rows, 'consolidation:data_derived_authorisation');
+    expect(auth.usageCount).toBe(1);
+    expect(auth.from).toBe('data-derived authorisation predicate');
+    expect(auth.exampleCites.map((c) => c.symbol)).toEqual(['com.app.ViewResource#getView(String)']);
     expect(dispatch.exampleCites[0].symbol).toBe('T-dispatch');
 
     // The unrelated annotation_failed finding produced NO consolidation row.
-    expect(rows.filter((r) => r.family === 'consolidation')).toHaveLength(2);
+    expect(rows.filter((r) => r.family === 'consolidation')).toHaveLength(3); // + data_derived_authorisation (BEHAV-05)
   });
 });
 
