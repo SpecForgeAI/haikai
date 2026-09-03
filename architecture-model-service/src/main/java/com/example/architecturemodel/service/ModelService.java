@@ -479,8 +479,24 @@ public class ModelService {
             .filter(java.util.Objects::nonNull)
             .collect(Collectors.toSet());
 
-        // Truncate & Insert strategy: Delete all existing data for this model file
-        deleteAllDataForModelFile(modelFileId);
+        // Truncate & Insert strategy: Delete all existing data for this model file.
+        //
+        // EXCEPT (2026-09-03): endpoint_data_effects rows are PRESERVED when the
+        // PUT body does not carry the key at all (relationships absent, or
+        // endpoint_data_effects absent/null). The replace-all cycle used to
+        // delete them unconditionally while the re-insert below only runs when
+        // the list is non-null, so any writer that PUT a model body without
+        // that key silently erased an architecture's whole effect map. An
+        // EXPLICIT empty list still clears them — "absent" means "not carried",
+        // "[]" means "none".
+        boolean preserveEndpointDataEffects = model.metaModel() == null
+            || model.metaModel().relationships() == null
+            || model.metaModel().relationships().endpointDataEffects() == null;
+        if (preserveEndpointDataEffects) {
+            log.debug("saveModel '{}': body carries no endpoint_data_effects key -- preserving existing rows",
+                filename);
+        }
+        deleteAllDataForModelFile(modelFileId, preserveEndpointDataEffects);
 
         // Self-heal project / architecture linkage on every save (preserves the
         // pre-spec contract for legacy rows that may have null FK columns).
@@ -1220,7 +1236,7 @@ public class ModelService {
         }
     }
 
-    private void deleteAllDataForModelFile(String modelFileId) {
+    private void deleteAllDataForModelFile(String modelFileId, boolean preserveEndpointDataEffects) {
         // Library Backend Foundation (Spec: 2026-05-05-library-backend-foundation)
         // Delete code_unit_dependencies first -- references application_points
         // (deleted below). Libraries themselves are deleted near the end
@@ -1292,7 +1308,12 @@ public class ModelService {
         // Endpoint->Data-Effect Call Graph for Discovery (Spec: 2026-05-29) -- Task Group 1.
         // Relationship row: deleted with the other relationships, before the
         // endpoints / data-entity-points it references are deleted below.
-        endpointDataEffectRepository.deleteByModelFileId(modelFileId);
+        // Skipped when the incoming body carries no endpoint_data_effects key
+        // (2026-09-03) -- see saveModel; there is no DB-level FK from this
+        // table to endpoints, so preserved rows survive the entity re-insert.
+        if (!preserveEndpointDataEffects) {
+            endpointDataEffectRepository.deleteByModelFileId(modelFileId);
+        }
         interfaceLogicalEntityRepository.deleteByModelFileId(modelFileId);
         dataMovementRepository.deleteByModelFileId(modelFileId);
         logicalDataAttributePhysicalDataAttributeRepository.deleteByModelFileId(modelFileId);
