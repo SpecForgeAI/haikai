@@ -1523,8 +1523,50 @@ export function convertCandidateToEntity(
       // `behavior` and endpoint-data-effect `path_metadata_json` idioms.
       {
         const responseContract = data.response_contract ?? data.responseContract;
+        // Static response facts the adapters ALWAYS capture (2026-09-03): the
+        // declared media types (`@Produces` / WADL representations ->
+        // `data.produces`) and the declared return type (`data.returnType`,
+        // unwrapped when a wrapper generic was peeled). Pre-fix `produces`
+        // rode only inside the endpoint's display-name discriminator and the
+        // return type was dropped at save-back, so a JAX-RS estate committed
+        // ZERO response contracts (its sibling `@Consumes` DID land in
+        // request_contract). Additive: a scanner-built block is kept and only
+        // enriched with these two facts when it lacks them.
+        const produces = data.produces ?? data.produces_media_types;
+        const producesList: string[] = Array.isArray(produces)
+          ? produces.filter((m: unknown): m is string => typeof m === 'string' && m.length > 0)
+          : [];
+        const declaredReturnType = [
+          data.responseType,
+          data.unwrappedReturnType,
+          data.returnType,
+        ].find((v) => typeof v === 'string' && v.trim().length > 0 && v.trim() !== 'void') as
+          | string
+          | undefined;
         if (responseContract !== undefined && responseContract !== null) {
-          entity.response_contract = responseContract;
+          const enriched: Record<string, unknown> =
+            typeof responseContract === 'object' && !Array.isArray(responseContract)
+              ? { ...(responseContract as Record<string, unknown>) }
+              : { value: responseContract };
+          if (producesList.length > 0 && enriched.produces === undefined) {
+            enriched.produces = producesList;
+            if (enriched.content_type === undefined) enriched.content_type = producesList[0];
+          }
+          if (declaredReturnType && enriched.return_type === undefined) {
+            enriched.return_type = declaredReturnType.trim();
+          }
+          entity.response_contract = enriched;
+        } else if (producesList.length > 0 || declaredReturnType) {
+          const assembled: Record<string, unknown> = {
+            schema_version: 'response_contract.static.v1',
+            source: 'static_annotations',
+          };
+          if (producesList.length > 0) {
+            assembled.produces = producesList;
+            assembled.content_type = producesList[0];
+          }
+          if (declaredReturnType) assembled.return_type = declaredReturnType.trim();
+          entity.response_contract = assembled;
         }
       }
       // Per-endpoint REQUEST-contract capture (Spec 2026-06-19, Task Group 2):
