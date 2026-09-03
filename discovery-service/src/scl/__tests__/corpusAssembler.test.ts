@@ -235,12 +235,15 @@ describe('assembleCorpus (fixture legacy app)', () => {
   it('aggregates all null-targetKey call/dispatch rows into ONE unresolved_calls finding + the stat', () => {
     const unresolved = corpus.findings.filter((f) => f.kind === 'unresolved_calls');
     expect(unresolved).toHaveLength(1);
-    expect(unresolved[0].detail).toContain('3 call/dispatch row(s)');
-    expect(unresolved[0].candidates).toHaveLength(3);
-    expect(unresolved[0].candidates).toContain(
+    // Dispatch promotion (2026-09-03): the NodeService interface call resolves
+    // onto its two project implementations and is NO LONGER unresolved — only
+    // the genuinely external call site remains.
+    expect(unresolved[0].detail).toContain('1 call/dispatch row(s)');
+    expect(unresolved[0].candidates).toHaveLength(1);
+    expect(unresolved[0].candidates).not.toContain(
       `${SYM.getNode} -> com.legacy.hier.service.NodeService#findNode(String)`
     );
-    expect(corpus.stats.unresolvedCallCount).toBe(3);
+    expect(corpus.stats.unresolvedCallCount).toBe(1);
   });
 
   it('carries the slice findings through (dispatch ambiguities preserved)', () => {

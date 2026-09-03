@@ -433,6 +433,21 @@ function renderOutcome(
   if (type === 'call') {
     const targetSymbol = asString(o.targetSymbol) ?? '?';
     const targetKey = asString(o.targetKey);
+    // Multi-candidate dispatch (2026-09-03): every implementation is carried;
+    // the DI-wired primary leads when the injection site named it.
+    const targetKeys = Array.isArray(o.targetKeys)
+      ? o.targetKeys.filter((k): k is string => typeof k === 'string' && k.length > 0)
+      : [];
+    if (targetKeys.length > 1) {
+      const [first, ...rest] = targetKeys;
+      const label = targetKey
+        ? `${first} (primary, DI-wired) | ${rest.join(' | ')}`
+        : targetKeys.join(' | ');
+      return (
+        `call → [${label}] ${targetSymbol} — multi-candidate dispatch ` +
+        `(${targetKeys.length} implementations, all carried below)`
+      );
+    }
     if (!targetKey) {
       state.warnings.push({
         code: 'UNRESOLVED_REFERENCE',
