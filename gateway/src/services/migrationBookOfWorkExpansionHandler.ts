@@ -2139,6 +2139,7 @@ export function buildCorpusFoundationItems(args: {
           codeStoryKind: 'foundation',
           scl_layer: planned.layer,
           scl_contract_keys: planned.contractKeys,
+          scl_boundary_keys: planned.boundaryKeys ?? [],
           scl_row_count: planned.rowCount,
         },
       })
@@ -2301,6 +2302,7 @@ export function buildCorpusEndpointGroupItems(args: {
               protocol: null,
               scl_layer: planned.layer,
               scl_contract_keys: planned.contractKeys,
+              scl_boundary_keys: planned.boundaryKeys ?? [],
               scl_row_count: planned.rowCount,
               scl_controller_class: controller,
               scl_declared_routes: (planned.httpRoutes ?? []).map(

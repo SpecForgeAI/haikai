@@ -73,6 +73,8 @@ export function isSclCorpusStory(
 /** SCL corpus markers spec 7 flattens onto the book-of-work blob item. */
 export interface SclCarriageMarkers {
   sclContractKeys: string[] | null;
+  /** Q- boundaries reached transitively by the story's rows (2026-09-03). */
+  sclBoundaryKeys: string[] | null;
   sclLayer: string | null;
   sclControllerClass: string | null;
   sclRowCount: number | null;
@@ -93,6 +95,7 @@ export function sclCarriageMarkersFromBlob(
     typeof value === 'number' && Number.isFinite(value) ? value : null;
   return {
     sclContractKeys: strings(obj.scl_contract_keys ?? obj.sclContractKeys),
+    sclBoundaryKeys: strings(obj.scl_boundary_keys ?? obj.sclBoundaryKeys),
     sclLayer: str(obj.scl_layer ?? obj.sclLayer),
     sclControllerClass: str(obj.scl_controller_class ?? obj.sclControllerClass),
     sclRowCount: num(obj.scl_row_count ?? obj.sclRowCount),
@@ -379,6 +382,30 @@ function foundationObjective(
 
 interface RenderState {
   warnings: Array<Record<string, unknown>>;
+  /** Key -> contract for the whole corpus (2026-09-03); empty = legacy bare keys. */
+  corpusByKey?: ReadonlyMap<string, SclContractDto>;
+  /** Key -> carrying book item, for cross-spec navigation. */
+  carriers?: ReadonlyMap<string, { itemId: string; title: string }>;
+  /** Every contract key the rendered blocks referenced (for the index). */
+  referencedKeys?: Set<string>;
+}
+
+/**
+ * `References:` entry (2026-09-03, Kiro review IMPL-02 / C-1): the bare key
+ * was dead text — nothing in any spec defined it, shape headings use the FQN.
+ * Render the SYMBOL with the key parenthesised, and the spec that carries it.
+ */
+function renderReference(ref: string, state: RenderState): string {
+  state.referencedKeys?.add(ref);
+  const contract = state.corpusByKey?.get(ref);
+  if (!contract) {
+    return state.corpusByKey && state.corpusByKey.size > 0
+      ? `\`${ref}\` (unresolved in corpus)`
+      : `\`${ref}\``;
+  }
+  const carrier = state.carriers?.get(ref);
+  const where = carrier ? ` → spec "${carrier.title}" (${carrier.itemId})` : '';
+  return `\`${symbolOf(contract)}\` [${ref}]${where}`;
 }
 
 function renderOutcome(
@@ -504,7 +531,7 @@ function renderBehaviourBlock(
     : [];
   lines.push(
     references.length > 0
-      ? `References: ${references.map((r) => `\`${r}\``).join(', ')}`
+      ? `References: ${references.map((r) => renderReference(r, state)).join(', ')}`
       : 'References: none'
   );
   lines.push('');
@@ -692,9 +719,30 @@ export function runSclSpecCarriage(args: {
    * shape contracts that describe them. Optional: absent = no join rendered.
    */
   shapeIndex?: ReadonlyArray<SclContractDto>;
+  /**
+   * The WHOLE corpus (2026-09-03), so `References:` lines resolve keys to
+   * symbols and reached boundaries carry their verbatim SQL. Optional: absent
+   * = keys render bare (legacy) and no boundaries-reached section.
+   */
+  corpusIndex?: ReadonlyArray<SclContractDto>;
+  /** Which book item CARRIES each contract key (its scl_contract_keys). */
+  contractCarriers?: ReadonlyMap<string, { itemId: string; title: string }>;
 }): MigrationStorySpecGenerationDto {
   const { story, baseRow, contracts, decisions } = args;
-  const shapeIndex = args.shapeIndex ?? [];
+  const corpusIndex = args.corpusIndex ?? [];
+  // Legacy callers pass no index: References stay bare keys, no index section.
+  const hasCorpusIndex = args.corpusIndex !== undefined;
+  const shapeIndex = args.shapeIndex ?? corpusIndex.filter((c) => c.kind === 'shape');
+  const corpusByKey = new Map<string, SclContractDto>();
+  for (const c of corpusIndex) {
+    if (typeof c.contract_key === 'string') corpusByKey.set(c.contract_key, c);
+  }
+  for (const c of contracts) {
+    if (typeof c.contract_key === 'string' && !corpusByKey.has(c.contract_key)) {
+      corpusByKey.set(c.contract_key, c);
+    }
+  }
+  const carriers = args.contractCarriers ?? new Map<string, { itemId: string; title: string }>();
 
   // -- Contract resolution: NO partial specs -------------------------------
   const orderedKeys = story.sclContractKeys ?? [];
@@ -752,7 +800,13 @@ export function runSclSpecCarriage(args: {
 
   const orderedContracts = orderedKeys.map((k) => byKey.get(k)!);
   const ctx = buildStoryContractContext(story, orderedContracts);
-  const state: RenderState = { warnings: [] };
+  const state: RenderState = {
+    warnings: [],
+    corpusByKey: hasCorpusIndex ? corpusByKey : undefined,
+    carriers,
+    referencedKeys: new Set<string>(),
+  };
+  const boundaryKeys = (story.sclBoundaryKeys ?? []).filter((k) => !orderedKeys.includes(k));
 
   // -- Header + objective ---------------------------------------------------
   const lines: string[] = [];
@@ -864,6 +918,82 @@ export function runSclSpecCarriage(args: {
       lines.push('');
       lines.push(...renderShapeBlock(joined.contract));
     }
+  }
+
+  // -- Boundaries reached (2026-09-03, Kiro review A-2 / C-2) ---------------
+  // The planner lists the Q- boundaries this story's rows reach transitively;
+  // the DAO SQL an endpoint delegates to is part of its behaviour, so it is
+  // carried here verbatim (the data-access layer spec still owns the
+  // implementation; this is the reader's view of what the rows touch).
+  const reachedBoundaries = boundaryKeys
+    .map((k) => corpusByKey.get(k))
+    .filter((c): c is SclContractDto => c !== undefined);
+  const unresolvedBoundaryKeys = boundaryKeys.filter((k) => !corpusByKey.has(k));
+  if (reachedBoundaries.length > 0 || unresolvedBoundaryKeys.length > 0) {
+    lines.push('## Boundaries reached (data access)');
+    lines.push('');
+    lines.push(
+      'Repositories / DAOs this story\'s behaviour rows reach through delegation. The ' +
+        'verbatim SQL is the behavioural requirement the target must reproduce; the ' +
+        'data-access layer spec owns the implementation.'
+    );
+    lines.push('');
+    for (const boundary of reachedBoundaries) {
+      const key = boundary.contract_key ?? symbolOf(boundary);
+      state.referencedKeys?.add(key);
+      const carrier = carriers.get(key);
+      lines.push(
+        `### Boundary reached: ${symbolOf(boundary)} [${key}]` +
+          (carrier ? ` — carried by "${carrier.title}" (${carrier.itemId})` : '')
+      );
+      lines.push('');
+      const body = bodyOf(boundary);
+      const operations = Array.isArray(body.operations) ? body.operations : [];
+      if (operations.length === 0) lines.push('_No operations recorded on this boundary contract._');
+      for (const raw of operations) {
+        const op = (raw ?? {}) as Rec;
+        const name = asString(op.name) ?? '?';
+        const sql = asString(op.sqlVerbatim) ?? asString(op.sql);
+        const ref = citeOf(op.ref);
+        lines.push(`- \`${name}\`${ref ? ` (${ref})` : ''}`);
+        if (sql) {
+          lines.push('');
+          lines.push('```sql');
+          lines.push(sql);
+          lines.push('```');
+          lines.push('');
+        }
+      }
+      lines.push('');
+    }
+    for (const k of unresolvedBoundaryKeys) {
+      lines.push(`_Boundary \`${k}\` is listed on the story but not resolvable from the corpus._`);
+    }
+    lines.push('');
+  }
+
+  // -- Contract index (2026-09-03, Kiro review IMPL-02 / C-1) -----------------
+  // Every key this spec carries or references, resolved to symbol + kind +
+  // the book item that carries it: 305 bare keys used to be dead text.
+  if (hasCorpusIndex) {
+    const indexKeys = [...new Set([...orderedKeys, ...(state.referencedKeys ?? [])])].sort();
+    lines.push('## Contract index');
+    lines.push('');
+    lines.push('| Key | Kind | Symbol | Carried by |');
+    lines.push('| --- | --- | --- | --- |');
+    for (const key of indexKeys) {
+      const contract = corpusByKey.get(key);
+      const carrier = orderedKeys.includes(key)
+        ? 'this spec'
+        : carriers.get(key)
+          ? `"${carriers.get(key)!.title}" (${carriers.get(key)!.itemId})`
+          : 'no carrying spec found';
+      lines.push(
+        `| \`${key}\` | ${contract?.kind ?? 'unresolved'} | ` +
+          `${contract ? `\`${symbolOf(contract)}\`` : '_not in corpus_'} | ${carrier} |`
+      );
+    }
+    lines.push('');
   }
 
   // -- Acceptance criteria (the round-3 TDD ruling, verbatim posture) --------
