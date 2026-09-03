@@ -470,6 +470,31 @@ function dataEffectCoverageMarker(effects: ReadonlyArray<CarriageDataEffect>): s
   return ['', `_${writes} write effect(s), ${reads} read effect(s) captured._`];
 }
 
+/** Keys that describe HOW an endpoint was discovered, not its protocol. */
+const PROVENANCE_ONLY_KEYS = new Set([
+  'discovery_method', 'source', '_addedBy', 'scan_id', 'run_id', 'derivation', 'scanner',
+]);
+
+/** True when a protocol_metadata_json blob carries provenance keys only (DETAIL-05). */
+function isProvenanceOnly(meta: unknown): boolean {
+  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return false;
+  const keys = Object.keys(meta as Record<string, unknown>);
+  return keys.length > 0 && keys.every((k) => PROVENANCE_ONLY_KEYS.has(k));
+}
+
+/**
+ * Display protocol (DETAIL-05): the committed `protocol` column is often
+ * empty, which rendered `protocol: n/a` for endpoints the model knows are
+ * REST. Derive from the verb when the column is empty.
+ */
+function displayProtocol(endpoint: CarriageEndpointFacts): string {
+  if ((endpoint.protocol ?? '').trim().length > 0) return endpoint.protocol!.trim();
+  if (isInternalEndpointFact(endpoint)) return 'internal';
+  const verb = (endpoint.verb ?? '').trim().toUpperCase();
+  if (verb.length > 0 && HTTP_VERBS.has(verb)) return 'REST/HTTP (derived from the verb)';
+  return 'n/a';
+}
+
 function zeroDataEffectCaveat(kind: 'endpoint' | 'internal process'): string[] {
   return [
     `> **Zero data effects is NOT evidence that this ${kind} writes nothing.**`,
@@ -532,7 +557,7 @@ export function buildCodeSpecText(args: BuildCodeSpecTextArgs): string {
     lines.push('');
     lines.push(
       `Interface: ${endpoint.interfaceName || '(unassigned)'} · type: ` +
-        `${endpoint.endpointType || 'n/a'} · protocol: ${endpoint.protocol || 'n/a'}`
+        `${endpoint.endpointType || 'n/a'} · protocol: ${displayProtocol(endpoint)}`
     );
 
     const internal = isInternalEndpointFact(endpoint);
@@ -571,11 +596,24 @@ export function buildCodeSpecText(args: BuildCodeSpecTextArgs): string {
         lines.push('_No committed response contract._');
       }
 
+      // Protocol metadata (2026-09-03, MECH-04 / DETAIL-05): the heading was
+      // "SOAP" on every endpoint of a REST-only estate, and the payload was
+      // scan PROVENANCE (`discovery_method`), not protocol facts. Provenance-
+      // only blobs collapse to one line; real protocol facts render verbatim
+      // under a protocol-neutral heading.
       if (endpoint.protocolMetadata != null) {
         lines.push('');
-        lines.push('### SOAP protocol metadata (committed, verbatim)');
-        lines.push('');
-        fencedJson(lines, endpoint.protocolMetadata);
+        if (isProvenanceOnly(endpoint.protocolMetadata)) {
+          const meta = endpoint.protocolMetadata as Record<string, unknown>;
+          const provenance = Object.entries(meta)
+            .map(([k, v]) => `${k}=${typeof v === 'string' ? v : JSON.stringify(v)}`)
+            .join(', ');
+          lines.push(`_Protocol metadata carries provenance only (${provenance}) — no protocol facts._`);
+        } else {
+          lines.push('### Protocol metadata (committed, verbatim)');
+          lines.push('');
+          fencedJson(lines, endpoint.protocolMetadata);
+        }
       }
     }
 
@@ -763,7 +801,7 @@ export function buildInternalProcessSpecText(args: {
     lines.push('');
     lines.push(`## Internal process: ${endpoint.name}`);
     lines.push('');
-    lines.push(`Type: ${endpoint.endpointType || 'n/a'} · protocol: ${endpoint.protocol || 'n/a'}`);
+    lines.push(`Type: ${endpoint.endpointType || 'n/a'} · protocol: ${displayProtocol(endpoint)}`);
     if (endpoint.protocolMetadata != null) {
       lines.push('');
       lines.push('### Trigger / schedule metadata (committed, verbatim)');

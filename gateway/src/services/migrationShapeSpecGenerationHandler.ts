@@ -2520,7 +2520,10 @@ async function runSinglePassBatch(
   // block EVERY service-plane spec carries (carriage and LLM alike) — the fix
   // for eleven technology-neutral specs aimed at an empty repository. Null
   // when no decisions are captured (nothing fabricated).
-  const targetStackSectionText = buildTargetStackSpecSection(scaffoldDecisions);
+  // Identity no-op modernize mappings never render (2026-09-03, BEHAV-08).
+  const targetStackSectionText = buildTargetStackSpecSection(scaffoldDecisions, {
+    dropIdentityNoOps: true,
+  });
 
   // Baseline wire facts (2026-08-17): mined ONCE per batch from the captured
   // current-state baseline — legacy date wire formats, >int64 identifier

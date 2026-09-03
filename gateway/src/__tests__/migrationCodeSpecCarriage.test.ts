@@ -705,3 +705,33 @@ describe('CODE CARRIAGE ACCEPTANCE CRITERIA + coveredEndpointIds (2026-09-03)', 
     expect(uncovered.generatedSpecText).toContain('(e-1): NO active baseline covers it');
   });
 });
+
+
+describe('PROTOCOL HEADER + PROTOCOL METADATA (2026-09-03, MECH-04 / DETAIL-05)', () => {
+  it('derives the protocol from the verb when the column is empty and collapses provenance-only metadata', () => {
+    const f = facts();
+    f.endpoints[0] = {
+      ...f.endpoints[0],
+      protocol: '',
+      protocolMetadata: { discovery_method: 'framework_scanner' },
+    };
+    const text = buildCodeSpecText({ story: story(), facts: f, behaviours: f.behaviours, omissions: [] });
+    expect(text).toContain('protocol: REST/HTTP (derived from the verb)');
+    expect(text).not.toContain('protocol: n/a');
+    expect(text).not.toContain('SOAP protocol metadata');
+    expect(text).toContain('_Protocol metadata carries provenance only (discovery_method=framework_scanner)');
+  });
+
+  it('renders REAL protocol facts verbatim under a protocol-neutral heading', () => {
+    const f = facts();
+    f.endpoints[0] = {
+      ...f.endpoints[0],
+      protocol: 'SOAP',
+      protocolMetadata: { soap_action: 'urn:getOwner', wsdl_operation: 'GetOwner' },
+    };
+    const text = buildCodeSpecText({ story: story(), facts: f, behaviours: f.behaviours, omissions: [] });
+    expect(text).toContain('protocol: SOAP');
+    expect(text).toContain('### Protocol metadata (committed, verbatim)');
+    expect(text).toContain('urn:getOwner');
+  });
+});

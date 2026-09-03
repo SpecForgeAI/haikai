@@ -244,3 +244,53 @@ describe('SCL carriage acceptance criteria name the verification assets (2026-09
     expect(row.coveredEndpointIds).toEqual(['ep-1', 'ep-2']);
   });
 });
+
+
+describe('SCL carriage renderer bundle (2026-09-03: annotations, findings, per-block ACs, stack scope)', () => {
+  it('renders annotations, attached findings, one AC per contract block, and a modernize-free stack dump', () => {
+    const s = {
+      ...story(null),
+      apiEndpointIds: ['ep-1'],
+      findingIds: ['finding-9', 'finding-12'],
+    } as LoadedBookOfWorkItem;
+    const identityNoOp: TargetStateCapturedDecision = {
+      ...decision(),
+      decisionId: 'd-noop',
+      decisionCode: 'modernize.types.string',
+      answerValue: 'String -> java.lang.String',
+      answerSummary: 'String -> java.lang.String',
+    };
+    const stack: TargetStateCapturedDecision = {
+      ...decision(),
+      decisionId: 'd-fw',
+      decisionCode: 'service.framework',
+      answerValue: 'Spring Boot 4.0.0',
+      answerSummary: 'Spring Boot 4.0.0',
+    };
+    const row = runSclSpecCarriage({
+      story: s,
+      baseRow: baseRow(),
+      contracts: [table(['S-RESP'])],
+      decisions: [decision(), identityNoOp, stack],
+      wireFactsSectionText: null,
+      targetStackSectionText: 'placeholder — the carriage rebuilds its own scoped section',
+    });
+    const text = row.generatedSpecText as string;
+    // DETAIL-06: annotations carried verbatim under the behaviour heading.
+    expect(text).toContain('Annotations: `@GET`, `@Path("/orders/{id}")`');
+    // BEHAV-07: findings in the body, with the disposition rule.
+    expect(text).toContain('## Attached findings');
+    expect(text).toContain('- `finding-9`');
+    expect(text).toContain('silence is not a disposition');
+    // MECH-03: one AC per carried contract block, after the replay criteria.
+    expect(text).toContain('Contract `' + GET_ORDER + '` [T-GET] (behaviour_table): every carried row');
+    // BEHAV-08: the stack section carries the stack proper only.
+    const stackAt = text.indexOf('## Target technology stack');
+    expect(stackAt).toBeGreaterThan(0);
+    const stackText = text.slice(stackAt);
+    expect(stackText).toContain('service.framework');
+    expect(stackText).not.toContain('modernize.');
+    // ...while the story-relevant modernize decision still renders in its own section.
+    expect(text).toContain('[decision:modernize.http.jaxrs-annotations]');
+  });
+});

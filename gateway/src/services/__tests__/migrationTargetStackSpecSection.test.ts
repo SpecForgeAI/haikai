@@ -96,3 +96,38 @@ describe('isDbPlaneStream', () => {
     expect(isDbPlaneStream(null)).toBe(false);
   });
 });
+
+
+describe('identity no-ops + exclusions (2026-09-03, Kiro review BEHAV-08)', () => {
+  const { isIdentityNoOpDecision } = require('../migrationTargetStackSpecSection');
+  it('drops identity no-op modernize mappings and excludes codes on request; keeps real mappings', () => {
+    const rows = [
+      decision('service.framework', 'Spring Boot 4.0.0'),
+      decision('modernize.types.string', 'String -> java.lang.String'),
+      decision('modernize.types.v', 'V -> V'),
+      decision('modernize.dates.joda-localdate', 'org.joda.time.LocalDate -> java.time.LocalDate'),
+    ];
+    expect(isIdentityNoOpDecision(rows[1])).toBe(true);
+    expect(isIdentityNoOpDecision(rows[2])).toBe(true);
+    expect(isIdentityNoOpDecision(rows[3])).toBe(false);
+    expect(isIdentityNoOpDecision(rows[0])).toBe(false);
+
+    const filtered = buildTargetStackSpecSection(rows, { dropIdentityNoOps: true })!;
+    expect(filtered).toContain('service.framework');
+    expect(filtered).toContain('modernize.dates.joda-localdate');
+    expect(filtered).not.toContain('modernize.types.string');
+    expect(filtered).not.toContain('modernize.types.v');
+
+    const noModernize = buildTargetStackSpecSection(rows, {
+      dropIdentityNoOps: true,
+      excludeCodes: (c) => c.startsWith('modernize.'),
+    })!;
+    expect(noModernize).toContain('service.framework');
+    expect(noModernize).not.toContain('modernize.');
+
+    // Everything filtered away -> no section at all (nothing fabricated).
+    expect(
+      buildTargetStackSpecSection([rows[1]], { dropIdentityNoOps: true }),
+    ).toBeNull();
+  });
+});
