@@ -319,12 +319,13 @@ function findMethodInHierarchy(
 type MethodClass = 'accessor' | 'trivial' | 'table';
 
 type CallResolution =
-  | { kind: 'call'; symbol: string; targetKey: string | null }
-  | { kind: 'dispatch'; symbol: string; candidates: string[]; primary?: string | null }
+  | { kind: 'call'; symbol: string; targetKey: string | null; args?: string[] }
+  | { kind: 'dispatch'; symbol: string; candidates: string[]; primary?: string | null; args?: string[] }
   | { kind: 'inline'; symbol: string };
 
 /** Call outcome for a resolution; dispatch resolutions carry their candidates + DI-wired primary (2026-09-03). */
 function callOutcomeOf(res: Extract<CallResolution, { kind: 'call' | 'dispatch' }>): SclRowOutcome {
+  const args = res.args && res.args.length > 0 ? { args: res.args } : {};
   if (res.kind === 'dispatch') {
     return {
       type: 'call',
@@ -332,9 +333,40 @@ function callOutcomeOf(res: Extract<CallResolution, { kind: 'call' | 'dispatch' 
       targetSymbol: res.symbol,
       candidateSymbols: res.candidates,
       primarySymbol: res.primary ?? null,
+      ...args,
     };
   }
-  return { type: 'call', targetKey: res.targetKey, targetSymbol: res.symbol };
+  return { type: 'call', targetKey: res.targetKey, targetSymbol: res.symbol, ...args };
+}
+
+const ARG_MAX_CHARS = 80;
+
+/**
+ * Verbatim call arguments (DETAIL-02). Whitespace collapsed, each capped; a
+ * bare identifier naming a `static final` field of the calling class is
+ * rendered with its initializer so the literal the callee actually receives
+ * is on the row.
+ */
+function callArgumentsOf(inv: SyntaxNode, cls: JavaClassInfo): string[] {
+  const argsNode = inv.childForFieldName('arguments');
+  if (!argsNode) return [];
+  return namedNonComment(argsNode).map((node) => {
+    const raw = node.text.replace(/\s+/g, ' ').trim();
+    if (node.type === 'identifier') {
+      const field = cls.fields.find(
+        (f) => f.name === raw && f.modifiers.includes('static') && f.modifiers.includes('final')
+      );
+      if (field && field.initializer) {
+        const init = field.initializer.replace(/\s+/g, ' ').trim();
+        return truncateArg(`${raw} = ${init}`);
+      }
+    }
+    return truncateArg(raw);
+  });
+}
+
+function truncateArg(s: string): string {
+  return s.length <= ARG_MAX_CHARS ? s : `${s.slice(0, ARG_MAX_CHARS - 1)}…`;
 }
 
 type RowDraft = Omit<SclRow, 'index'>;
@@ -905,7 +937,15 @@ export function extractBehaviour(
     const unresolvedSymbol = (name: string, argCount: number): string =>
       `?#${name}(${Array.from({ length: argCount }, () => '?').join(',')})`;
 
+    // Every call/dispatch resolution carries its verbatim arguments (DETAIL-02).
     const resolveInvocation = (inv: SyntaxNode): CallResolution | null => {
+      const res = resolveInvocationInner(inv);
+      if (!res || res.kind === 'inline') return res;
+      const args = callArgumentsOf(inv, cls);
+      return args.length > 0 ? { ...res, args } : res;
+    };
+
+    const resolveInvocationInner = (inv: SyntaxNode): CallResolution | null => {
       const nameNode = inv.childForFieldName('name');
       if (!nameNode) return null;
       const argsNode = inv.childForFieldName('arguments');
