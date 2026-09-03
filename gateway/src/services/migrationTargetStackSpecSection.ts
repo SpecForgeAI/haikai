@@ -107,18 +107,73 @@ function scopeQualifier(d: TargetStateCapturedDecision): string | null {
  * carries no stack block, and the scaffold spec's own not-captured warnings
  * surface the gap).
  */
+export interface TargetStackSectionOptions {
+  /**
+   * Drop modernize.* decisions whose mapping is an identity no-op
+   * (`String -> java.lang.String`, `Object -> java.lang.Object`, `V -> V`):
+   * they carry no instruction and padded every spec (Kiro review BEHAV-08).
+   */
+  dropIdentityNoOps?: boolean;
+  /** Exclude decision codes for which this returns true (e.g. every modernize.*
+   *  when the spec already renders its story-RELEVANT modernization subset). */
+  excludeCodes?: (decisionCode: string) => boolean;
+}
+
+function simpleTypeName(type: string): string {
+  let s = type.trim();
+  const lt = s.indexOf('<');
+  if (lt >= 0) s = s.slice(0, lt);
+  s = s.replace(/\[\s*\]/g, '');
+  return s.includes('.') ? s.slice(s.lastIndexOf('.') + 1) : s;
+}
+
+/**
+ * True when a modernize.* decision maps a type onto itself: same simple name
+ * on both sides of the `from -> to` mapping (the ruleset's from/to when the
+ * code is known, else the rendered `X -> Y` display value). Exported for tests.
+ */
+export function isIdentityNoOpDecision(d: TargetStateCapturedDecision): boolean {
+  if (!d.decisionCode.startsWith('modernize.')) return false;
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { defaultModernizationRuleset } = require('./sclModernizationRuleset');
+  const rule = (defaultModernizationRuleset().rules as Array<{ code: string; from?: string; to?: string }>)
+    .find((r) => r.code === d.decisionCode);
+  let from: string | null = rule?.from ?? null;
+  let to: string | null = rule?.to ?? null;
+  if (!from || !to) {
+    const display = resolveDecisionDisplayValue(d);
+    const arrow = display.indexOf('->');
+    if (arrow < 0) return false;
+    from = display.slice(0, arrow);
+    to = display.slice(arrow + 2);
+  }
+  // Identity = the source type is written UNQUALIFIED and names the same class
+  // the target spells out (`String -> java.lang.String`), or both sides are
+  // literally equal (`V -> V`). A package MOVE with the same simple name
+  // (`org.joda.time.LocalDate -> java.time.LocalDate`) is a real mapping.
+  const f = from.trim();
+  const tt = to.trim();
+  if (f === tt) return true;
+  return !f.includes('.') && simpleTypeName(f) === simpleTypeName(tt);
+}
+
 export function buildTargetStackSpecSection(
   decisions: readonly TargetStateCapturedDecision[],
+  options: TargetStackSectionOptions = {},
 ): string | null {
   if (!decisions || decisions.length === 0) return null;
 
   const buckets = new Map<string, TargetStateCapturedDecision[]>();
   for (const d of decisions) {
+    if (options.excludeCodes && options.excludeCodes(d.decisionCode)) continue;
+    if (options.dropIdentityNoOps && isIdentityNoOpDecision(d)) continue;
     const section = sectionFor(d.decisionCode);
     const bucket = buckets.get(section);
     if (bucket) bucket.push(d);
     else buckets.set(section, [d]);
   }
+
+  if (buckets.size === 0) return null;
 
   const lines: string[] = [];
   lines.push(TARGET_STACK_SECTION_HEADING);

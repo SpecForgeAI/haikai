@@ -48,7 +48,10 @@ import {
   symbolOf,
 } from './sclCorpusPlanner';
 import { stableStringify } from './sclAnnotationPass';
-import { appendTargetStackSection } from './migrationTargetStackSpecSection';
+import {
+  appendTargetStackSection,
+  buildTargetStackSpecSection,
+} from './migrationTargetStackSpecSection';
 import { appendWireFidelitySection } from './migrationBaselineWireFacts';
 import { defaultModernizationRuleset } from './sclModernizationRuleset';
 
@@ -465,6 +468,18 @@ function renderBehaviourBlock(
   const lines: string[] = [];
   lines.push(`### Behaviour: ${symbolOf(contract)}`);
   lines.push('');
+  // Verbatim annotations (2026-09-03, DETAIL-06): cross-cutting markers such
+  // as audit/timing annotations are behaviour the target must honour; they
+  // were collected for relevance but never shown.
+  const annotationTexts = Array.isArray(body.annotations)
+    ? body.annotations
+        .map((a) => (typeof a === 'string' ? a : JSON.stringify(a ?? '')))
+        .filter((a) => a.length > 0)
+    : [];
+  if (annotationTexts.length > 0) {
+    lines.push(`Annotations: ${annotationTexts.map((a) => `\`${a}\``).join(', ')}`);
+    lines.push('');
+  }
   const intent = asString(gloss.intent);
   if (intent) {
     lines.push(`_Intent (guarded gloss): ${intent}_`);
@@ -1040,17 +1055,57 @@ export function runSclSpecCarriage(args: {
     }
     acIndex += 1;
   }
+  // One criterion per carried contract block (2026-09-03, MECH-03): the AC
+  // count scales with the content instead of a constant three.
+  for (const contract of orderedContracts) {
+    const key = contract.contract_key ?? symbolOf(contract);
+    lines.push(
+      `${acIndex}. Contract \`${symbolOf(contract)}\` [${key}] (${contract.kind}): every carried ` +
+        'row / field / operation above is implemented and verified row-by-row.'
+    );
+    acIndex += 1;
+  }
   if (declaredRoutes.length > 0) {
     lines.push('');
     lines.push(`Declared routes under verification: ${declaredRoutes.map((r) => `\`${r}\``).join(', ')}`);
   }
   lines.push('');
+  // Attached discovery findings (2026-09-03, BEHAV-07): the plan item carried
+  // them but the spec body never did.
+  const findingIds = story.findingIds ?? [];
+  if (findingIds.length > 0) {
+    lines.push('## Attached findings');
+    lines.push('');
+    lines.push(
+      'Discovery findings attached to the endpoints this story implements. Each must be ' +
+        'addressed in the implementation or explicitly carried forward with a reason — ' +
+        'silence is not a disposition.'
+    );
+    lines.push('');
+    for (const id of findingIds) lines.push(`- \`${id}\``);
+    lines.push('');
+  }
 
   // -- Stack + wire sections (same helpers + order as the LLM path). NOTE:
   // NO captured-examples section anywhere — captures live only in reconcile
   // and the extraction-time contradiction pass (round-3 ruling).
   let text = lines.join('\n');
-  text = appendTargetStackSection(text, args.targetStackSectionText);
+  // The spec above already lists the story-RELEVANT modernize.* decisions;
+  // the stack dump therefore carries the target stack proper only (no
+  // modernize.* repeat, no identity no-ops) — Kiro review BEHAV-08: two-thirds
+  // of every spec was the identical 98-decision dump.
+  // Fallback keeps a stack section whenever the batch built one: a project
+  // whose only captured decisions are modernize.* gets the batch section
+  // (no-op-free) rather than nothing.
+  text = appendTargetStackSection(
+    text,
+    args.targetStackSectionText
+      ? buildTargetStackSpecSection(decisions, {
+          dropIdentityNoOps: true,
+          excludeCodes: (code) => code.startsWith('modernize.'),
+        }) ?? args.targetStackSectionText
+      : null
+  );
   text = appendWireFidelitySection(text, args.wireFactsSectionText);
 
   return {

@@ -246,6 +246,8 @@ describe('deriveCorpusPlan — endpoint groups', () => {
       splitCount: 0,
       foundationSplitCount: 0, // fixture layers are all well under the 40 budget
       rowBudget: 40,
+      clusteringRule: 'row_budget',
+      overBudgetStories: [],
     });
   });
 });

@@ -95,6 +95,14 @@ export interface SclCorpusPlanStats {
    */
   foundationSplitCount: number;
   rowBudget: number;
+  /** The ONE clustering rule this planner applies (asserted after planning; IMPL-06). */
+  clusteringRule?: 'row_budget';
+  /**
+   * Story titles whose carried cost still exceeds the row budget — only a
+   * single method whose own rows exceed the budget can do this (it cannot be
+   * split further). Logged by the expansion so the rule that fired is visible.
+   */
+  overBudgetStories?: string[];
 }
 
 export interface SclCorpusPlan {
@@ -569,6 +577,13 @@ function buildEndpointGroups(args: {
  * unbounded.</p>
  */
 function contractCostOf(contract: SclContractDto): number {
+  // Boundaries cost by their OPERATIONS (2026-09-03, MECH-05): each renders a
+  // verbatim SQL block, so a 32-DAO data-access layer at cost 1 each never
+  // exceeded any budget and grew to the largest spec in the book by 87%.
+  if (isBoundary(contract)) {
+    const ops = bodyOf(contract).operations;
+    return Math.max(1, Array.isArray(ops) ? ops.length : 0);
+  }
   return Math.max(1, rowCountOf(contract));
 }
 
@@ -852,12 +867,23 @@ export function deriveCorpusPlan(
     ...story,
     boundaryKeys: boundariesReachedBy(story.contractKeys, resolve),
   });
-  return {
+  const planned = {
     foundationStories: foundationStories.map(withBoundaries),
     externalEndpointGroups: externalEndpointGroups.map(withBoundaries),
     internalEndpointGroups: internalEndpointGroups.map(withBoundaries),
-    stats,
   };
+  // Clustering-rule assertion (2026-09-03, IMPL-06): one rule, applied to
+  // endpoint groups AND foundation layers alike; anything still over budget
+  // is named rather than silently accepted.
+  stats.clusteringRule = 'row_budget';
+  stats.overBudgetStories = [
+    ...planned.externalEndpointGroups,
+    ...planned.internalEndpointGroups,
+    ...planned.foundationStories,
+  ]
+    .filter((s) => s.rowCount > rowBudget)
+    .map((s) => s.title);
+  return { ...planned, stats };
 }
 
 // ---------------------------------------------------------------------------

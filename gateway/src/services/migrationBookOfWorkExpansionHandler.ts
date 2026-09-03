@@ -1290,6 +1290,8 @@ async function runEpicPipeline(args: {
         console.log(
           `[diag-gateway] migration_bow_expansion corpus_plan_used ` +
             `stories=${corpusItems.filter((i) => i.type === 'story').length} ` +
+            `clustering_rule=${corpusPlan.stats.clusteringRule ?? 'row_budget'} ` +
+            `over_budget=${(corpusPlan.stats.overBudgetStories ?? []).length} ` +
             `projectId=${projectId} epicId=${epic.id} epicKind=foundations`
         );
         return [...legacyStories, ...corpusItems];
