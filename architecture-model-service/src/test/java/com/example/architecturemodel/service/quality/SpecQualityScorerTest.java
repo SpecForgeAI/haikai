@@ -128,11 +128,10 @@ class SpecQualityScorerTest {
             scorer.scoreImplementationConcreteness(specText, null);
 
         assertThat(dim.name()).isEqualTo(SpecQualityScorer.DIMENSION_IMPLEMENTATION_CONCRETENESS);
-        // Allow +/- some leeway since regexes may also pick up other patterns
-        // (e.g. backticked refs counted both as backtick and FQN). Accept any
-        // count >= 7 since the spec contract is "min(100, count*10)".
+        // 2026-09-03: length-normalised (references per 100 body words). Seven
+        // distinct references in ~16 words is dense -> saturates at 100.
         assertThat(dim.score()).isGreaterThanOrEqualTo(70);
-        assertThat(dim.reason()).contains("concrete references found (files, classes, operations)");
+        assertThat(dim.reason()).contains("concrete references across").contains("per 100 words");
     }
 
     // -----------------------------------------------------------------------
@@ -218,16 +217,20 @@ class SpecQualityScorerTest {
         SpecQualityScorer.DimensionScore ic = scorer.scoreImplementationConcreteness(specText, null);
         SpecQualityScorer.DimensionScore ed = scorer.scoreEvidenceDensity(specText);
         SpecQualityScorer.DimensionScore sa = scorer.scoreSiblingParentAlignment(null);
+        SpecQualityScorer.DimensionScore mt =
+            scorer.scoreMechanicalTruth(specText, SpecQualityScorer.SpecArchetype.LLM_SHAPE);
 
+        // 2026-09-03 weights: completeness 20, AC 25, concreteness 15,
+        // evidence 15, alignment 10, mechanical truth 15.
         int expectedComposite = (int) Math.round(
-            (c.score() * 30 + ac.score() * 25 + ic.score() * 20
-                + ed.score() * 15 + sa.score() * 10) / 100.0);
+            (c.score() * 20 + ac.score() * 25 + ic.score() * 15
+                + ed.score() * 15 + sa.score() * 10 + mt.score() * 15) / 100.0);
 
         SpecQualityScorer.Output out = scorer.score(
             new SpecQualityScorer.Input(specText, null, null, null, null, null));
 
         assertThat(out.score()).isEqualTo(expectedComposite);
-        assertThat(out.dimensions()).hasSize(5);
+        assertThat(out.dimensions()).hasSize(6);
         // Completeness is 7/7 here.
         assertThat(c.score()).isEqualTo(100);
         // Grade is the right letter for this composite.
@@ -269,9 +272,9 @@ class SpecQualityScorerTest {
     @Test
     @DisplayName("Malformed input: empty spec text + null lists returns valid low score, no exception")
     void malformedInput_emptyAndNullsReturnLowScore() {
-        // Null input -- no exception, returns a valid 5-dimension result.
+        // Null input -- no exception, returns a valid 6-dimension result.
         SpecQualityScorer.Output out = scorer.score(null);
-        assertThat(out.dimensions()).hasSize(5);
+        assertThat(out.dimensions()).hasSize(6);
         assertThat(out.score()).isGreaterThanOrEqualTo(0);
         assertThat(out.score()).isLessThan(40); // F-tier
         assertThat(out.grade()).isEqualTo("F");

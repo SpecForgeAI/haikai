@@ -116,7 +116,7 @@ class MigrationStorySpecGenerationServiceQualityScoringTest {
         assertThat(saved.getQualityScore()).isNotNull();
         assertThat(saved.getQualityScore()).isBetween(0, 100);
         assertThat(saved.getQualityGrade()).isIn("A", "B", "C", "D", "F");
-        assertThat(saved.getQualityDimensionsJson()).hasSize(5);
+        assertThat(saved.getQualityDimensionsJson()).hasSize(6);
         // First-time scoring: previous_quality_score stays null.
         assertThat(saved.getPreviousQualityScore()).isNull();
     }
