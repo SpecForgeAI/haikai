@@ -1312,6 +1312,7 @@ async function runEpicPipeline(args: {
           // ids for traceability, coverage gating and parity scoping.
           endpoints: view?.endpoints ?? [],
           findingIdsByEndpointId: view?.findingIdsByEndpointId,
+          baselineByEndpointId: view?.baselineByEndpointId,
         });
         const joinedStories = corpusItems.filter((item) => {
           if (item.type !== 'story') return false;
@@ -2177,10 +2178,18 @@ export function buildCorpusEndpointGroupItems(args: {
    * story with no finding linkage at all.
    */
   findingIdsByEndpointId?: Map<string, string[]>;
+  /**
+   * Canonical endpoint -> ACTIVE baseline coverage (AMS join, 2026-09-03):
+   * corpus stories used to stamp `baselineByEndpointId: {}` even when the
+   * baseline was saved minutes earlier, so no acceptance criterion could name
+   * the captures to replay (Kiro review MECH-02 / IMPL-07 / Join 4).
+   */
+  baselineByEndpointId?: Map<string, string>;
 }): MigrationBookOfWorkItem[] {
   const { epic, stream, plan } = args;
   const joinEndpoints = args.endpoints ?? [];
   const findingsByEndpoint = args.findingIdsByEndpointId ?? new Map<string, string[]>();
+  const baselineCoverage = args.baselineByEndpointId ?? new Map<string, string>();
   const ws = workstreamForEpic(epic);
   let seq = args.startSequence;
   const items: MigrationBookOfWorkItem[] = [];
@@ -2297,7 +2306,14 @@ export function buildCorpusEndpointGroupItems(args: {
               // empty only when the join genuinely cannot apply.
               apiInterfaceId: null,
               apiEndpointIds: join.endpointIds,
-              baselineByEndpointId: {},
+              // Join 4 (2026-09-03): the baselines that cover the endpoints this
+              // story resolved to, so the spec's acceptance criteria can name
+              // the exact captures to replay.
+              baselineByEndpointId: Object.fromEntries(
+                join.endpointIds
+                  .filter((id) => baselineCoverage.has(id))
+                  .map((id) => [id, baselineCoverage.get(id)!])
+              ),
               findingIds,
               protocol: null,
               scl_layer: planned.layer,

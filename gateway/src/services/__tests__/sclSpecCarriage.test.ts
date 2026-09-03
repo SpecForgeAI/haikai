@@ -582,10 +582,12 @@ describe('sclCarriageMarkersFromBlob', () => {
         scl_controller_class: 'com.app.C',
         scl_row_count: 7,
         scl_boundary_keys: ['Q-3'],
+        scl_declared_routes: ['GET /x'],
       }),
     ).toEqual({
       sclContractKeys: ['T-1', 'S-2'],
       sclBoundaryKeys: ['Q-3'],
+      sclDeclaredRoutes: ['GET /x'],
       sclLayer: 'dto-shapes',
       sclControllerClass: 'com.app.C',
       sclRowCount: 7,
@@ -596,6 +598,7 @@ describe('sclCarriageMarkersFromBlob', () => {
     expect(sclCarriageMarkersFromBlob({})).toEqual({
       sclContractKeys: null,
       sclBoundaryKeys: null,
+      sclDeclaredRoutes: null,
       sclLayer: null,
       sclControllerClass: null,
       sclRowCount: null,

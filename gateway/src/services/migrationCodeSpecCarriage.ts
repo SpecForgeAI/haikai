@@ -660,6 +660,48 @@ export function buildCodeSpecText(args: BuildCodeSpecTextArgs): string {
   }
 
   lines.push('');
+  // Acceptance criteria (2026-09-03, Kiro review MECH-02 / IMPL-07): the
+  // parity obligation below is prose; these are the testable criteria, naming
+  // the baseline each endpoint replays against (the AMVS replay harness's
+  // machine-readable target) or stating honestly that none covers it.
+  lines.push('## Acceptance criteria');
+  lines.push('');
+  {
+    let n = 1;
+    const baselines = story.baselineByEndpointId ?? {};
+    for (const endpoint of facts.endpoints) {
+      const label = `${endpoint.verb ?? ''} ${endpoint.path ?? endpoint.name}`.trim();
+      const baselineId = baselines[endpoint.id] ?? null;
+      if (isInternalEndpointFact(endpoint)) {
+        lines.push(
+          `${n}. \`${label}\` (${endpoint.id}): the DB-delta recipe passes over its captured ` +
+            'effect scope (see the internal process section).'
+        );
+      } else if (baselineId) {
+        lines.push(
+          `${n}. \`${label}\` (${endpoint.id}): replay EVERY accepted capture of baseline ` +
+            `\`${baselineId}\` against the target (AMVS replay) — status, declared headers and ` +
+            'body must match; a divergence is a failed criterion, not a note.'
+        );
+      } else {
+        lines.push(
+          `${n}. \`${label}\` (${endpoint.id}): NO active baseline covers it — capture and save ` +
+            'a baseline before this endpoint can be verified (missing_baseline).'
+        );
+      }
+      n += 1;
+    }
+    lines.push(
+      `${n}. Every committed contract fact above is honoured verbatim (parameter names/types, ` +
+        'validation, date formats, error-status mappings, serialization).'
+    );
+    lines.push(
+      `${n + 1}. The captured data effects are reproduced: same tables, same access modes, ` +
+        'embedded SQL semantics preserved.'
+    );
+  }
+  lines.push('');
+
   lines.push('## Parity obligation');
   lines.push('');
   lines.push(
@@ -960,6 +1002,7 @@ export async function runCodeSpecCarriage(args: {
       status: 'generated',
       confidence: 'high',
       generatedSpecText: withStackSection(specText),
+      coveredEndpointIds: endpointIds,
       warningsJson: null,
       missingInputsJson: null,
       focusedContextRefsJson: {
@@ -1168,6 +1211,7 @@ export async function runCodeSpecCarriage(args: {
     status: warnings.length > 0 ? 'generated_with_warnings' : 'generated',
     confidence: 'high',
     generatedSpecText: withStackSection(specText),
+    coveredEndpointIds: endpointIds,
     warningsJson: warnings.length > 0 ? warnings : null,
     missingInputsJson: null,
     focusedContextRefsJson: {

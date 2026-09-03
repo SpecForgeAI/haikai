@@ -458,6 +458,8 @@ export interface LoadedBookOfWorkItem {
   sclContractKeys?: string[] | null;
   /** Q- boundaries reached transitively by this story's rows (2026-09-03). */
   sclBoundaryKeys?: string[] | null;
+  /** "VERB /path" routes the story's endpoint contracts declare (2026-09-03). */
+  sclDeclaredRoutes?: string[] | null;
   sclLayer?: string | null;
   sclControllerClass?: string | null;
   sclRowCount?: number | null;
