@@ -38,8 +38,9 @@ import java.util.regex.Pattern;
  *
  * <p><b>Weights and thresholds (v1, pinned as code constants):</b></p>
  * <ul>
- *   <li>COMPLETENESS 30, AC MEASURABILITY 25, IMPLEMENTATION CONCRETENESS 20,
- *       EVIDENCE DENSITY 15, SIBLING/PARENT ALIGNMENT 10 (sum = 100)</li>
+ *   <li>COMPLETENESS 20, AC MEASURABILITY 25, IMPLEMENTATION CONCRETENESS 15,
+ *       EVIDENCE DENSITY 15, SIBLING/PARENT ALIGNMENT 10, MECHANICAL TRUTH 15
+ *       (sum = 100; reweighted 2026-09-03 — see below)</li>
  *   <li>Grade bands: A &gt;= 85, B 70-84, C 55-69, D 40-54, F &lt; 40</li>
  * </ul>
  *
@@ -59,6 +60,36 @@ import java.util.regex.Pattern;
  * acceptance-criteria section is still scored as missing (see
  * {@link SpecArchetype#DB_PACK}), and unresolved references now cost points
  * where previously they cost nothing.</p>
+ *
+ * <p><b>Discrimination rework (2026-09-03, spec-quality review).</b> On a
+ * 116-spec book three of five dimensions were effectively constants: every
+ * well-formed spec started at 55 (the bottom of C) and 77% of the book was C.
+ * IMPLEMENTATION CONCRETENESS saturated (101/116 at exactly 100) because it
+ * capped at ten distinct references and counted the byte-identical
+ * "Target technology stack" dump appended to every spec; COMPLETENESS was
+ * circular (headings verified against what each generator emits); and the
+ * scorer could not tell a spec whose verification oracle passes over an empty
+ * scope from one whose oracle is sound. Changes:</p>
+ * <ul>
+ *   <li>CONCRETENESS is scored on the BODY (the stack section excluded) and
+ *       normalised by length — references per hundred words — so padding
+ *       lowers it and a long spec needs proportionally more anchors.</li>
+ *   <li>New MECHANICAL TRUTH dimension: four archetype-aware checks that fall
+ *       straight out of the review — UNRESOLVED dispatch rows, a response
+ *       contract present, a non-empty data-effect scope, and acceptance
+ *       criteria that name the baseline captures to replay. Checks that do not
+ *       apply to an archetype are excluded, not awarded.</li>
+ *   <li>Weights reweighted away from COMPLETENESS (30 -&gt; 20) and CONCRETENESS
+ *       (20 -&gt; 15) to fund MECHANICAL TRUTH (15).</li>
+ *   <li>{@link SpecArchetype#CODE_CARRIAGE} registered: 17 specs of the book
+ *       fell to LLM_SHAPE's seven exact-match sections and scored 0/7. The
+ *       registration is deliberately LAST in this list — fixing it before
+ *       making the dimensions discriminate would have moved those specs to the
+ *       same 66/C as the healthiest ones and destroyed the only signal.</li>
+ *   <li>AC extraction reads prose: a block with no bullets or table rows
+ *       counts each non-empty paragraph as one criterion (the manual gates'
+ *       one-sentence "Gate condition" scored zero on entirely correct docs).</li>
+ * </ul>
  */
 @Component
 @Slf4j
@@ -75,16 +106,18 @@ public class SpecQualityScorer {
     public static final String DIMENSION_EVIDENCE_DENSITY = "evidence_density";
     public static final String DIMENSION_SIBLING_PARENT_ALIGNMENT =
         "sibling_parent_alignment";
+    public static final String DIMENSION_MECHANICAL_TRUTH = "mechanical_truth";
 
     // -----------------------------------------------------------------------
     // v1 weights (sum to 100; composite = weighted_sum / 100)
     // -----------------------------------------------------------------------
 
-    private static final int WEIGHT_COMPLETENESS = 30;
+    private static final int WEIGHT_COMPLETENESS = 20;
     private static final int WEIGHT_AC_MEASURABILITY = 25;
-    private static final int WEIGHT_IMPLEMENTATION_CONCRETENESS = 20;
+    private static final int WEIGHT_IMPLEMENTATION_CONCRETENESS = 15;
     private static final int WEIGHT_EVIDENCE_DENSITY = 15;
     private static final int WEIGHT_SIBLING_PARENT_ALIGNMENT = 10;
+    private static final int WEIGHT_MECHANICAL_TRUTH = 15;
 
     // -----------------------------------------------------------------------
     // Grade-band thresholds
@@ -204,7 +237,9 @@ public class SpecQualityScorer {
         /** Human/wizard gate runbook. */
         MANUAL_GATE,
         /** Application scaffold + seed build files. */
-        SCAFFOLD;
+        SCAFFOLD,
+        /** Per-endpoint carriage assembled from the COMMITTED MODEL (2026-09-03). */
+        CODE_CARRIAGE;
 
         /** Resolve from {@code focused_context_refs_json.source}. */
         public static SpecArchetype fromSource(String source) {
@@ -213,6 +248,7 @@ public class SpecQualityScorer {
                 case "scl_spec_carriage" -> SCL_CARRIAGE;
                 case "db_migration_pack" -> DB_PACK;
                 case "committed_model_internal_carriage" -> INTERNAL_CARRIAGE;
+                case "committed_model_code_carriage" -> CODE_CARRIAGE;
                 case "code_plan_manual_gate" -> MANUAL_GATE;
                 case "scaffold_bootstrap_carriage" -> SCAFFOLD;
                 default -> LLM_SHAPE;
@@ -258,6 +294,12 @@ public class SpecQualityScorer {
                 carriageSection("objective"),
                 carriageSection("acceptance criteria"),
                 carriageSection("seed build files"),
+                carriageSection("target technology stack")),
+            SpecArchetype.CODE_CARRIAGE, List.of(
+                carriageSection("context"),
+                carriageSection("endpoint"),
+                carriageSection("acceptance criteria"),
+                carriageSection("parity obligation"),
                 carriageSection("target technology stack")));
 
     /**
@@ -269,7 +311,8 @@ public class SpecQualityScorer {
     private static final Map<SpecArchetype, Pattern> AC_FALLBACK_HEADING = Map.of(
         SpecArchetype.DB_PACK, headingPrefixPattern("requirements"),
         SpecArchetype.INTERNAL_CARRIAGE, headingPrefixPattern("verification recipe"),
-        SpecArchetype.MANUAL_GATE, headingPrefixPattern("gate condition"));
+        SpecArchetype.MANUAL_GATE, headingPrefixPattern("gate condition"),
+        SpecArchetype.CODE_CARRIAGE, headingPrefixPattern("parity obligation"));
 
     private static List<SectionDescriptor> expectedSections(SpecArchetype archetype) {
         return SECTIONS_BY_ARCHETYPE.getOrDefault(archetype, EXPECTED_SECTIONS);
@@ -424,21 +467,24 @@ public class SpecQualityScorer {
         DimensionScore concreteness = scoreImplementationConcreteness(specText, safe.storyTitle());
         DimensionScore evidence = scoreEvidenceDensity(specText);
         DimensionScore alignment = scoreSiblingParentAlignment(safe.warnings());
+        DimensionScore mechanical = scoreMechanicalTruth(specText, archetype);
 
         int composite = compositeScore(
             completeness.score(),
             acMeasurability.score(),
             concreteness.score(),
             evidence.score(),
-            alignment.score());
+            alignment.score(),
+            mechanical.score());
         String grade = mapGrade(composite);
 
-        List<Map<String, Object>> dims = new ArrayList<>(5);
+        List<Map<String, Object>> dims = new ArrayList<>(6);
         dims.add(completeness.toMap());
         dims.add(acMeasurability.toMap());
         dims.add(concreteness.toMap());
         dims.add(evidence.toMap());
         dims.add(alignment.toMap());
+        dims.add(mechanical.toMap());
 
         return new Output(composite, grade, dims);
     }
@@ -573,7 +619,7 @@ public class SpecQualityScorer {
      *       bullet/ordered list items and returned empty.</li>
      * </ol>
      */
-    private static List<String> extractAcceptanceCriteriaLines(
+    static List<String> extractAcceptanceCriteriaLines(
             String specText, SpecArchetype archetype) {
         String[] lines = specText.split("\\r?\\n", -1);
         int startIdx = -1;
@@ -627,8 +673,22 @@ public class SpecQualityScorer {
             if (row != null) tableRows.add(row);
         }
         // Bullets win; tables are the fallback shape for tabulated acceptance.
-        if (acs.isEmpty()) return List.copyOf(tableRows);
-        return acs;
+        if (!acs.isEmpty()) return acs;
+        if (!tableRows.isEmpty()) return List.copyOf(tableRows);
+        // Prose fallback (2026-09-03): a block with neither bullets nor table
+        // rows counts each non-empty paragraph line as ONE criterion. The
+        // manual gates' one-sentence "Gate condition" scored zero criteria on
+        // three entirely correct documents.
+        List<String> prose = new ArrayList<>();
+        for (int i = startIdx; i < lines.length; i++) {
+            String raw = lines[i];
+            String trimmed = raw.trim();
+            if (trimmed.isEmpty()) continue;
+            if (isBlockBoundary(raw, headingDepth)) break;
+            if (atxDepth(raw) > 0) continue;
+            prose.add(trimmed);
+        }
+        return prose;
     }
 
     /** ATX heading depth ({@code ## x} -> 2); 0 when the line is not a heading. */
@@ -675,6 +735,112 @@ public class SpecQualityScorer {
         return s.length() <= max ? s : s.substring(0, max);
     }
 
+    /** Scale so that one distinct reference per ~60 body words scores 100. */
+    private static final double CONCRETENESS_PER_HUNDRED_SCALE = 60.0;
+
+    private static final Pattern TARGET_STACK_HEADING = Pattern.compile(
+        "^\\s*#{2}\\s+Target technology stack\\b.*$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern H2_HEADING = Pattern.compile("^\\s*#{2}\\s+\\S.*$");
+
+    /** The spec text without its "## Target technology stack" section. */
+    static String stripTargetStackSection(String specText) {
+        if (specText == null) return "";
+        StringBuilder sb = new StringBuilder();
+        boolean skipping = false;
+        for (String line : specText.split("\\r?\\n", -1)) {
+            if (TARGET_STACK_HEADING.matcher(line).matches()) {
+                skipping = true;
+                continue;
+            }
+            if (skipping && H2_HEADING.matcher(line).matches()) skipping = false;
+            if (!skipping) sb.append(line).append('\n');
+        }
+        return sb.toString();
+    }
+
+    // -----------------------------------------------------------------------
+    // Dimension 6: MECHANICAL TRUTH (2026-09-03)
+    // -----------------------------------------------------------------------
+
+    private static final Pattern UNRESOLVED_ROW = Pattern.compile(
+        "\\(UNRESOLVED \\u2014 no corpus contract\\)");
+    private static final Pattern ENDPOINT_ANNOTATION = Pattern.compile(
+        "Annotations: .*@(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS|Path|RequestMapping|"
+            + "GetMapping|PostMapping|PutMapping|DeleteMapping|PatchMapping)\\b");
+    private static final String NO_RESPONSE_CONTRACT_MARKER = "_No committed response contract._";
+    private static final String RESPONSE_SHAPES_HEADING = "## Response shapes";
+    private static final String NOT_CAPTURED_MARKER = "NOT CAPTURED";
+    private static final String ZERO_EFFECTS_MARKER = "Data effects (0)";
+    private static final String EMPTY_SCOPE_MARKER = "(none committed";
+    private static final String REPLAY_BASELINE_MARKER = "replay EVERY accepted capture of baseline";
+
+    /**
+     * Four archetype-aware truth checks over the spec text — the facts the
+     * review found the shape-only dimensions blind to. Each applicable check
+     * contributes up to 25 points and the score is rescaled over the
+     * applicable checks; an archetype to which none applies scores 100 with
+     * an explicit reason (nothing is awarded for inapplicable checks, and
+     * nothing is deducted either).
+     */
+    DimensionScore scoreMechanicalTruth(String specText, SpecArchetype archetype) {
+        String text = specText == null ? "" : specText;
+        SpecArchetype a = archetype == null ? SpecArchetype.LLM_SHAPE : archetype;
+        boolean hasBehaviourTables = text.contains("### Behaviour:");
+        boolean sclEndpointSpec = a == SpecArchetype.SCL_CARRIAGE
+            && ENDPOINT_ANNOTATION.matcher(text).find();
+        boolean endpointSpec = a == SpecArchetype.CODE_CARRIAGE || sclEndpointSpec;
+
+        int applicable = 0;
+        int earned = 0;
+        List<String> notes = new ArrayList<>();
+
+        // 1. UNRESOLVED dispatch rows (behaviour-table carriers only).
+        if (hasBehaviourTables) {
+            applicable++;
+            int unresolved = countMatches(UNRESOLVED_ROW, text);
+            int pts = unresolved == 0 ? 25 : unresolved <= 2 ? 12 : 0;
+            earned += pts;
+            notes.add("unresolved rows=" + unresolved + " (" + pts + "/25)");
+        }
+        // 2. Response contract present (endpoint specs only).
+        if (endpointSpec) {
+            applicable++;
+            boolean ok = a == SpecArchetype.CODE_CARRIAGE
+                ? !text.contains(NO_RESPONSE_CONTRACT_MARKER)
+                : text.contains(RESPONSE_SHAPES_HEADING);
+            earned += ok ? 25 : 0;
+            notes.add("response contract " + (ok ? "present" : "ABSENT") + " (" + (ok ? 25 : 0) + "/25)");
+        }
+        // 3. Non-empty data-effect scope (committed-model carriages only).
+        if (a == SpecArchetype.CODE_CARRIAGE || a == SpecArchetype.INTERNAL_CARRIAGE) {
+            applicable++;
+            boolean empty = text.contains(NOT_CAPTURED_MARKER)
+                || text.contains(ZERO_EFFECTS_MARKER)
+                || text.contains(EMPTY_SCOPE_MARKER);
+            earned += empty ? 0 : 25;
+            notes.add("effect scope " + (empty ? "EMPTY / not captured" : "non-empty") + " (" + (empty ? 0 : 25) + "/25)");
+        }
+        // 4. Acceptance criteria name the baseline captures to replay.
+        if (endpointSpec) {
+            applicable++;
+            boolean ok = text.contains(REPLAY_BASELINE_MARKER);
+            earned += ok ? 25 : 0;
+            notes.add("AC names baseline captures: " + (ok ? "yes" : "NO") + " (" + (ok ? 25 : 0) + "/25)");
+        }
+
+        if (applicable == 0) {
+            return new DimensionScore(
+                DIMENSION_MECHANICAL_TRUTH,
+                100,
+                "no mechanical truth checks apply to archetype " + a);
+        }
+        int score = (int) Math.round(earned / (applicable * 25.0) * 100.0);
+        return new DimensionScore(
+            DIMENSION_MECHANICAL_TRUTH,
+            score,
+            applicable + " check(s) applied: " + String.join("; ", notes));
+    }
+
     // -----------------------------------------------------------------------
     // Dimension 3: IMPLEMENTATION CONCRETENESS
     // -----------------------------------------------------------------------
@@ -686,26 +852,39 @@ public class SpecQualityScorer {
                 0,
                 "0 concrete references found (files, classes, operations)");
         }
+        // Score the BODY only (2026-09-03): the "Target technology stack" dump
+        // is byte-identical across the book and used to supply most of the
+        // references, so a spec with no behavioural content still scored 100.
+        String body = stripTargetStackSection(specText);
+        int stackWords = countWords(specText) - countWords(body);
         Set<String> distinct = new HashSet<>();
-        collectMatches(CONCRETE_FILE_PATH, specText, distinct);
-        collectMatches(CONCRETE_FQN, specText, distinct);
-        collectMatches(CONCRETE_REST_OP, specText, distinct);
-        collectGroup1(CONCRETE_WSDL_OP, specText, distinct);
-        collectGroup1(CONCRETE_BACKTICK, specText, distinct);
+        collectMatches(CONCRETE_FILE_PATH, body, distinct);
+        collectMatches(CONCRETE_FQN, body, distinct);
+        collectMatches(CONCRETE_REST_OP, body, distinct);
+        collectGroup1(CONCRETE_WSDL_OP, body, distinct);
+        collectGroup1(CONCRETE_BACKTICK, body, distinct);
 
         // Story-title entity refs (case-insensitive substring match per token).
         if (storyTitle != null && !storyTitle.isBlank()) {
             for (String token : storyTitle.split("\\s+")) {
                 if (token.length() < 3) continue;
-                if (specText.toLowerCase(Locale.ROOT)
+                if (body.toLowerCase(Locale.ROOT)
                     .contains(token.toLowerCase(Locale.ROOT))) {
                     distinct.add("title:" + token.toLowerCase(Locale.ROOT));
                 }
             }
         }
         int count = distinct.size();
-        int score = Math.min(100, count * 10);
-        String reason = count + " concrete references found (files, classes, operations)";
+        int bodyWords = countWords(body);
+        // Length-normalised: distinct references per hundred body words. A
+        // capped raw count (min(100, n*10)) saturated at ten references and
+        // detected short documents, not concreteness.
+        double perHundred = count / Math.max(1.0, bodyWords / 100.0);
+        int score = (int) Math.min(100, Math.round(perHundred * CONCRETENESS_PER_HUNDRED_SCALE));
+        String reason = count + " concrete references across ~" + bodyWords
+            + " body words; " + String.format(Locale.ROOT, "%.2f", perHundred)
+            + " per 100 words"
+            + (stackWords > 0 ? " (target-stack section excluded: ~" + stackWords + " words)" : "");
         return new DimensionScore(DIMENSION_IMPLEMENTATION_CONCRETENESS, score, reason);
     }
 
@@ -808,12 +987,14 @@ public class SpecQualityScorer {
     // -----------------------------------------------------------------------
 
     private static int compositeScore(int completeness, int acMeasurability,
-                                      int concreteness, int evidence, int alignment) {
+                                      int concreteness, int evidence, int alignment,
+                                      int mechanical) {
         int weightedSum = completeness * WEIGHT_COMPLETENESS
             + acMeasurability * WEIGHT_AC_MEASURABILITY
             + concreteness * WEIGHT_IMPLEMENTATION_CONCRETENESS
             + evidence * WEIGHT_EVIDENCE_DENSITY
-            + alignment * WEIGHT_SIBLING_PARENT_ALIGNMENT;
+            + alignment * WEIGHT_SIBLING_PARENT_ALIGNMENT
+            + mechanical * WEIGHT_MECHANICAL_TRUTH;
         return (int) Math.round(weightedSum / 100.0);
     }
 

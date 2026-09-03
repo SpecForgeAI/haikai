@@ -203,7 +203,7 @@ class MigrationStorySpecGenerationServiceManualEditTest {
         MigrationStorySpecGenerationEntity saved = cap.getValue();
         assertThat(saved.getQualityScore()).isNotNull().isBetween(0, 100);
         assertThat(saved.getQualityGrade()).isIn("A", "B", "C", "D", "F");
-        assertThat(saved.getQualityDimensionsJson()).hasSize(5);
+        assertThat(saved.getQualityDimensionsJson()).hasSize(6);
         // The prior score (42) was captured BEFORE the new score replaced it.
         assertThat(saved.getPreviousQualityScore())
             .as("prior quality_score copied into previous_quality_score")
@@ -247,7 +247,7 @@ class MigrationStorySpecGenerationServiceManualEditTest {
         // skipped) -- the four quality fields are populated, not nulled.
         assertThat(saved.getQualityScore()).isNotNull().isBetween(0, 100);
         assertThat(saved.getQualityGrade()).isIn("A", "B", "C", "D", "F");
-        assertThat(saved.getQualityDimensionsJson()).hasSize(5);
+        assertThat(saved.getQualityDimensionsJson()).hasSize(6);
         // Text + audit + parser still persisted.
         assertThat(saved.getManuallyEdited()).isTrue();
         assertThat(saved.getLastManuallyEditedBy()).isEqualTo("alice@example.com");

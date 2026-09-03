@@ -70,6 +70,10 @@ class SpecQualityScorerArchetypeTest {
             .isEqualTo(SpecArchetype.MANUAL_GATE);
         assertThat(SpecArchetype.fromSource("scaffold_bootstrap_carriage"))
             .isEqualTo(SpecArchetype.SCAFFOLD);
+        // 2026-09-03: the sixth carriage marker, previously absent (17 specs
+        // fell to LLM_SHAPE's seven exact-match sections and scored 0/7).
+        assertThat(SpecArchetype.fromSource("committed_model_code_carriage"))
+            .isEqualTo(SpecArchetype.CODE_CARRIAGE);
         assertThat(SpecArchetype.fromSource("  DB_MIGRATION_PACK  "))
             .isEqualTo(SpecArchetype.DB_PACK);
         assertThat(SpecArchetype.fromSource("some_future_source"))
