@@ -327,8 +327,8 @@ describe('multi-candidate dispatch rows (2026-09-03, DETAIL-01 / A-1)', () => {
       targetStackSectionText: null,
     });
     const text = row.generatedSpecText as string;
-    expect(text).toContain('call → [T-CACHE (primary, DI-wired) | T-DB] com.app.Loader#load(String) — multi-candidate dispatch (2 implementations, all carried below)');
-    expect(text).toContain('call → [T-A | T-B] com.app.Other#x() — multi-candidate dispatch');
+    expect(text).toContain('call → [T-CACHE (primary, DI-wired) / T-DB] com.app.Loader#load(String) — multi-candidate dispatch (2 implementations, all carried below)');
+    expect(text).toContain('call → [T-A / T-B] com.app.Other#x() — multi-candidate dispatch');
     expect(text).not.toContain('UNRESOLVED');
     expect(row.status).toBe('generated');
     expect(JSON.stringify(row.warningsJson ?? [])).not.toContain('UNRESOLVED_REFERENCE');
