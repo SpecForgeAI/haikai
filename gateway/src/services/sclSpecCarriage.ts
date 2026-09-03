@@ -503,6 +503,7 @@ function renderBehaviourBlock(
     lines.push(`Annotations: ${annotationTexts.map((a) => `\`${a}\``).join(', ')}`);
     lines.push('');
   }
+  lines.push(...renderCapturedFacts(body));
   const intent = asString(gloss.intent);
   if (intent) {
     lines.push(`_Intent (guarded gloss): ${intent}_`);
@@ -659,6 +660,65 @@ export function joinResponseShapes(
     }
   }
   return out;
+}
+
+/**
+ * Captured behaviour facts the rows alone hid (2026-09-03, BEHAV-03/04/05):
+ * cache-fronting, aspect advice, data-derived authorisation. Rendered under
+ * the behaviour heading so the reader sees them before the rows.
+ */
+function renderCapturedFacts(body: Rec): string[] {
+  const lines: string[] = [];
+  const cache = body.cacheFacts as Rec | undefined;
+  if (cache && typeof cache === 'object') {
+    const missLoads = Array.isArray(cache.missLoads) ? cache.missLoads.map(String) : [];
+    const mutators = Array.isArray(cache.mutators) ? (cache.mutators as Rec[]) : [];
+    lines.push(
+      `**Cache-fronting (legacy read path):** reads through \`${asString(cache.cacheField) ?? '?'}\` ` +
+        `(\`${asString(cache.cacheType) ?? '?'}\`` +
+        (asString(cache.keyType) ? `, keyed by \`${asString(cache.keyType)}\`` : '') +
+        '). A WARM cache serves this read with NO data access; ' +
+        (missLoads.length > 0
+          ? `a MISS loads via ${missLoads.map((s) => `\`${s}\``).join(', ')}; `
+          : 'the miss path is not carried on this table; ') +
+        (mutators.length > 0
+          ? `process-local mutation/invalidation sites: ${mutators
+              .map((m) => `\`${asString(m.symbol) ?? '?'}\` (${(Array.isArray(m.operations) ? m.operations : []).join('/')})`)
+              .join(', ')}.`
+          : 'no in-class mutation/invalidation sites — entries live until process restart.') +
+        ' Other processes do not observe process-local writes until expiry or an explicit refresh.'
+    );
+    lines.push('');
+  }
+  const advisedBy = Array.isArray(body.advisedBy) ? (body.advisedBy as Rec[]) : [];
+  if (advisedBy.length > 0) {
+    lines.push(
+      `**Advised by:** ${advisedBy
+        .map((a) => {
+          const key = asString(a.targetKey);
+          return `\`${asString(a.aspectSymbol) ?? '?'}\` ${asString(a.adviceKind) ?? ''} ` +
+            `(\`${asString(a.pointcut) ?? ''}\`)${key ? ` → [${key}]` : ' (advice body not a table)'}`;
+        })
+        .join('; ')} — the advice runs on EVERY invocation of this method; its data effects are part of this endpoint's behaviour.`
+    );
+    lines.push('');
+  }
+  const auth = body.authorisation as Rec | undefined;
+  if (auth && typeof auth === 'object') {
+    const predicates = Array.isArray(auth.predicates) ? auth.predicates.map(String) : [];
+    const denied = Array.isArray(auth.deniedOutcomes) ? auth.deniedOutcomes.map(String) : [];
+    const boundaries = Array.isArray(auth.boundaryKeys) ? auth.boundaryKeys.map(String) : [];
+    lines.push(
+      `**Authorisation (data-derived):** access is decided by ${predicates.map((p) => `\`${p}\``).join(', ')}` +
+        (denied.length > 0 ? `, denying with ${denied.map((d) => `\`${d}\``).join(', ')}` : '') +
+        (boundaries.length > 0
+          ? `; the predicate reads ${boundaries.map((b) => `[${b}]`).join(', ')} — those tables ARE the access-control list and must be migrated as such.`
+          : '.') +
+        ' Do NOT replace this with annotation- or group-based authorisation: the rule lives in data.'
+    );
+    lines.push('');
+  }
+  return lines;
 }
 
 function renderShapeBlock(contract: SclContractDto): string[] {
