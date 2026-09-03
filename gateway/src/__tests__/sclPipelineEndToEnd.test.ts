@@ -165,10 +165,10 @@ describe('SCL pipeline end-to-end (canned corpus → plan → spec → red suite
       (c) => c.source_symbol
     );
     expect(symbols).toContain(
-      `${VIEW_RESOURCE}#getView(String,String,Integer,HttpHeaders)`
+      `${VIEW_RESOURCE}#getView(String,String,Integer,javax.ws.rs.core.HttpHeaders)`
     );
     expect(symbols).toContain(
-      `${VIEW_RESOURCE}#getAllViews(String,String,HttpHeaders)`
+      `${VIEW_RESOURCE}#getAllViews(String,String,javax.ws.rs.core.HttpHeaders)`
     );
     // ...carry the provider-chain residue (fan-in < 2 verticals ride along).
     expect(
@@ -205,7 +205,7 @@ describe('SCL pipeline end-to-end (canned corpus → plan → spec → red suite
     // Contract blocks — verbatim behaviour tables for the endpoint roots.
     expect(text).toContain('## Contract blocks (verbatim — the construction truth)');
     expect(text).toContain(
-      `### Behaviour: ${VIEW_RESOURCE}#getView(String,String,Integer,HttpHeaders)`
+      `### Behaviour: ${VIEW_RESOURCE}#getView(String,String,Integer,javax.ws.rs.core.HttpHeaders)`
     );
     expect(text).toContain('| # | Kind | Condition (verbatim) | Outcome | Gloss |');
 

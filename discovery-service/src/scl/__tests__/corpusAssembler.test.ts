@@ -20,8 +20,8 @@ const FIXTURE_ROOT = path.join(__dirname, 'fixtures', 'legacy-app');
 
 const SYM = {
   getNode: 'com.legacy.hier.api.NodeResource#getNode(String)',
-  getView: 'com.legacy.hier.api.ViewResource#getView(String,String,Integer,HttpHeaders)',
-  getAllViews: 'com.legacy.hier.api.ViewResource#getAllViews(String,String,HttpHeaders)',
+  getView: 'com.legacy.hier.api.ViewResource#getView(String,String,Integer,javax.ws.rs.core.HttpHeaders)',
+  getAllViews: 'com.legacy.hier.api.ViewResource#getAllViews(String,String,javax.ws.rs.core.HttpHeaders)',
   jobRun: 'com.legacy.hier.jobs.NightlyRollupJob#run()',
   importMain: 'com.legacy.hier.orphan.LegacyImportTool#main(String[])',
   providerGetView: 'com.legacy.hier.provider.HierarchyViewProvider#getView(Integer,AuditInfo)',
@@ -29,7 +29,7 @@ const SYM = {
   cacheGetViewViaCache: 'com.legacy.hier.provider.ViewCache#getViewViaCache(Integer,AuditInfo)',
   cacheGetAllViews: 'com.legacy.hier.provider.ViewCache#getAllViews(AuditInfo)',
   cachingFindNode: 'com.legacy.hier.service.CachingNodeServiceImpl#findNode(String)',
-  enricherApply: 'com.legacy.hier.provider.ViewEnricher#applyOpenEndedValidity(HierarchyViewDetail)',
+  enricherApply: 'com.legacy.hier.provider.ViewEnricher#applyOpenEndedValidity(com.legacy.hier.model.HierarchyViewDetail)',
   viewDao: 'com.legacy.hier.dao.ViewDao',
   hierarchyViewDetail: 'com.legacy.hier.model.HierarchyViewDetail',
   filterCriteria: 'com.legacy.hier.model.FilterCriteria',
