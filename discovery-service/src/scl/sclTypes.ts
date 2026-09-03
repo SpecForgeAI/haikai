@@ -39,7 +39,26 @@ export interface SclOutcome { label: string; kind: 'value' | 'throws' | 'effect'
  */
 export type SclRowOutcome =
   | { type: 'terminal'; verbatim: string; ref: SclSourceRef; outcomeLabel: string }
-  | { type: 'call'; targetKey: string | null; targetSymbol: string }
+  | {
+      type: 'call';
+      targetKey: string | null;
+      targetSymbol: string;
+      /**
+       * Multi-candidate dispatch (2026-09-03): every implementation's contract
+       * key when an interface / abstract-class call resolves to MORE than one
+       * project implementation. Ordered with the DI-wired primary first when
+       * the receiver field carries a `@Qualifier("...")` naming one of them
+       * (then `targetKey` is that primary's key); otherwise `targetKey` stays
+       * null and all candidates are carried. Pre-fix the expansion was
+       * computed for closure and discarded, so 95 rows rendered UNRESOLVED
+       * while both implementations sat in the corpus.
+       */
+      targetKeys?: string[];
+      /** The candidate implementation method symbols (extractor-side). */
+      candidateSymbols?: string[];
+      /** The DI-wired candidate symbol, when a `@Qualifier` names it. */
+      primarySymbol?: string | null;
+    }
   | { type: 'absorb'; exceptionType: string; thenVerbatim: string; ref: SclSourceRef; outcomeLabel: string };
 
 /**

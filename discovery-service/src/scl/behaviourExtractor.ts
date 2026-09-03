@@ -191,6 +191,32 @@ function methodSymbol(m: JavaMethodInfo): string {
   return `${m.classFqn}#${m.name}(${m.paramTypes.join(',')})`;
 }
 
+const QUALIFIER_RE = /@Qualifier\s*\(\s*(?:value\s*=\s*)?"([^"]+)"\s*\)/;
+const BEAN_NAME_RE = /@(?:Component|Service|Repository|Named|Controller)\s*\(\s*(?:value\s*=\s*)?"([^"]+)"\s*\)/;
+
+/** `@Qualifier("x")` on the named field of `cls`, else null. */
+function qualifierOfField(cls: JavaClassInfo, fieldName: string): string | null {
+  const field = cls.fields.find((f) => f.name === fieldName);
+  if (!field) return null;
+  for (const a of field.annotations) {
+    const m = QUALIFIER_RE.exec(a);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+/** Names a bean can be wired by: explicit stereotype value + default lower-camel simple name. */
+function beanNamesOf(cls: JavaClassInfo): Set<string> {
+  const names = new Set<string>();
+  const simple = cls.simpleName;
+  if (simple) names.add(simple.charAt(0).toLowerCase() + simple.slice(1));
+  for (const a of cls.annotations) {
+    const m = BEAN_NAME_RE.exec(a);
+    if (m) names.add(m[1]);
+  }
+  return names;
+}
+
 /** Receiver-typing verdict shared by classification and row building. */
 type ReceiverResolution = { cls: JavaClassInfo } | 'external' | 'unknown';
 
@@ -294,8 +320,22 @@ type MethodClass = 'accessor' | 'trivial' | 'table';
 
 type CallResolution =
   | { kind: 'call'; symbol: string; targetKey: string | null }
-  | { kind: 'dispatch'; symbol: string; candidates: string[] }
+  | { kind: 'dispatch'; symbol: string; candidates: string[]; primary?: string | null }
   | { kind: 'inline'; symbol: string };
+
+/** Call outcome for a resolution; dispatch resolutions carry their candidates + DI-wired primary (2026-09-03). */
+function callOutcomeOf(res: Extract<CallResolution, { kind: 'call' | 'dispatch' }>): SclRowOutcome {
+  if (res.kind === 'dispatch') {
+    return {
+      type: 'call',
+      targetKey: null,
+      targetSymbol: res.symbol,
+      candidateSymbols: res.candidates,
+      primarySymbol: res.primary ?? null,
+    };
+  }
+  return { type: 'call', targetKey: res.targetKey, targetSymbol: res.symbol };
+}
 
 type RowDraft = Omit<SclRow, 'index'>;
 
@@ -921,7 +961,22 @@ export function extractBehaviour(
           const m = findMethodInHierarchy(impl, nameNode.text, argCount, index);
           return m ? methodSymbol(m.method) : `${impl.fqn}#${nameNode.text}(?)`;
         });
-        return { kind: 'dispatch', symbol: methodSymbol(ifaceMethod.method), candidates };
+        // DI-wired primary (2026-09-03): a receiver FIELD annotated
+        // `@Qualifier("name")` names exactly one implementation — by bean name
+        // (`@Component("name")` / `@Service("name")` / `@Named("name")`) or by
+        // the default lower-camel class name. The persistence/cache seam of a
+        // Spring app is one qualifier per interface, so the wired candidate is
+        // statically determinable from the injection site.
+        const qualifier =
+          objectNode && objectNode.type === 'identifier'
+            ? qualifierOfField(cls, objectNode.text)
+            : null;
+        let primary: string | null = null;
+        if (qualifier) {
+          const wiredIdx = impls.findIndex((impl) => beanNamesOf(impl).has(qualifier));
+          if (wiredIdx >= 0) primary = candidates[wiredIdx];
+        }
+        return { kind: 'dispatch', symbol: methodSymbol(ifaceMethod.method), candidates, primary };
       }
       const found = findMethodInHierarchy(targetClass, nameNode.text, argCount, index);
       if (found && found.method.bodyNode) return classResolution(found.owner, found.method);
@@ -1037,14 +1092,14 @@ export function extractBehaviour(
           kind: 'dispatch',
           conditionVerbatim: null,
           conditionRef: ref(stmt),
-          outcome: { type: 'call', targetKey: null, targetSymbol: res.symbol },
+          outcome: callOutcomeOf(res),
         };
       }
       return {
         kind: 'branch',
         conditionVerbatim: null,
         conditionRef: ref(stmt),
-        outcome: { type: 'call', targetKey: res.targetKey, targetSymbol: res.symbol },
+        outcome: callOutcomeOf(res),
       };
     }
 
@@ -1104,7 +1159,7 @@ export function extractBehaviour(
             kind: 'dispatch',
             conditionVerbatim: null,
             conditionRef: ref(stmt),
-            outcome: { type: 'call', targetKey: null, targetSymbol: first.symbol },
+            outcome: callOutcomeOf(first),
           },
         ];
       }
@@ -1114,7 +1169,7 @@ export function extractBehaviour(
           kind: 'terminal',
           conditionVerbatim: null,
           conditionRef: null,
-          outcome: { type: 'call', targetKey: first.targetKey, targetSymbol: first.symbol },
+          outcome: callOutcomeOf(first),
         },
       ];
     }
@@ -1175,7 +1230,7 @@ export function extractBehaviour(
         usedIndex = 0;
         if (res.kind === 'dispatch') {
           recordDispatch(res);
-          outcome = { type: 'call', targetKey: null, targetSymbol: res.symbol };
+          outcome = callOutcomeOf(res);
         } else {
           outcome = { type: 'call', targetKey: res.targetKey, targetSymbol: res.symbol };
         }

@@ -294,3 +294,43 @@ describe('SCL carriage renderer bundle (2026-09-03: annotations, findings, per-b
     expect(text).toContain('[decision:modernize.http.jaxrs-annotations]');
   });
 });
+
+
+describe('multi-candidate dispatch rows (2026-09-03, DETAIL-01 / A-1)', () => {
+  it('renders every implementation key with the DI-wired primary first and raises NO unresolved warning', () => {
+    const multi = table(['S-RESP']);
+    (multi.body_json as Record<string, unknown>).rows = [
+      {
+        index: 0,
+        kind: 'dispatch',
+        conditionVerbatim: null,
+        outcome: {
+          type: 'call',
+          targetKey: 'T-CACHE',
+          targetKeys: ['T-CACHE', 'T-DB'],
+          targetSymbol: 'com.app.Loader#load(String)',
+        },
+      },
+      {
+        index: 1,
+        kind: 'dispatch',
+        conditionVerbatim: null,
+        outcome: { type: 'call', targetKey: null, targetKeys: ['T-A', 'T-B'], targetSymbol: 'com.app.Other#x()' },
+      },
+    ];
+    const row = runSclSpecCarriage({
+      story: story(null),
+      baseRow: baseRow(),
+      contracts: [multi],
+      decisions: [decision()],
+      wireFactsSectionText: null,
+      targetStackSectionText: null,
+    });
+    const text = row.generatedSpecText as string;
+    expect(text).toContain('call → [T-CACHE (primary, DI-wired) | T-DB] com.app.Loader#load(String) — multi-candidate dispatch (2 implementations, all carried below)');
+    expect(text).toContain('call → [T-A | T-B] com.app.Other#x() — multi-candidate dispatch');
+    expect(text).not.toContain('UNRESOLVED');
+    expect(row.status).toBe('generated');
+    expect(JSON.stringify(row.warningsJson ?? [])).not.toContain('UNRESOLVED_REFERENCE');
+  });
+});

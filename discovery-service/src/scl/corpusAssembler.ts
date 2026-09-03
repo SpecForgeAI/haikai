@@ -473,6 +473,52 @@ interface ContractEdges {
   dispatchClassFqns: string[];
 }
 
+/**
+ * Promote dispatch resolution onto call rows: one candidate -> `targetKey`;
+ * several -> `targetKeys[]` (DI-wired primary first, and `targetKey` = the
+ * primary's key when known). Every promoted key also joins the table's
+ * `references` so closure / reach / planner walks see it. Idempotent.
+ */
+export function promoteDispatchRows(slice: SclSliceResult): void {
+  for (const table of slice.tables) {
+    let touched = false;
+    for (const row of table.rows) {
+      const o = row.outcome;
+      if (o.type !== 'call' || o.targetKey !== null) continue;
+      if (o.targetKeys && o.targetKeys.length > 0) continue; // already promoted
+      let keys: string[] = [];
+      let primaryKey: string | null = null;
+      if (o.candidateSymbols && o.candidateSymbols.length > 0) {
+        keys = o.candidateSymbols
+          .map((s) => slice.keyBySymbol.get(s))
+          .filter((k): k is string => typeof k === 'string' && k.length > 0);
+        primaryKey = o.primarySymbol ? slice.keyBySymbol.get(o.primarySymbol) ?? null : null;
+      }
+      if (keys.length === 0) keys = expandDispatchTarget(o.targetSymbol, slice).keys;
+      keys = sortStrings(new Set(keys));
+      if (keys.length === 0) continue;
+      if (primaryKey && keys.includes(primaryKey)) {
+        keys = [primaryKey, ...keys.filter((k) => k !== primaryKey)];
+      } else {
+        primaryKey = null;
+      }
+      if (keys.length === 1) {
+        o.targetKey = keys[0];
+      } else {
+        o.targetKeys = keys;
+        if (primaryKey) o.targetKey = primaryKey;
+      }
+      for (const k of keys) {
+        if (!table.references.includes(k)) {
+          table.references.push(k);
+          touched = true;
+        }
+      }
+    }
+    if (touched) table.references.sort();
+  }
+}
+
 function edgesOf(contract: SclContract, slice: SclSliceResult): ContractEdges {
   const keys = new Set<string>();
   const dispatchClassFqns = new Set<string>();
@@ -563,6 +609,13 @@ export function assembleCorpus(slice: SclSliceResult, options?: AssembleCorpusOp
   // -------------------------------------------------------------------------
   // 2. Contract graph: key → contract, precomputed edges, reverse fan-in.
   // -------------------------------------------------------------------------
+  // Dispatch promotion (2026-09-03, spec-quality review DETAIL-01 / A-1): the
+  // interface->implementation expansion below used to be computed for
+  // CLOSURE only and thrown away for the row, so every persistence-seam call
+  // rendered "(UNRESOLVED — no corpus contract)" while both implementations
+  // sat in the corpus. Promote the resolution onto the row itself.
+  promoteDispatchRows(slice);
+
   const allContracts: SclContract[] = [...slice.tables, ...slice.shapes, ...slice.boundaries];
   const contractByKey = new Map<string, SclContract>();
   for (const c of allContracts) contractByKey.set(c.key, c);
@@ -655,7 +708,11 @@ export function assembleCorpus(slice: SclSliceResult, options?: AssembleCorpusOp
   const unresolvedSites: string[] = [];
   for (const t of slice.tables) {
     for (const row of t.rows) {
-      if (row.outcome.type === 'call' && row.outcome.targetKey === null) {
+      if (
+        row.outcome.type === 'call' &&
+        row.outcome.targetKey === null &&
+        !(row.outcome.targetKeys && row.outcome.targetKeys.length > 0)
+      ) {
         unresolvedSites.push(`${t.symbol} -> ${row.outcome.targetSymbol}`);
       }
     }
