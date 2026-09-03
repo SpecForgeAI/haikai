@@ -107,7 +107,7 @@ describe('corpus export → gateway fixture (end-to-end bridge)', () => {
     const symbols = doc.contracts.map((c) => c.source_symbol);
     // ViewResource external endpoints (the endpoint group the gateway picks).
     expect(symbols).toContain(
-      'com.legacy.hier.api.ViewResource#getView(String,String,Integer,HttpHeaders)'
+      'com.legacy.hier.api.ViewResource#getView(String,String,Integer,javax.ws.rs.core.HttpHeaders)'
     );
     // The provider chain behind them (behaviour tests must generate).
     expect(symbols).toContain(

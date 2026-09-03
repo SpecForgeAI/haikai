@@ -265,10 +265,53 @@ function packageNameOf(root: SyntaxNode): string {
   return '';
 }
 
+/**
+ * Type qualifier from a file's explicit imports (2026-09-03, spec-quality
+ * review DETAIL-03 / DETAIL-04). Method signatures used to carry parameter and
+ * return types exactly as written (`LocalDate`), so a contract signature gave
+ * an implementer no way to tell Joda from java.time — exactly where the
+ * conversion decision bites — and the modernization relevance matcher, which
+ * looks for the ruleset's fully-qualified `from` text in the contract body,
+ * never matched. Every identifier token that an explicit single-type import
+ * names is replaced by its FQN (generics and arrays preserved); java.lang
+ * types, same-package types and wildcard imports stay as written.
+ */
+export function typeQualifierFor(imports: readonly string[]): (typeText: string) => string {
+  const bySimple = new Map<string, string>();
+  for (const imp of imports) {
+    if (!imp || imp.endsWith('.*')) continue;
+    const simple = imp.slice(imp.lastIndexOf('.') + 1);
+    // Type names start upper-case; a static member import (`pkg.Cls.CONST`,
+    // `pkg.Cls.method`) is not a type and must not qualify a type token.
+    if (!/^[A-Z]/.test(simple)) continue;
+    // Two explicit imports with the same simple name cannot both be legal
+    // Java; keep the first, deterministic by import order.
+    if (bySimple.has(simple)) continue;
+    bySimple.set(simple, imp);
+  }
+  if (bySimple.size === 0) return (typeText) => typeText;
+  return (typeText: string): string =>
+    typeText.replace(/(^|[^\w.])([A-Za-z_][\w]*)/g, (whole, pre: string, ident: string) => {
+      const fqn = bySimple.get(ident);
+      return fqn ? `${pre}${fqn}` : whole;
+    });
+}
+
 function importsOf(root: SyntaxNode): string[] {
   const out: string[] = [];
   for (const imp of collectNodesOfType(root, 'import_declaration')) {
     const m = imp.text.match(/import\s+(?:static\s+)?([^;]+);/);
+    if (m) out.push(m[1].trim());
+  }
+  return out;
+}
+
+/** Non-static imports only — the ones that can name a TYPE (for {@link typeQualifierFor}). */
+function typeImportsOf(root: SyntaxNode): string[] {
+  const out: string[] = [];
+  for (const imp of collectNodesOfType(root, 'import_declaration')) {
+    if (/^\s*import\s+static/.test(imp.text)) continue;
+    const m = imp.text.match(/import\s+([^;]+);/);
     if (m) out.push(m[1].trim());
   }
   return out;
@@ -382,7 +425,8 @@ function methodsOf(
   classNode: SyntaxNode,
   classFqn: string,
   filePath: string,
-  sourceText: string
+  sourceText: string,
+  qualify: (typeText: string) => string = (x) => x
 ): JavaMethodInfo[] {
   const methods: JavaMethodInfo[] = [];
   const body = classNode.childForFieldName('body');
@@ -402,7 +446,7 @@ function methodsOf(
         if (!p || (p.type !== 'formal_parameter' && p.type !== 'spread_parameter')) continue;
         const pType = p.childForFieldName('type');
         const pName = p.childForFieldName('name');
-        paramTypes.push(pType ? pType.text : '?');
+        paramTypes.push(pType ? qualify(pType.text) : '?');
         paramNames.push(pName ? pName.text : '');
       }
     }
@@ -412,7 +456,7 @@ function methodsOf(
       name: nameNode.text,
       paramTypes,
       paramNames,
-      returnType: typeNode ? typeNode.text : 'void',
+      returnType: typeNode ? qualify(typeNode.text) : 'void',
       annotations: verbatimAnnotations(methodNode),
       bodyNode: methodNode.childForFieldName('body') || null,
       startLine: methodNode.startPosition.row + 1,
@@ -590,7 +634,7 @@ export async function indexJavaProject(rootDir: string): Promise<JavaProjectInde
               interfaces: interfacesOf(declNode),
               annotations: verbatimAnnotations(declNode),
               fields: fieldsOf(declNode),
-              methods: methodsOf(declNode, fqn, filePath, sourceText),
+              methods: methodsOf(declNode, fqn, filePath, sourceText, typeQualifierFor(typeImportsOf(root))),
               constructors: constructorsOf(declNode, fqn, filePath, sourceText),
               imports,
               startLine: declNode.startPosition.row + 1,

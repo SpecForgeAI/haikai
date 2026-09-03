@@ -76,9 +76,9 @@ describe('indexJavaProject (fixture legacy app)', () => {
           a.includes('MediaType.APPLICATION_XML')
       )
     ).toBe(true);
-    expect(getView.paramTypes).toEqual(['String', 'String', 'Integer', 'HttpHeaders']);
+    expect(getView.paramTypes).toEqual(['String', 'String', 'Integer', 'javax.ws.rs.core.HttpHeaders']);
     expect(getView.paramNames).toEqual(['system', 'ssoToken', 'viewId', 'headers']);
-    expect(getView.returnType).toBe('Response');
+    expect(getView.returnType).toBe('javax.ws.rs.core.Response'); // FQ via the file's explicit import (2026-09-03)
     expect(getView.bodyNode).not.toBeNull();
     expect(getView.classFqn).toBe('com.legacy.hier.api.ViewResource');
     expect(getView.startLine).toBeGreaterThan(1);

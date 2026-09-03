@@ -186,7 +186,7 @@ describe('extractBehaviour via sliceProject (fixture legacy app)', () => {
     ).toBe(false);
 
     const t = table(
-      'com.legacy.hier.api.ViewResource#getView(String,String,Integer,HttpHeaders)'
+      'com.legacy.hier.api.ViewResource#getView(String,String,Integer,javax.ws.rs.core.HttpHeaders)'
     );
     const inlineRow = t.rows.find(
       (r) => r.outcome.type === 'terminal' && r.outcome.verbatim.includes('CookieUtils.readSsoCookie')
@@ -236,14 +236,14 @@ describe('extractBehaviour via sliceProject (fixture legacy app)', () => {
     // trivial inlined methods, no interfaces).
     const symbols = result.tables.map((t) => t.symbol);
     for (const expected of [
-      'com.legacy.hier.api.ViewResource#getView(String,String,Integer,HttpHeaders)',
-      'com.legacy.hier.api.ViewResource#getAllViews(String,String,HttpHeaders)',
+      'com.legacy.hier.api.ViewResource#getView(String,String,Integer,javax.ws.rs.core.HttpHeaders)',
+      'com.legacy.hier.api.ViewResource#getAllViews(String,String,javax.ws.rs.core.HttpHeaders)',
       'com.legacy.hier.api.NodeResource#getNode(String)',
       'com.legacy.hier.provider.HierarchyViewProvider#getView(Integer,AuditInfo)',
       'com.legacy.hier.provider.HierarchyViewProvider#getAllViews(AuditInfo)',
       'com.legacy.hier.provider.ViewCache#getViewViaCache(Integer,AuditInfo)',
       'com.legacy.hier.provider.ViewCache#getAllViews(AuditInfo)',
-      'com.legacy.hier.provider.ViewEnricher#applyOpenEndedValidity(HierarchyViewDetail)',
+      'com.legacy.hier.provider.ViewEnricher#applyOpenEndedValidity(com.legacy.hier.model.HierarchyViewDetail)',
       'com.legacy.hier.jobs.NightlyRollupJob#run()',
     ]) {
       expect(symbols).toContain(expected);
