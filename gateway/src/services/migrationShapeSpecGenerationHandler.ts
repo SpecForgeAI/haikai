@@ -2663,6 +2663,9 @@ async function runSinglePassBatch(
     // stories get deterministic procedure text. Context resolver, prompt,
     // response validators and confidence downgrade are all bypassed; the LLM
     // is never called. Missing facts -> insufficient_context (nothing silent).
+    // NOTE (2026-09-03): this branch precedes the SCL corpus branch below, so
+    // the predicate itself excludes corpus-tagged stories — see
+    // isCodeFactCarriageStory. Do not "fix" ordering here without that guard.
     if (isCodeCarriageStory(story)) {
       const row = await runCodeSpecCarriage({
         projectId,
