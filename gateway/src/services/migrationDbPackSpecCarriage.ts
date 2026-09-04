@@ -256,9 +256,20 @@ export function buildDbPackSpecText(args: {
   // reached the spec text, so the acceptance surface was invisible to the
   // implementer and unscoreable by the quality scorer.
   // -------------------------------------------------------------------------
-  const storyAc = (story.acceptanceCriteria ?? [])
+  const allStoryAc = (story.acceptanceCriteria ?? [])
     .map((criterion) => String(criterion).trim())
     .filter((criterion) => criterion.length > 0);
+  // Deploy-time criteria persisted on EXISTING book items (the pre-2026-09-04
+  // planner wording) are MOVED under "Deferred verification" with their owner,
+  // never echoed as acceptance the coding agent cannot evidence. This makes the
+  // carriage authoritative about the authoring/deploy split regardless of what
+  // the item holds, so existing books are fixed by a spec regenerate alone —
+  // no plan rebuild.
+  const isDeployTimeCriterion = (criterion: string): boolean =>
+    /appl(y|ies|ied)\s+cleanly|structural\s+context/i.test(criterion) ||
+    /expected[-\s]schema\s+diff/i.test(criterion);
+  const storyAc = allStoryAc.filter((c) => !isDeployTimeCriterion(c));
+  const movedAc = allStoryAc.filter(isDeployTimeCriterion);
 
   lines.push('## Acceptance criteria');
   lines.push('');
@@ -332,6 +343,20 @@ export function buildDbPackSpecText(args: {
     "- The pack's expected-schema diff — owner: the stage-closure story " +
       '"Post-swap verification: expected-schema diff green + reconciliation clean".'
   );
+  if (movedAc.length > 0) {
+    lines.push('');
+    lines.push(
+      `Reassigned from this story's recorded acceptance criteria (${movedAc.length}) — ` +
+        'they describe deploy-time checks and are listed here so nothing is silently dropped:'
+    );
+    lines.push('');
+    for (const criterion of movedAc) {
+      const owner = /expected[-\s]schema\s+diff/i.test(criterion)
+        ? 'stage-closure story "Post-swap verification"'
+        : '`schema-apply-runner`';
+      lines.push(`- ${criterion} — owner: ${owner}`);
+    }
+  }
   lines.push('');
   lines.push(
     'If a `tasks.md` item can only be evidenced by one of the checks above, ' +
