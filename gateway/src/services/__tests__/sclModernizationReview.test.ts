@@ -24,6 +24,7 @@ jest.mock('../logger', () => ({
 }));
 
 import { SclContractWire } from '../sclAnnotationPass';
+import { logger as mockedLogger } from '../logger';
 import {
   buildModernizationReview,
   confirmModernizationDecisions,
@@ -227,6 +228,32 @@ describe('buildModernizationReview — LLM proposals', () => {
       proposed: 0,
       error: 'rate limited',
     });
+    expect(deps.patchScan).not.toHaveBeenCalled();
+  });
+
+  it('a proposal PARSE failure logs the raw LLM response shape (diagnostic) and stays failed/none', async () => {
+    // A TRUNCATED completion (token cap): the array opens but never closes,
+    // so the parser finds no JSON array. The markers make that readable.
+    const wrapped = '[{"from": "com.thirdparty.Money", "to": "java.math.BigDec';
+    const deps = makeDeps({ llm: jest.fn().mockResolvedValue({ content: wrapped }) });
+
+    const review = await buildModernizationReview(ARGS, deps);
+
+    const diag = (mockedLogger.warn as jest.Mock).mock.calls.find(
+      (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('proposal parse FAILED')
+    );
+    expect(diag).toBeDefined();
+    expect(diag![1]).toMatchObject({
+      requestedCount: 1,
+      contentLength: wrapped.length,
+      startsWithBrace: false,
+      startsWithBracket: true,
+      hasOpenBracket: true,
+      hasCloseBracket: false,
+      contentHead: wrapped,
+      contentTail: '',
+    });
+    expect((diag![1] as { parseError: unknown }).parseError).toBe('LLM response contained no JSON array');
     expect(deps.patchScan).not.toHaveBeenCalled();
   });
 
