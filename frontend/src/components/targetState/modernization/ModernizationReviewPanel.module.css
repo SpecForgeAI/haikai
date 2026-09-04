@@ -148,6 +148,22 @@
   color: #82071e;
 }
 
+/* LLM starting point on a judgement family — a human call is still the
+ * decision, so this reads as a warning, not a default. */
+.provenanceReviewAdvised {
+  border-color: #bc4c00;
+  background: #fff1e5;
+  color: #762c00;
+  font-weight: 600;
+}
+
+/* The operator typed or changed the value: it is theirs. */
+.provenanceUserProvided {
+  border-color: #1a7f37;
+  background: #dafbe1;
+  color: #116329;
+}
+
 .notesCell {
   font-size: 0.78rem;
   color: var(--text-muted, #57606a);

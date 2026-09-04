@@ -164,6 +164,70 @@ describe('ModernizationReviewPanel', () => {
     expect(screen.queryByTestId('modernization-missing-count')).toBeNull();
   });
 
+  it('labels a review-advised LLM proposal loudly and carries its rationale (2026-09-04)', async () => {
+    const { deps } = depsFor(
+      reviewFixture({
+        rows: [
+          {
+            family: 'consolidation',
+            matcher_key: 'consolidation:dispatch_ambiguity',
+            usage_count: 2,
+            example_cites: [],
+            matched_rule_code: null,
+            from: 'ambiguous dynamic dispatch site',
+            default_to: 'keep both; document the dispatch rule',
+            provenance: 'llm_proposed_review_advised',
+            notes: null,
+            proposal_rationale: 'Merge/keep is an ownership call.',
+          },
+        ],
+      }),
+    );
+    render(<ModernizationReviewPanel {...BASE} deps={deps} />);
+    await waitFor(() =>
+      expect(screen.getByTestId('modernization-review-table')).toBeInTheDocument(),
+    );
+    const badge = screen.getByTestId('modernization-provenance-badge');
+    expect(badge).toHaveTextContent('LLM proposed — user review highly advised');
+    expect(badge).toHaveAttribute('title', 'Merge/keep is an ownership call.');
+    // The proposal is prefilled: a starting point, not a blank.
+    const input = screen.getByTestId('modernization-target-input') as HTMLInputElement;
+    expect(input.value).toBe('keep both; document the dispatch rule');
+  });
+
+  it('an operator edit re-labels the row user-provided on the badge AND in the confirm payload; untouched rows keep theirs (2026-09-04)', async () => {
+    const { deps, confirmMock } = depsFor(reviewFixture());
+    render(<ModernizationReviewPanel {...BASE} deps={deps} />);
+    await waitFor(() =>
+      expect(screen.getByTestId('modernization-confirm-all')).toBeInTheDocument(),
+    );
+    const inputs = screen.getAllByTestId('modernization-target-input') as HTMLInputElement[];
+    // Row 0 (ruleset default) is CHANGED; row 2 (unmapped) is FILLED; row 1 untouched.
+    fireEvent.change(inputs[0], { target: { value: 'java.time.LocalDateTime' } });
+    fireEvent.change(inputs[2], { target: { value: 'java.math.BigInteger' } });
+
+    const badges = screen.getAllByTestId('modernization-provenance-badge');
+    expect(badges[0]).toHaveTextContent('user provided');
+    expect(badges[1]).toHaveTextContent('LLM proposed');
+    expect(badges[2]).toHaveTextContent('user provided');
+
+    // Reverting row 0 to its default restores the original label.
+    fireEvent.change(inputs[0], { target: { value: 'java.time.LocalDate' } });
+    expect(screen.getAllByTestId('modernization-provenance-badge')[0]).toHaveTextContent('ruleset default');
+    fireEvent.change(inputs[0], { target: { value: 'java.time.LocalDateTime' } });
+
+    fireEvent.click(screen.getByTestId('modernization-confirm-all'));
+    await waitFor(() =>
+      expect(screen.getByTestId('modernization-confirm-success')).toBeInTheDocument(),
+    );
+    const payload = confirmMock.mock.calls[0][2] as SclModernizationConfirmPayload;
+    expect(payload.rows.map((r) => r.provenance)).toEqual([
+      'user_provided',
+      'llm_proposed',
+      'user_provided',
+    ]);
+  });
+
   it('Confirm-all POSTs every row with derived codes + current input values, then shows success', async () => {
     const { deps, confirmMock, fetchMock } = depsFor(reviewFixture());
     render(<ModernizationReviewPanel {...BASE} deps={deps} />);

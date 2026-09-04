@@ -34,6 +34,11 @@ const GATEWAY_BASE = import.meta.env.VITE_GATEWAY_BASE_URL ?? '';
 export type SclModernizationProvenance =
   | 'ruleset_default'
   | 'llm_proposed'
+  /** LLM starting point on a judgement family (consolidation) — a human
+   *  merge/keep call is still the decision. */
+  | 'llm_proposed_review_advised'
+  /** Derived at confirm time: the operator typed or changed the value. */
+  | 'user_provided'
   | 'unmapped';
 
 export interface SclExampleCite {

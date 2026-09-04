@@ -46,6 +46,7 @@ import {
   resolveSeedSources,
   runDeterministicPrePass,
   runTranslationPipeline,
+  selectTranslateAllTargets,
   syncPackTranslations,
   TranslationActionError,
   TranslationCoverageError,
@@ -482,6 +483,29 @@ describe('dbMigrationPack translations — coverage assertion (3.6)', () => {
 // ---------------------------------------------------------------------------
 // (f) translate-all scope + re-translate semantics
 // ---------------------------------------------------------------------------
+
+describe('dbMigrationPack translations — translate-all admits stuck translating rows (2026-09-04)', () => {
+  it('selects pending + failed + translating with disposition translate; never drafted / needs_manual / dropped', () => {
+    const rows = [
+      makeRow({ id: 'pending', translation_key: 'stored_procedure--dbo.usp_pending' }),
+      makeRow({ id: 'failed', translation_key: 'stored_procedure--dbo.usp_failed', pipeline_state: 'failed' }),
+      // A run that died mid-flight (500 after the stamp) left this one here
+      // indefinitely; per-row Retry allowed it, Translate-all said "no work".
+      makeRow({ id: 'stuck', translation_key: 'view--dbo.v_stuck', pipeline_state: 'translating' }),
+      makeRow({ id: 'drafted', translation_key: 'view--dbo.v_drafted', pipeline_state: 'drafted' }),
+      makeRow({ id: 'manual', translation_key: 'stored_procedure--dbo.usp_huge', pipeline_state: 'needs_manual' }),
+      makeRow({ id: 'dropped', translation_key: 'trigger--dbo.trg_dead', disposition: 'drop', drop_reason: 'dead' }),
+      makeRow({
+        id: 'dropped_stuck',
+        translation_key: 'trigger--dbo.trg_stuck',
+        disposition: 'drop',
+        drop_reason: 'dead',
+        pipeline_state: 'translating',
+      }),
+    ];
+    expect(selectTranslateAllTargets(rows).map((r) => r.id)).toEqual(['pending', 'failed', 'stuck']);
+  });
+});
 
 describe('dbMigrationPack translations — translate-all scope + re-translate (3.6)', () => {
   it('translate-all processes ONLY pending + failed; re-translate resets review to unreviewed with a fresh judge pass; approved objects are refused', async () => {

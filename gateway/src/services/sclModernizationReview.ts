@@ -219,21 +219,29 @@ const defaultDeps: SclModernizationDeps = {
 };
 
 // ---------------------------------------------------------------------------
-// LLM proposal pass (unmapped third-party types only; guarded merge)
+// LLM proposal pass (every unmapped row; guarded merge)
 // ---------------------------------------------------------------------------
 
 const PROPOSAL_SYSTEM_PROMPT =
-  'You propose Java modernization targets for third-party types observed in a ' +
-  'legacy codebase being migrated to Java 21 + Spring Boot. For each listed ' +
-  'type propose ONE replacement (a modern JDK/Spring type, or "keep dependency" ' +
-  'when no exact-semantics replacement exists). Only answer for the listed ' +
-  'types. Respond in strict JSON.';
+  'You propose Java modernization targets for idioms observed in a legacy ' +
+  'codebase being migrated to Java 21 + Spring Boot. Each listed item is ' +
+  'either (a) a third-party TYPE, for which you propose ONE replacement (a ' +
+  'modern JDK/Spring type, or "keep dependency" when no exact-semantics ' +
+  'replacement exists), or (b) a code-structure OBSERVATION such as a ' +
+  'near-duplicate implementation cluster, an ambiguous dispatch site, a ' +
+  'data-derived authorisation predicate, or an un-ruled slicer flag, for ' +
+  'which you propose ONE short policy statement (e.g. "merge into a single ' +
+  'implementation behind the interface", "keep both; document the dispatch ' +
+  'rule", "keep the data-driven check; do not replace with role annotations"). ' +
+  'The "family" field tells you which kind each item is; "examples" are ' +
+  'its use sites. Only answer for the listed items. Respond in strict JSON.';
 
 function buildProposalPrompt(
   requests: Array<{ from: string; family: string; examples: string[] }>
 ): string {
   return (
-    'Observed unmapped third-party types (with example use sites):\n' +
+    'Observed unmapped idioms — third-party types and code-structure ' +
+    'observations (family + example use sites):\n' +
     `${JSON.stringify(requests, null, 2)}\n\n` +
     // MUST stay an OBJECT envelope. `defaultLlm` sends `response_format:
     // { type: 'json_object' }` (jsonMode), which FORBIDS a top-level JSON
@@ -331,14 +339,23 @@ function parseProposals(content: string): LlmProposal[] {
   return proposals;
 }
 
-/** Unmapped THIRD-PARTY TYPE rows (sourceCarrier / opaque typeRef channels)
- * are the only rows the proposal pass may touch — consolidation rows and
- * un-ruled flags always stay human-only. */
-function isUnmappedThirdPartyType(row: ObservedIdiom): boolean {
-  return (
-    row.provenance === 'unmapped' &&
-    (row.matcherKey.startsWith('sourceCarrier:') || row.matcherKey.startsWith('typeReference:'))
-  );
+/** Every row that has no value yet is eligible for a proposal (2026-09-04).
+ * Previously only third-party TYPE rows (sourceCarrier / typeReference) were
+ * sent to the LLM; consolidation rows and un-ruled flags stayed human-only
+ * and reached the review as blanks the operator had to fill from nothing.
+ * Judgement families still need the human call — the proposal is a starting
+ * point and is labelled as such (see `needsHumanReview`). */
+function isProposalEligible(row: ObservedIdiom): boolean {
+  return row.provenance === 'unmapped';
+}
+
+/** Families where the LLM cannot KNOW the right answer (merge vs keep is a
+ * product/ownership call): a proposal on these is review-advised, not a
+ * default. */
+const HUMAN_REVIEW_FAMILIES: ReadonlySet<string> = new Set(['consolidation']);
+
+function needsHumanReview(row: ObservedIdiom): boolean {
+  return HUMAN_REVIEW_FAMILIES.has(row.family);
 }
 
 /** The per-scan proposal cache persisted inside the scan's opaque
@@ -395,7 +412,7 @@ function applyProposals(targets: ObservedIdiom[], proposals: LlmProposal[]): num
       continue;
     }
     row.defaultTo = proposal.proposedTo;
-    row.provenance = 'llm_proposed';
+    row.provenance = needsHumanReview(row) ? 'llm_proposed_review_advised' : 'llm_proposed';
     row.proposalRationale = proposal.rationale;
     applied++;
   }
@@ -478,7 +495,7 @@ async function runProposalPass(args: {
   patchScan: SclModernizationDeps['patchScan'];
 }): Promise<ModernizationProposalPass> {
   const { projectId, architectureId, scanId, statsJson, rows, regenerate } = args;
-  const targets = rows.filter(isUnmappedThirdPartyType);
+  const targets = rows.filter(isProposalEligible);
   if (targets.length === 0) {
     return { status: 'ok', source: 'none', eligible: 0, proposed: 0, error: null, generatedAt: null };
   }
