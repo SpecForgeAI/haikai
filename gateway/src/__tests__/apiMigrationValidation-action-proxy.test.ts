@@ -250,6 +250,71 @@ test('POST /capture-sessions/:sessionId/parse-oas forwards every multipart file 
 });
 
 // ---------------------------------------------------------------------------
+// Test 3b: POST .../refresh-oas-cache is REGISTERED and forwards its multipart
+// parts exactly as parse-oas does.
+//
+// Fix 2026-09-04: the "Retry uncovered APIs" modal's optional API-contract
+// picker posts to refresh-oas-cache, but the action was missing from
+// API_BEHAVIOUR_ACTION_PATHS, so Express answered its HTML "Cannot POST ..."
+// 404 and the modal showed that raw HTML as "Contract refresh failed". Both
+// the multer pipeline and the body-rebuild branch now key off one shared
+// MULTIPART_ACTIONS set, so the upload travels the identical code path.
+// ---------------------------------------------------------------------------
+test('POST /capture-sessions/:sessionId/refresh-oas-cache is routed and forwards every multipart file part', async () => {
+  const projectId = 'proj-abc';
+  const architectureId = 'arch-xyz';
+  const sessionId = 'sess-42';
+
+  mockFetch.mockResolvedValueOnce(jsonResponse(200, { sessionId, operationCount: 2, refreshed: true }));
+
+  const app = createTestApp();
+  const res = await request(app)
+    .post(
+      `/api/v1/projects/${projectId}/architectures/${architectureId}` +
+        `/api-behaviour/capture-sessions/${sessionId}/refresh-oas-cache`,
+    )
+    .attach('file', Buffer.from('<application/>', 'utf8'), 'demo.wadl')
+    .attach('file', Buffer.from('<xs:schema/>', 'utf8'), 'demo-types.xsd');
+
+  // Not the Express default 404 (which is text/html "Cannot POST ...").
+  expect(res.status).toBe(200);
+  expect(res.body).toEqual({ sessionId, operationCount: 2, refreshed: true });
+
+  expect(mockFetch).toHaveBeenCalledTimes(1);
+  const [calledUrl, calledInit] = mockFetch.mock.calls[0] as [string, RequestInit];
+  const u = new URL(calledUrl);
+  expect(`${u.origin}${u.pathname}`).toBe(
+    `http://localhost:8092/api-migration-validation/api/capture-sessions/${sessionId}/refresh-oas-cache`,
+  );
+  expect(u.searchParams.get('projectId')).toBe(projectId);
+  expect(u.searchParams.get('architectureId')).toBe(architectureId);
+
+  const fd = calledInit.body as unknown as FormData;
+  expect(typeof (fd as { getAll?: unknown }).getAll).toBe('function');
+  const names = fd
+    .getAll('file')
+    .map((p) => (p as { name?: string }).name)
+    .filter((n): n is string => typeof n === 'string')
+    .sort();
+  expect(names).toEqual(['demo-types.xsd', 'demo.wadl']);
+});
+
+test('POST /capture-sessions/:sessionId/refresh-oas-cache without a file forwards as JSON (service decides)', async () => {
+  const sessionId = 'sess-42';
+  mockFetch.mockResolvedValueOnce(jsonResponse(400, { error: 'refresh-oas-cache requires a multipart file upload' }));
+
+  const app = createTestApp();
+  const res = await request(app)
+    .post(`/api/v1/projects/proj-abc/architectures/arch-xyz/api-behaviour/capture-sessions/${sessionId}/refresh-oas-cache`)
+    .send({});
+
+  // The upstream 4xx is piped through as JSON -- never an HTML 404 from Express.
+  expect(res.status).toBe(400);
+  expect(res.body).toEqual({ error: 'refresh-oas-cache requires a multipart file upload' });
+  expect(mockFetch).toHaveBeenCalledTimes(1);
+});
+
+// ---------------------------------------------------------------------------
 // Test 4: GET .../compensation-preflight forwards as a READ (no body) and
 // returns the validation service's warning payload verbatim.
 //
