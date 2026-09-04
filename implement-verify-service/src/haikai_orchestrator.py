@@ -828,8 +828,12 @@ class HaikaiOrchestrator:
             return None
         return unchecked
 
-    _BLOCKED_LINE_RE = re.compile(r"^\s*[-*]\s*\[~\]\s*(?P<body>.*)$", flags=re.MULTILINE)
+    _BLOCKED_LINE_RE = re.compile(r"^(?P<indent>\s*)[-*]\s*\[~\]\s*(?P<body>.*)$")
     _BLOCKED_REASON_RE = re.compile(r"\bBLOCKED\s*[:\-\u2013\u2014]\s*(?P<reason>\S.*)$", flags=re.IGNORECASE)
+    @staticmethod
+    def _width(indent: str) -> int:
+        """Indent width with tabs normalised to 4 so mixed whitespace compares."""
+        return len(indent.replace("\t", "    "))
 
     @classmethod
     def _count_blocked_tasks(cls, tasks_md: Path) -> Tuple[int, int, List[str]]:
@@ -862,12 +866,39 @@ class HaikaiOrchestrator:
         with_reason = 0
         without_reason = 0
         notes: List[str] = []
-        for m in cls._BLOCKED_LINE_RE.finditer(text):
+        lines = text.splitlines()
+        for i, line in enumerate(lines):
+            m = cls._BLOCKED_LINE_RE.match(line)
+            if not m:
+                continue
             body = m.group("body").strip()
             r = cls._BLOCKED_REASON_RE.search(body)
             if r and r.group("reason").strip():
                 with_reason += 1
                 notes.append(body)
+                continue
+            # No reason on this line: look for one in the subtree beneath it
+            # (2026-09-04 correction: agents record the reason as an indented
+            # sub-bullet under the box, the natural tasks.md shape). The
+            # subtree ends at the first non-blank line indented no deeper than
+            # the box itself, so a same-indent sibling's reason never leaks
+            # onto an unreasoned box. A child that is itself a bare ``[~]``
+            # carries no reason and does not rescue its parent.
+            my_indent = cls._width(m.group("indent"))
+            child_reason = None
+            for nxt in lines[i + 1:]:
+                if not nxt.strip():
+                    continue
+                nxt_indent = cls._width(nxt[: len(nxt) - len(nxt.lstrip())])
+                if nxt_indent <= my_indent:
+                    break  # left this box's subtree
+                rr = cls._BLOCKED_REASON_RE.search(nxt)
+                if rr and rr.group("reason").strip():
+                    child_reason = nxt.strip()
+                    break
+            if child_reason is not None:
+                with_reason += 1
+                notes.append(f"{body} \u2014 {child_reason}")
             else:
                 without_reason += 1
         return (with_reason, without_reason, notes)
