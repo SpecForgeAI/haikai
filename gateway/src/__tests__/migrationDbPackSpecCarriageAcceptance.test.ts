@@ -100,7 +100,33 @@ describe('buildDbPackSpecText — acceptance criteria', () => {
     expect(text).toContain(
       '- All 1 file(s) in "Files to reproduce byte-for-byte" exist at their exact repo-relative paths',
     );
-    expect(text).toContain("- The pack's expected-schema diff returns GREEN");
+    // 2026-09-04: the expected-schema diff is a DEPLOY-time check. It is no
+    // longer an acceptance criterion the coding agent cannot evidence; it is
+    // reassigned under "Deferred verification" (never dropped).
+    expect(text).toContain(
+      '- Every changeset above is well-formed: one balanced CREATE TABLE per file, a `--changeset` header, and a `logicalFilePath` matching its pack-relative path.',
+    );
+    const acSection = text.slice(
+      text.indexOf('## Acceptance criteria'),
+      text.indexOf('## Deferred verification (NOT this story)'),
+    );
+    expect(acSection.length).toBeGreaterThan(0);
+    expect(acSection).not.toContain('expected-schema diff');
+    expect(acSection).not.toContain('structural context');
+    const deferred = text.slice(text.indexOf('## Deferred verification (NOT this story)'));
+    expect(deferred).toContain('owner: `schema-apply-runner`');
+    expect(deferred).toContain('Post-swap verification: expected-schema diff green + reconciliation clean');
+    expect(deferred).toContain('`- [~] <task> — BLOCKED: <reason>`');
+    // Section ordering: acceptance -> deferred -> decisions carried.
+    expect(text.indexOf('## Acceptance criteria')).toBeLessThan(
+      text.indexOf('## Deferred verification (NOT this story)'),
+    );
+    expect(text.indexOf('## Deferred verification (NOT this story)')).toBeLessThan(
+      text.indexOf('## Decisions carried'),
+    );
+    // Requirement 3 tells the agent NOT to attempt the deploy-time checks.
+    expect(text).toContain('3. Acceptance is mechanical and LOCAL');
+    expect(text).toContain('Do NOT attempt the live Liquibase apply or the expected-schema diff');
     expect(text).toContain("- No migration file outside this story's file list is modified.");
     // With criteria of its own, the pure-carriage NOTE is absent.
     expect(text).not.toContain('recorded no acceptance criteria of its own');

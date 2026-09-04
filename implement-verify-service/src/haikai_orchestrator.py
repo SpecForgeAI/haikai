@@ -11,7 +11,7 @@ import os
 import re
 from pathlib import Path
 from datetime import datetime
-from typing import List, Dict, Any, Optional, Callable, Union
+from typing import List, Dict, Any, Optional, Callable, Union, Tuple
 
 from .haikai_models import (
     OrchestrationRequest,
@@ -651,10 +651,24 @@ class HaikaiOrchestrator:
         # verification report is advisory only (see _determine_output_paths):
         # failing the step over a missing report conflates "didn't write a
         # report" with "didn't implement".
+        blocked_notes: List[str] = []
         if success and step == 3:
             spec_dir = self.project_dir / "haikai" / "specs" / spec_name
-            unchecked = self._count_unchecked_tasks(spec_dir / "tasks.md")
-            if unchecked is not None and unchecked > 0:
+            tasks_md = spec_dir / "tasks.md"
+            unchecked = self._count_unchecked_tasks(tasks_md)
+            blocked_ok, blocked_malformed, blocked_notes = self._count_blocked_tasks(tasks_md)
+            if blocked_malformed > 0:
+                # A bare ``[~]`` with no reason is a dodge, not a block.
+                success = False
+                msg = (
+                    f"Step {step} ({command}) finished but tasks.md has "
+                    f"{blocked_malformed} blocked task checkbox(es) `[~]` with no "
+                    "`BLOCKED: <reason>` — a block must say what could not be "
+                    "evidenced and why (environment-impossible items only)."
+                )
+                logger.error(msg)
+                errors.append(msg)
+            elif unchecked is not None and unchecked > 0:
                 success = False
                 msg = (
                     f"Step {step} ({command}) finished but tasks.md still has "
@@ -679,6 +693,18 @@ class HaikaiOrchestrator:
                 )
                 logger.error(msg)
                 errors.append(msg)
+            if success and blocked_ok > 0:
+                # Reasoned blocks PASS — loudly. They name what this environment
+                # could not evidence and who owns it (deploy-time runners, a
+                # closure story); they are persisted on the step log below.
+                logger.warning(
+                    "Step 3 (%s): %d task(s) recorded as BLOCKED with a reason "
+                    "(environment-impossible here; verify at their real "
+                    "owner):\n  %s",
+                    command,
+                    blocked_ok,
+                    "\n  ".join(blocked_notes),
+                )
             if not (spec_dir / "verification" / "final-verification.md").exists():
                 logger.warning(
                     "Step 3 (%s): verification/final-verification.md was not "
@@ -710,7 +736,11 @@ class HaikaiOrchestrator:
             "stderr": "\n".join(errors) if errors else "",
             "execution_time": execution_time,
             "timestamp": datetime.now().isoformat(),
-            "session_id": chat_executor.session_uuid
+            "session_id": chat_executor.session_uuid,
+            # Blocked-with-reason tasks (2026-09-04): persisted on the step log
+            # so an environment-impossible criterion is auditable after the
+            # worktree is cleaned up, instead of living only in a WARNING line.
+            "blocked_tasks": blocked_notes,
         }
 
         # Create step log file
@@ -783,9 +813,9 @@ class HaikaiOrchestrator:
         """Count unticked ``- [ ]`` checkboxes in a tasks.md.
 
         Returns ``None`` when the file is unreadable or contains no
-        checkboxes at all — the caller warns instead of hard-failing,
-        because "cannot judge completion" must not be conflated with
-        "did not implement".
+        checkboxes at all — the caller FAILS the step (unjudgeable), so a
+        tasks.md consisting only of reasoned ``[~]`` blocks must still count
+        as judgeable: ``[~]`` is a checkbox state for this test.
         """
         try:
             text = tasks_md.read_text(encoding="utf-8")
@@ -793,9 +823,54 @@ class HaikaiOrchestrator:
             return None
         unchecked = len(re.findall(r"^\s*[-*]\s*\[ \]", text, flags=re.MULTILINE))
         checked = len(re.findall(r"^\s*[-*]\s*\[[xX]\]", text, flags=re.MULTILINE))
-        if unchecked == 0 and checked == 0:
+        blocked = len(re.findall(r"^\s*[-*]\s*\[~\]", text, flags=re.MULTILINE))
+        if unchecked == 0 and checked == 0 and blocked == 0:
             return None
         return unchecked
+
+    _BLOCKED_LINE_RE = re.compile(r"^\s*[-*]\s*\[~\]\s*(?P<body>.*)$", flags=re.MULTILINE)
+    _BLOCKED_REASON_RE = re.compile(r"\bBLOCKED\s*[:\-\u2013\u2014]\s*(?P<reason>\S.*)$", flags=re.IGNORECASE)
+
+    @classmethod
+    def _count_blocked_tasks(cls, tasks_md: Path) -> Tuple[int, int, List[str]]:
+        """Count ``- [~]`` (blocked-with-reason) checkboxes in a tasks.md.
+
+        Third checkbox state (2026-09-04). Incident: two implement runs of
+        DB-pack cluster specs did the same real work (all changesets written
+        byte-for-byte, statically validated) and hit the same wall — the
+        spec's acceptance included a live Liquibase apply and an
+        expected-schema diff, which are DEPLOY-time checks this worktree has
+        no JVM, Liquibase or database to run. One agent recorded the gap in
+        prose and ticked the boxes (passed); the other recorded it as
+        checkbox state (halted the run). Same actual state, opposite
+        outcomes, decided only by bookkeeping — and the halt landed on the
+        honest agent. The spec carriage now keeps deploy-time checks out of
+        acceptance; this state is defence in depth so "cannot be evidenced
+        here" is distinguishable from "not done" when it happens anyway.
+
+        A block MUST carry ``BLOCKED: <reason>`` (``:``, ``-``, en/em dash;
+        case-insensitive) — a bare ``[~]`` is a dodge, not a block, and the
+        caller fails the step on it.
+
+        Returns ``(with_reason, without_reason, reasons)`` where ``reasons``
+        are the task texts with their reasons, for the step log.
+        """
+        try:
+            text = tasks_md.read_text(encoding="utf-8")
+        except OSError:
+            return (0, 0, [])
+        with_reason = 0
+        without_reason = 0
+        notes: List[str] = []
+        for m in cls._BLOCKED_LINE_RE.finditer(text):
+            body = m.group("body").strip()
+            r = cls._BLOCKED_REASON_RE.search(body)
+            if r and r.group("reason").strip():
+                with_reason += 1
+                notes.append(body)
+            else:
+                without_reason += 1
+        return (with_reason, without_reason, notes)
 
     def _create_step_log(self, step: int, command: str, execution_result: Dict[str, Any]) -> str:
         """
