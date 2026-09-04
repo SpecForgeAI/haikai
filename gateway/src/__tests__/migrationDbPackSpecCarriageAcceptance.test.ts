@@ -139,6 +139,37 @@ describe('buildDbPackSpecText — acceptance criteria', () => {
     );
   });
 
+  it('MOVES deploy-time criteria persisted on an existing book item under Deferred verification (never echoes, never drops)', () => {
+    // Pre-2026-09-04 planner wording, as persisted on existing books.
+    const text = buildDbPackSpecText({
+      story: story({
+        acceptanceCriteria: [
+          'All 15 table changesets apply cleanly in the structural context.',
+          "The pack's expected-schema diff is green for every table in this cluster.",
+          'Per-table loaded row counts match the expected source counts.',
+        ],
+      }),
+      packId: 'pack-1',
+      files: [CHANGESET],
+      targetEngine: 'postgresql',
+    });
+    const acSection = text.slice(
+      text.indexOf('## Acceptance criteria'),
+      text.indexOf('## Deferred verification (NOT this story)'),
+    );
+    expect(acSection).toContain('- Per-table loaded row counts match the expected source counts.');
+    expect(acSection).not.toContain('apply cleanly in the structural context');
+    expect(acSection).not.toContain('expected-schema diff is green');
+    const deferred = text.slice(text.indexOf('## Deferred verification (NOT this story)'));
+    expect(deferred).toContain("Reassigned from this story's recorded acceptance criteria (2)");
+    expect(deferred).toContain(
+      '- All 15 table changesets apply cleanly in the structural context. — owner: `schema-apply-runner`',
+    );
+    expect(deferred).toContain(
+      "- The pack's expected-schema diff is green for every table in this cluster. — owner: stage-closure story \"Post-swap verification\"",
+    );
+  });
+
   it('a story with NO criteria of its own says so plainly (bytes landed ≠ behaviour checked)', () => {
     const text = buildDbPackSpecText({
       story: story({ acceptanceCriteria: [] }),
