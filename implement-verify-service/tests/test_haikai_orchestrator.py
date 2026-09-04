@@ -721,3 +721,61 @@ class TestStep3CompletionGuard:
             self._FakeExec(), 3, "/implement-tasks", "step3-spec")
         assert result.status == "failure"
         assert "missing" in (result.error_message or "")
+
+
+class TestBlockedWithReasonTasks:
+    """Third checkbox state ``- [~] ... BLOCKED: <reason>`` (2026-09-04).
+
+    "Cannot be evidenced in this environment" must be distinguishable from
+    "not done": reasoned blocks are judgeable and pass; a bare ``[~]`` is a
+    dodge and must fail.
+    """
+
+    def _write(self, tmp_path, text):
+        f = tmp_path / "tasks.md"
+        f.write_text(text, encoding="utf-8")
+        return f
+
+    def test_all_blocked_is_judgeable_with_zero_unchecked(self, tmp_path):
+        f = self._write(
+            tmp_path,
+            "- [~] Live contexts=structural apply — BLOCKED: no Liquibase/JVM in this worktree; owner schema-apply-runner\n"
+            "- [~] Expected-schema diff green - BLOCKED: runs in the stage-closure story\n",
+        )
+        assert HaikaiOrchestrator._count_unchecked_tasks(f) == 0
+        with_reason, without_reason, notes = HaikaiOrchestrator._count_blocked_tasks(f)
+        assert (with_reason, without_reason) == (2, 0)
+        assert notes[0].startswith("Live contexts=structural apply")
+        assert "owner schema-apply-runner" in notes[0]
+
+    def test_mixed_states_count_independently(self, tmp_path):
+        f = self._write(
+            tmp_path,
+            "- [x] Write 15 changesets byte-for-byte\n"
+            "- [ ] Update README\n"
+            "- [~] Expected-schema diff \u2014 blocked: deploy-time\n"
+            "* [X] Static validation\n",
+        )
+        assert HaikaiOrchestrator._count_unchecked_tasks(f) == 1
+        assert HaikaiOrchestrator._count_blocked_tasks(f) == (1, 0, ["Expected-schema diff \u2014 blocked: deploy-time"])
+
+    def test_bare_tilde_without_reason_is_malformed(self, tmp_path):
+        f = self._write(
+            tmp_path,
+            "- [~] Live apply\n"
+            "- [~] Diff BLOCKED:\n"
+            "- [~] Something blocked because reasons\n",
+        )
+        with_reason, without_reason, notes = HaikaiOrchestrator._count_blocked_tasks(f)
+        assert (with_reason, without_reason) == (0, 3)
+        assert notes == []
+
+    def test_no_checkboxes_at_all_stays_unjudgeable(self, tmp_path):
+        f = self._write(tmp_path, "Implemented everything, trust me.\n")
+        assert HaikaiOrchestrator._count_unchecked_tasks(f) is None
+        assert HaikaiOrchestrator._count_blocked_tasks(f) == (0, 0, [])
+
+    def test_unreadable_file(self, tmp_path):
+        missing = tmp_path / "nope" / "tasks.md"
+        assert HaikaiOrchestrator._count_unchecked_tasks(missing) is None
+        assert HaikaiOrchestrator._count_blocked_tasks(missing) == (0, 0, [])

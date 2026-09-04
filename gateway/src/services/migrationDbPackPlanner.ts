@@ -1074,9 +1074,23 @@ export function buildDbEpicStories(args: BuildDbEpicStoriesArgs): MigrationBookO
           description: `Reproduce the pack's per-table changesets verbatim for: ${boundedList(cluster.tables)}.`,
           workstream: ws,
           sequenceOrder: next(),
+          // Criteria must be provable in the AUTHORING environment (2026-09-04).
+          // These previously read "changesets apply cleanly in the structural
+          // context" + "expected-schema diff is green" — both DEPLOY-time
+          // verifications owned by `schema-apply-runner` (a one-shot Temurin +
+          // Liquibase container dispatched via deploy/docker-compose.db-plane.yml)
+          // and the stage-closure story. The coding agent has no JVM, no
+          // Liquibase and no target database, so it could never tick them: one
+          // agent recorded the gap in prose and passed, the next recorded it as
+          // checkbox state and halted the run. Worse, a per-cluster apply is
+          // unsatisfiable BY CONSTRUCTION even with the toolchain: the master
+          // changelog includes later clusters' files, which do not exist yet.
+          // The deploy-time checks are named under "Deferred verification" in
+          // the spec text, never dropped.
           acceptanceCriteria: [
-            `All ${cluster.tables.length} table changesets apply cleanly in the structural context.`,
-            "The pack's expected-schema diff is green for every table in this cluster.",
+            `All ${cluster.tables.length} per-table changeset file(s) exist at their pack-stated repo-relative paths and match the pack content byte-for-byte.`,
+            'Each changeset is well-formed: a "--liquibase formatted sql logicalFilePath:<pack-relative path>" header, one "--changeset" header carrying "context:structural", and exactly one balanced CREATE TABLE per file.',
+            `liquibase/db.changelog-master.xml includes every one of the ${cluster.tables.length} file(s), and changeset ids are unique across the changelog.`,
           ],
           tags: [...packTags, SEED_DB_PACK_FILES_TAG, `db_cluster:${cluster.index}`],
           traceabilitySummary: `Stamped from pack ${packView.packId} manifest — mechanical (unflagged) tables, FK dependency layer ${cluster.layer}.`,
@@ -1125,7 +1139,9 @@ export function buildDbEpicStories(args: BuildDbEpicStoriesArgs): MigrationBookO
           sequenceOrder: next(),
           acceptanceCriteria: [
             'Every pack decision for this table is resolved and reflected in a regenerated changeset.',
-            "The pack's expected-schema diff is green for this table.",
+            // Same split as the cluster stories (2026-09-04): the live apply and
+            // the expected-schema diff run at deploy time, not in the worktree.
+            'The regenerated changeset for this table is present at its pack-stated path and is well-formed (balanced CREATE TABLE, "--changeset" header, matching logicalFilePath).',
           ],
           confidence: 'high',
           readiness: open ? 'needs_user_decision' : 'needs_focused_context',

@@ -7,8 +7,12 @@
  * stories the generated spec text IS the pack's files, reproduced
  * BYTE-FOR-BYTE inside the spec — the LLM invents nothing because it is never
  * called: no context resolver, no prompt, no response validators. Acceptance
- * is mechanical (files reproduced at their exact repo-relative paths; the
- * pack's expected-schema diff stays green).
+ * is mechanical and LOCAL (files reproduced at their exact repo-relative
+ * paths, each changeset well-formed). The live apply and the pack's
+ * expected-schema diff are DEPLOY-time checks owned by `schema-apply-runner`
+ * and the stage-closure story — named under "Deferred verification" in the
+ * spec, never listed as acceptance the coding agent cannot evidence
+ * (2026-09-04).
  *
  * This is the persistence-tier sibling of the `seed_build_files` scaffold
  * carriage (which appends the confirmed manifest verbatim) — but stronger:
@@ -227,8 +231,10 @@ export function buildDbPackSpecText(args: {
       'the pack is regenerated as a whole when inputs change.'
   );
   lines.push(
-    "3. Acceptance is mechanical: the files match the pack content exactly " +
-      "and the pack's expected-schema diff remains green after they apply."
+    '3. Acceptance is mechanical and LOCAL: the files match the pack content ' +
+      'exactly and each changeset is well-formed. Do NOT attempt the live ' +
+      'Liquibase apply or the expected-schema diff — those run at deploy time ' +
+      '(see "Deferred verification" below).'
   );
   if (overlaid.length > 0) {
     lines.push(
@@ -263,7 +269,9 @@ export function buildDbPackSpecText(args: {
       '(no reflow, no rename, no comment edits).'
   );
   lines.push(
-    "- The pack's expected-schema diff returns GREEN after these changesets apply."
+    '- Every changeset above is well-formed: one balanced CREATE TABLE per ' +
+      'file, a `--changeset` header, and a `logicalFilePath` matching its ' +
+      'pack-relative path.'
   );
   lines.push("- No migration file outside this story's file list is modified.");
   if (overlaid.length > 0) {
@@ -282,6 +290,56 @@ export function buildDbPackSpecText(args: {
         'nothing above checks migration BEHAVIOUR, only that the bytes landed.'
     );
   }
+  lines.push('');
+
+  // -------------------------------------------------------------------------
+  // Deferred verification (2026-09-04)
+  //
+  // The live `contexts=structural` apply and the expected-schema diff used to
+  // sit in the acceptance list above. Both are DEPLOY-time verifications: the
+  // Node gateway cannot spawn a JVM, so the apply is dispatched as
+  // `schema-apply-runner` (one-shot Temurin + Liquibase container via
+  // deploy/docker-compose.db-plane.yml, gated on exit code and self-scored as
+  // EXEC.SCHEMA.* predicates), and the diff belongs to the stage-closure
+  // story. The IVS worktree is a code-authoring sandbox with no Java,
+  // Liquibase, Postgres or container runtime — correct for its job — so
+  // `/create-tasks` turned these criteria into checkboxes the coding agent
+  // could never tick. Per-cluster they were unsatisfiable BY CONSTRUCTION
+  // regardless of toolchain: the master changelog includes later clusters'
+  // files. Two agents hit the identical wall; one recorded it in prose and
+  // passed, the other as checkbox state and halted the run. The checks are
+  // REASSIGNED here, not dropped, and the agent is told how to record an
+  // environment-impossible item so the completeness gate can tell "cannot be
+  // evidenced here" from "not done".
+  // -------------------------------------------------------------------------
+  lines.push('## Deferred verification (NOT this story)');
+  lines.push('');
+  lines.push(
+    'The following checks are REAL but run at deploy time, in environments ' +
+      'this story does not have. Do not attempt them here, do not tick them ' +
+      'as done, and do not fail this story over them:'
+  );
+  lines.push('');
+  lines.push(
+    '- Live `contexts=structural` Liquibase apply — owner: `schema-apply-runner` ' +
+      '(one-shot Temurin + Liquibase container dispatched via ' +
+      '`deploy/docker-compose.db-plane.yml`; gated on exit code and scored as ' +
+      '`EXEC.SCHEMA.*` predicates). It applies the WHOLE master changelog once ' +
+      'every cluster has landed — a per-cluster apply cannot succeed because ' +
+      'the master changelog already includes later clusters\' files.'
+  );
+  lines.push(
+    "- The pack's expected-schema diff — owner: the stage-closure story " +
+      '"Post-swap verification: expected-schema diff green + reconciliation clean".'
+  );
+  lines.push('');
+  lines.push(
+    'If a `tasks.md` item can only be evidenced by one of the checks above, ' +
+      'record it as `- [~] <task> — BLOCKED: <reason>` (a reason is mandatory) ' +
+      'instead of ticking it or leaving it unticked. The completeness gate ' +
+      'accepts reasoned blocks and persists them on the step log; a bare `[~]` ' +
+      'with no reason fails the step.'
+  );
   lines.push('');
 
   // -------------------------------------------------------------------------
