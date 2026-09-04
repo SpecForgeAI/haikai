@@ -199,6 +199,15 @@
   gap: 8px;
 }
 
+/* Sub-field explanation inside `.secretsPrompt` (e.g. the second-identity
+ * token's four-eyes note): subordinate to the prompt body copy so the input
+ * it belongs to still reads as the primary element. */
+.secretsFieldHint {
+  font-size: 12px;
+  color: #666;
+  margin-top: -4px;
+}
+
 .cta {
   display: flex;
   gap: 8px;

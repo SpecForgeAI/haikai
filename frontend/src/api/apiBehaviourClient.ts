@@ -896,6 +896,16 @@ export interface SubmitSecretsRequest {
     password?: string;
     headerName?: string;
     headerValue?: string;
+    /**
+     * Optional SECOND identity value (four-eyes endpoints): the same auth
+     * shape as the primary with a different human's value. Passed through to
+     * the service verbatim by `toSecretsWireBody` and consumed only by
+     * `execute_http_request`'s `useSecondIdentity` per-call override. Absent
+     * = four-eyes scenarios record `manual_rec_required` instead of firing.
+     * Sent by BOTH the wizard's Step 2 and the session screen's re-enter
+     * prompt, so a restart-and-re-enter keeps the same four-eyes reach.
+     */
+    secondaryValue?: string;
     [k: string]: unknown;
   };
   dbPassword?: string | null;

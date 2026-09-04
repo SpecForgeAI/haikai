@@ -269,6 +269,15 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
   const [headerValue, setHeaderValue] = useState('');
   const [basicUsername, setBasicUsername] = useState('');
   const [basicPassword, setBasicPassword] = useState('');
+  // Second identity token (four-eyes endpoints, Item #4 2026-08-27). The
+  // wizard collects this at configure time but the re-enter path did not,
+  // so any session whose secrets were re-supplied after a restart silently
+  // lost its second identity: every four-eyes scenario then recorded
+  // `manual_rec_required` instead of firing, with no way to fix it short of
+  // rebuilding the session in the wizard. Offered for the same auth shapes
+  // the service's `resolveSecondIdentityOverride` can swap a value into
+  // (bearer / custom header) -- `basic` and `none` cannot carry one.
+  const [secondIdentityValue, setSecondIdentityValue] = useState('');
   const [dbPassword, setDbPassword] = useState('');
   // Optional read-only observation login (credential-role split) — the
   // re-enter path must be able to restore the same split the wizard set up.
@@ -787,6 +796,15 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
         break;
     }
 
+    // Second identity (four-eyes endpoints): rides the SAME auth shape as the
+    // primary with a DIFFERENT human's value swapped in per call. Same rule as
+    // the wizard's `buildSecretsBundle()` -- only bearer / header sessions can
+    // carry one, so `basic` and `none` never send the field.
+    const secondIdentity = secondIdentityValue.trim();
+    if (secondIdentity && (authType === 'bearer' || authType === 'header')) {
+      apiAuth.secondaryValue = secondIdentity;
+    }
+
     try {
       await submitSecrets(projectId, architectureId, sessionId, {
         apiAuth,
@@ -804,6 +822,7 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
       setHeaderValue('');
       setBasicUsername('');
       setBasicPassword('');
+      setSecondIdentityValue('');
       setDbPassword('');
       setDbReadonlyUsername('');
       setDbReadonlyPassword('');
@@ -822,6 +841,7 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
     headerValue,
     basicUsername,
     basicPassword,
+    secondIdentityValue,
     dbPassword,
     dbReadonlyUsername,
     dbReadonlyPassword,
@@ -1309,6 +1329,31 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
                     onChange={(e) => setBasicPassword(e.target.value)}
                     data-testid="capture-session-detail-secrets-basic-password"
                   />
+                </>
+              )}
+              {/* Second identity token (four-eyes endpoints) -- offered for
+                  the auth shapes that can carry one, mirroring the wizard's
+                  Step-2 field. Omitting it here is what silently downgraded
+                  four-eyes scenarios to manual-reconciliation todos after a
+                  restart. */}
+              {(authType === 'bearer' || authType === 'header') && (
+                <>
+                  <input
+                    type="password"
+                    placeholder="Second identity token (optional — four-eyes endpoints)"
+                    aria-label="Second identity token (optional — four-eyes endpoints)"
+                    value={secondIdentityValue}
+                    onChange={(e) => setSecondIdentityValue(e.target.value)}
+                    data-testid="capture-session-detail-secrets-second-identity"
+                  />
+                  <span className={styles.secretsFieldHint}>
+                    A DIFFERENT user&apos;s token in the same auth shape.
+                    Endpoints enforcing a four-eyes control (a user cannot
+                    approve/reject their own resource) can only reach their
+                    happy path as a second identity. Without this token those
+                    scenarios are recorded as manual-reconciliation todos &mdash;
+                    never fake failures.
+                  </span>
                 </>
               )}
               {/* DB password field -- shown for every auth type. */}
