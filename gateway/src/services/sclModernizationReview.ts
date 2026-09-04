@@ -235,9 +235,15 @@ function buildProposalPrompt(
   return (
     'Observed unmapped third-party types (with example use sites):\n' +
     `${JSON.stringify(requests, null, 2)}\n\n` +
-    'Respond with a JSON array exactly of the form ' +
-    '[{"from": "<the listed type, verbatim>", "proposedTo": "<replacement type ' +
-    'or policy>", "rationale": "<= 20 words"}] with one entry per listed type.'
+    // MUST stay an OBJECT envelope. `defaultLlm` sends `response_format:
+    // { type: 'json_object' }` (jsonMode), which FORBIDS a top-level JSON
+    // array -- so asking for a bare array here contradicted the request
+    // itself and a stricter model refused it outright. See
+    // `extractProposalArray` for what that cost us.
+    'Respond with a JSON OBJECT of the form ' +
+    '{"proposals": [{"from": "<the listed type, verbatim>", "proposedTo": ' +
+    '"<replacement type or policy>", "rationale": "<= 20 words"}]} with one ' +
+    'entry per listed type.'
   );
 }
 
@@ -247,12 +253,63 @@ interface LlmProposal {
   rationale: string;
 }
 
+/**
+ * Resolve the proposals array out of the LLM reply (2026-09-04).
+ *
+ * Diagnosis, from the `[diag-gateway] ... proposal parse FAILED` log line:
+ * the provider answered 200 with
+ *   {"error": "Invalid instruction conflict: user requested a JSON array,
+ *              but final response schema is constrained to a JSON object."}
+ * The prompt asked for a bare array while `defaultLlm` sends jsonMode
+ * (`response_format: json_object`), which forbids a top-level array. Both
+ * were introduced in the same commit, so the contradiction was latent from
+ * day one: the old first-`[`-to-last-`]` scan found the inner array whenever
+ * the model resolved the conflict by wrapping it, and a stricter model
+ * stopped guessing and started refusing. The bug is ours, not the provider's.
+ *
+ * Priority order:
+ *   1. `{"proposals": [...]}`             -- the canonical envelope (prompt);
+ *   2. a lone array-valued property        -- a synonym (`mappings`, `items`)
+ *                                             never costs a whole batch;
+ *   3. a bare top-level array              -- pre-fix replies keep working;
+ *   4. non-JSON (markdown fence, prose)    -- the historical bracket scan.
+ * Failures name the cause (the banner renders `proposalPass.error`
+ * verbatim): the model's own refusal text, an empty reply, or the top-level
+ * keys of an object with no array.
+ */
+function extractProposalArray(content: string): unknown[] {
+  const text = (content ?? '').trim();
+  if (text === '') throw new Error('LLM returned an empty response');
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text) as unknown;
+  } catch {
+    // Not a JSON document (fenced / prose preamble): historical bracket scan.
+    const start = text.indexOf('[');
+    const end = text.lastIndexOf(']');
+    if (start < 0 || end <= start) throw new Error('LLM response contained no JSON array');
+    const raw = JSON.parse(text.slice(start, end + 1)) as unknown;
+    if (!Array.isArray(raw)) throw new Error('LLM response was not a JSON array');
+    return raw;
+  }
+  if (Array.isArray(parsed)) return parsed;
+  if (parsed && typeof parsed === 'object') {
+    const obj = parsed as Record<string, unknown>;
+    if (Array.isArray(obj.proposals)) return obj.proposals;
+    const arrayKeys = Object.keys(obj).filter((k) => Array.isArray(obj[k]));
+    if (arrayKeys.length === 1) return obj[arrayKeys[0]] as unknown[];
+    if (typeof obj.error === 'string' && obj.error.trim() !== '') {
+      throw new Error(`LLM declined to produce proposals: ${obj.error.trim()}`);
+    }
+    throw new Error(
+      `LLM response contained no proposals array (top-level keys: ${Object.keys(obj).join(', ') || 'none'})`
+    );
+  }
+  throw new Error('LLM response was not a JSON array');
+}
+
 function parseProposals(content: string): LlmProposal[] {
-  const start = content.indexOf('[');
-  const end = content.lastIndexOf(']');
-  if (start < 0 || end <= start) throw new Error('LLM response contained no JSON array');
-  const raw = JSON.parse(content.slice(start, end + 1)) as unknown;
-  if (!Array.isArray(raw)) throw new Error('LLM response was not a JSON array');
+  const raw = extractProposalArray(content);
   const proposals: LlmProposal[] = [];
   for (const item of raw) {
     const p = (item ?? {}) as Record<string, unknown>;

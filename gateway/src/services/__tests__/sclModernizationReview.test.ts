@@ -257,6 +257,51 @@ describe('buildModernizationReview — LLM proposals', () => {
     expect(deps.patchScan).not.toHaveBeenCalled();
   });
 
+  describe('proposal envelope (2026-09-04: jsonMode forbids a top-level array)', () => {
+    const PROPOSAL = { from: 'com.thirdparty.Money', proposedTo: 'java.math.BigDecimal', rationale: 'Exact-scale decimal.' };
+
+    it('asks for a JSON OBJECT envelope, never a bare array (the request-format contradiction)', async () => {
+      const deps = makeDeps({ llm: jest.fn().mockResolvedValue({ content: JSON.stringify({ proposals: [PROPOSAL] }) }) });
+      await buildModernizationReview(ARGS, deps);
+      const prompt = deps.llm.mock.calls[0][0].userPrompt as string;
+      expect(prompt).toContain('Respond with a JSON OBJECT of the form {"proposals": [');
+      expect(prompt).not.toContain('Respond with a JSON array');
+    });
+
+    it.each([
+      ['canonical envelope', JSON.stringify({ proposals: [PROPOSAL] })],
+      ['lone array-valued synonym property', JSON.stringify({ mappings: [PROPOSAL], note: 'x' })],
+      ['bare top-level array (pre-fix replies)', JSON.stringify([PROPOSAL])],
+      ['markdown-fenced array', '```json\n' + JSON.stringify([PROPOSAL]) + '\n```'],
+      ['prose preamble around an envelope', 'Here you go:\n' + JSON.stringify({ proposals: [PROPOSAL] }) + '\nDone.'],
+    ])('applies proposals from a %s', async (_label, content) => {
+      const deps = makeDeps({ llm: jest.fn().mockResolvedValue({ content }) });
+      const review = await buildModernizationReview(ARGS, deps);
+      expect(review.proposalPass).toMatchObject({ status: 'ok', proposed: 1 });
+      const money = review.rows.find((r) => r.from === 'com.thirdparty.Money');
+      expect(money?.defaultTo).toBe('java.math.BigDecimal');
+      expect(money?.provenance).toBe('llm_proposed');
+    });
+
+    it.each([
+      [
+        "the model's own refusal",
+        JSON.stringify({ error: 'Invalid instruction conflict: user requested a JSON array, but final response schema is constrained to a JSON object.' }),
+        'LLM declined to produce proposals: Invalid instruction conflict: user requested a JSON array, but final response schema is constrained to a JSON object.',
+      ],
+      ['an empty reply', '   ', 'LLM returned an empty response'],
+      ['an object with no array', JSON.stringify({ status: 'ok', count: 0 }), 'LLM response contained no proposals array (top-level keys: status, count)'],
+      ['prose with no array', 'I cannot help with that.', 'LLM response contained no JSON array'],
+    ])('names the cause on %s (banner renders proposalPass.error verbatim)', async (_label, content, error) => {
+      const deps = makeDeps({ llm: jest.fn().mockResolvedValue({ content }) });
+      const review = await buildModernizationReview(ARGS, deps);
+      expect(review.proposalPass).toMatchObject({ status: 'failed', source: 'none', proposed: 0, error });
+      const money = review.rows.find((r) => r.from === 'com.thirdparty.Money');
+      expect(money?.provenance).toBe('unmapped');
+      expect(deps.patchScan).not.toHaveBeenCalled();
+    });
+  });
+
   it('REPLAYS the cached per-scan proposals without an LLM call (deterministic loads)', async () => {
     const deps = makeDeps({
       fetchLatestScan: jest.fn().mockResolvedValue(scanWithCachedProposals()),
