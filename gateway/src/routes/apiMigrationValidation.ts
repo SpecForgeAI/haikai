@@ -513,6 +513,7 @@ apiMigrationValidationRouter.post('/api-migration-validation/llm-tool-loop', asy
 //   parse-oas | test-api-connection | test-db-connection | start | cancel
 //   | secrets | extract-endpoints | reconcile-inventory | account-endpoints
 //   | manual-capture | add-operation | data-type-defaults-preview
+//   | retry-uncovered | exclude-endpoint | refresh-oas-cache
 //
 // Spec: 2026-06-11 Model-Seeded Capture Inventory -- Task Group 3 adds the
 // `reconcile-inventory` (configure-time + display reconciliation read) and
@@ -550,15 +551,38 @@ export const API_BEHAVIOUR_ACTION_PATHS = [
   'data-type-defaults-preview',
   'retry-uncovered',
   'exclude-endpoint',
+  // Parse-ONLY contract refresh (2026-08-08). The "Retry uncovered APIs"
+  // modal's optional "API contract" picker posts the SAME multipart shape as
+  // the wizard's `parse-oas` (one-or-more parts under the field name `file`).
+  // It was absent from this list, so the gateway had no Express route for it
+  // and the browser got the HTML "Cannot POST ..." 404 verbatim in the
+  // modal's error banner -- a contract the wizard had just accepted looked
+  // like a bad file on retry.
+  'refresh-oas-cache',
 ] as const;
 
 type ApiBehaviourAction = (typeof API_BEHAVIOUR_ACTION_PATHS)[number];
 
 /**
- * Multipart-aware passthrough configuration. `parse-oas` is the only action
- * that may receive a multipart body (ad-hoc OAS upload); the other five are
- * always JSON. Using `multer().none()` for non-file endpoints would strip
- * fields, so we segregate by action and forward bytes verbatim.
+ * Actions that may carry a MULTIPART body (contract file uploads) rather than
+ * JSON. Both the route-registration loop and `proxyActionToService` consult
+ * this ONE set, so a multipart action can never be half-wired again (on the
+ * multer pipeline but not the body-rebuild branch, or vice versa).
+ *
+ * Every member forwards its parts under the same `file` field name and is
+ * handled by the identical rebuild code path, so the retry flow's contract
+ * upload behaves exactly as the wizard's does.
+ */
+const MULTIPART_ACTIONS: ReadonlySet<string> = new Set<ApiBehaviourAction>([
+  'parse-oas',
+  'refresh-oas-cache',
+]);
+
+/**
+ * Multipart-aware passthrough configuration, applied to the actions listed in
+ * `MULTIPART_ACTIONS` (ad-hoc contract uploads); every other action is always
+ * JSON. Using `multer().none()` for non-file endpoints would strip fields, so
+ * we segregate by action and forward bytes verbatim.
  */
 const actionUpload = multer({
   storage: multer.memoryStorage(),
@@ -576,8 +600,9 @@ const actionUpload = multer({
  *        ?projectId=...&architectureId=...
  *
  * For JSON actions: forward the parsed body verbatim.
- * For multipart `parse-oas`: rebuild a multipart body with the file part
- * (only when a file was actually uploaded) and forward.
+ * For the `MULTIPART_ACTIONS` (`parse-oas`, `refresh-oas-cache`): rebuild a
+ * multipart body with the file part(s) (only when a file was actually
+ * uploaded) and forward.
  */
 async function proxyActionToService(
   req: Request,
@@ -614,7 +639,7 @@ async function proxyActionToService(
     if (method === 'GET') {
       // Read-only action (compensation-preflight): no body on a GET.
       init = { method: 'GET', headers: { Accept: 'application/json' } };
-    } else if (action === 'parse-oas' && Array.isArray(files) && files.length > 0) {
+    } else if (MULTIPART_ACTIONS.has(action) && Array.isArray(files) && files.length > 0) {
       // Rebuild the multipart body, forwarding EVERY uploaded part under the
       // same `file` field name (an OAS doc on its own, OR a WADL + its XSD
       // grammar file(s)). We use the global FormData / Blob shipped with
@@ -695,18 +720,20 @@ async function proxyActionToService(
 }
 
 /**
- * Register all twelve action proxies under the gateway URL shape:
+ * Register every action proxy in `API_BEHAVIOUR_ACTION_PATHS` under the
+ * gateway URL shape:
  *   POST /projects/:projectId/architectures/:architectureId/
  *        api-behaviour/capture-sessions/:sessionId/<action>
  *
- * `parse-oas` accepts an optional multipart upload via `multer().array('file')`
- * The other ten accept only JSON; multer is not on their pipeline.
+ * The `MULTIPART_ACTIONS` accept an optional multipart upload via
+ * `multer().array('file')`; the rest accept only JSON and multer is not on
+ * their pipeline.
  */
 for (const action of API_BEHAVIOUR_ACTION_PATHS) {
   const path =
     `/projects/:projectId/architectures/:architectureId/` +
     `api-behaviour/capture-sessions/:sessionId/${action}`;
-  if (action === 'parse-oas') {
+  if (MULTIPART_ACTIONS.has(action)) {
     apiMigrationValidationRouter.post(path, actionUpload.array('file'), (req, res) =>
       proxyActionToService(req, res, action),
     );
