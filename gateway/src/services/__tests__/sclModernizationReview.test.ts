@@ -302,6 +302,51 @@ describe('buildModernizationReview — LLM proposals', () => {
     });
   });
 
+  describe('proposal eligibility (2026-09-04: every unmapped row, judgement families review-advised)', () => {
+    it('sends a consolidation row to the LLM with its family and lands it review-advised; a type row lands llm_proposed', async () => {
+      const deps = makeDeps({
+        fetchLatestScan: jest.fn().mockResolvedValue({
+          id: 'scan-1',
+          status: 'completed',
+          stats_json: {
+            findings: [{ kind: 'dispatch_ambiguity', detail: '2 impls', contract_key: 'T-dispatch' }],
+          },
+        }),
+        llm: jest.fn().mockResolvedValue({
+          content: JSON.stringify({
+            proposals: [
+              { from: 'com.thirdparty.Money', proposedTo: 'java.math.BigDecimal', rationale: 'Exact-scale decimal.' },
+              {
+                from: 'ambiguous dynamic dispatch site',
+                proposedTo: 'keep both implementations; document the dispatch rule on the interface',
+                rationale: 'Merge/keep is an ownership call; start from keep.',
+              },
+            ],
+          }),
+        }),
+      });
+
+      const review = await buildModernizationReview(ARGS, deps);
+
+      // Both unmapped rows were requested, with the family carried for the prompt.
+      expect(review.proposalPass).toMatchObject({ status: 'ok', eligible: 2, proposed: 2 });
+      const prompt = deps.llm.mock.calls[0][0].userPrompt as string;
+      expect(prompt).toContain('"family": "consolidation"');
+      expect(prompt).toContain('ambiguous dynamic dispatch site');
+      const system = deps.llm.mock.calls[0][0].systemPrompt as string;
+      expect(system).toContain('near-duplicate implementation cluster');
+
+      const dispatch = review.rows.find((r) => r.from === 'ambiguous dynamic dispatch site');
+      expect(dispatch?.provenance).toBe('llm_proposed_review_advised');
+      expect(dispatch?.defaultTo).toBe('keep both implementations; document the dispatch rule on the interface');
+      expect(dispatch?.proposalRationale).toBe('Merge/keep is an ownership call; start from keep.');
+
+      const money = review.rows.find((r) => r.from === 'com.thirdparty.Money');
+      expect(money?.provenance).toBe('llm_proposed');
+      expect(money?.defaultTo).toBe('java.math.BigDecimal');
+    });
+  });
+
   it('REPLAYS the cached per-scan proposals without an LLM call (deterministic loads)', async () => {
     const deps = makeDeps({
       fetchLatestScan: jest.fn().mockResolvedValue(scanWithCachedProposals()),

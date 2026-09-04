@@ -218,6 +218,22 @@ const JAVA8_TO_JAVA21_SPRING_BOOT_RULES: ModernizationRule[] = [
     to: 'sealed interface + records',
     notes: 'Discriminators are normative — wire discriminator values carried verbatim.',
   },
+  {
+    // 2026-09-04: the slicer's `mutated_in_flight` flag (a setter called after
+    // construction) previously reached the review as an un-ruled flag with no
+    // default at all. It is the explicit exception to modernize.dto.pojo-record:
+    // such shapes are record-conversion hazards and keep a mutable class (or a
+    // record + builder) instead.
+    family: 'dto',
+    code: 'modernize.dto.mutated-in-flight',
+    matcher: { kind: 'flag', value: 'mutated_in_flight' },
+    from: 'DTO mutated after construction (setter in flight)',
+    to: 'keep mutable class (or record + builder) — excluded from record conversion',
+    notes:
+      'Explicit exception to modernize.dto.pojo-record: a shape whose state is ' +
+      'changed after construction cannot become a plain record without changing ' +
+      'behaviour. Keep it mutable, or introduce a builder and construct once.',
+  },
 
   // -- dataaccess -----------------------------------------------------------
   {

@@ -1092,7 +1092,14 @@ export function selectTranslateAllTargets(rows: TranslationRow[]): TranslationRo
   return rows.filter(
     (r) =>
       r.disposition === 'translate' &&
-      (r.pipeline_state === 'pending' || r.pipeline_state === 'failed')
+      // 2026-09-04: 'translating' admitted too. A run that died mid-flight (a
+      // 500 after the rows were stamped translating, before any moved to
+      // drafted/failed) left rows stuck there indefinitely; the per-row Retry
+      // already permitted them (assertSingleTargetEligible), but Translate-all
+      // claimed there was no work.
+      (r.pipeline_state === 'pending' ||
+        r.pipeline_state === 'failed' ||
+        r.pipeline_state === 'translating')
   );
 }
 

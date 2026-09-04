@@ -80,6 +80,13 @@ describe('MODERNIZATION_RULESETS — sanity', () => {
     );
     expect(byCode.get('modernize.dto.pojo-record')?.to).toBe('Java record');
     expect(byCode.get('modernize.dto.pojo-record')?.notes).toContain('mutated-in-flight');
+    // 2026-09-04: the flag itself now has a rule (was an un-ruled blank in the review).
+    const mutated = byCode.get('modernize.dto.mutated-in-flight');
+    expect(mutated).toBeDefined();
+    expect(mutated?.family).toBe('dto');
+    expect(mutated?.matcher).toEqual({ kind: 'flag', value: 'mutated_in_flight' });
+    expect(mutated?.to).toContain('keep mutable class');
+    expect(mutated?.notes).toContain('modernize.dto.pojo-record');
     expect(byCode.get('modernize.serialization.jaxb-jackson')?.notes).toContain('preserved');
     expect(byCode.get('modernize.config.legacy-properties')?.notes).toContain('verbatim');
 

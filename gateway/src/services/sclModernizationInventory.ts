@@ -13,13 +13,21 @@
  * - tables:  annotations (matched against the ruleset's annotationPrefix
  *            rules), `opaque:<type>` occurrences in signatureInputs and rows;
  * - boundaries (Q- contracts): one 'dataaccess' idiom, count = boundary count;
- * - scan stats findings `near_duplicate_cluster` / `dispatch_ambiguity`:
- *   family 'consolidation' rows — provenance 'unmapped', these ALWAYS need a
- *   human merge/keep call (no ruleset default exists by design).
+ * - scan stats findings `near_duplicate_cluster` / `dispatch_ambiguity` /
+ *   `data_derived_authorisation` / `aspect_pointcut_unresolved`: family
+ *   'consolidation' rows — no ruleset default exists by design; the review
+ *   pass proposes a starting point which the UI labels
+ *   'llm_proposed_review_advised' because a human merge/keep call is still
+ *   the decision (2026-09-04: previously these rode 'unmapped' with NO
+ *   suggestion at all, so every such row was a blank the operator had to
+ *   fill from nothing).
  *
  * Matching against services/sclModernizationRuleset.ts fills
  * matchedRuleCode/defaultTo (provenance 'ruleset_default'); anything observed
  * but unmatched rides provenance 'unmapped' for the review pass to propose on.
+ * A value the operator typed or changed is labelled 'user_provided' by the
+ * review UI at confirm time (derived from the input differing from the
+ * default, never stored on the inventory row).
  */
 
 import { SclContractWire } from './sclAnnotationPass';
@@ -38,7 +46,14 @@ export interface ObservedIdiomCite {
   sourcePath: string;
 }
 
-export type ObservedIdiomProvenance = 'ruleset_default' | 'llm_proposed' | 'unmapped';
+export type ObservedIdiomProvenance =
+  | 'ruleset_default'
+  | 'llm_proposed'
+  /** LLM starting point on a judgement family (consolidation): the model
+   *  cannot know whether two near-duplicates should merge — review is
+   *  advised, not optional. */
+  | 'llm_proposed_review_advised'
+  | 'unmapped';
 
 export interface ObservedIdiom {
   family: string;
@@ -356,7 +371,8 @@ export function computeModernizationInventory(
     if (acc.count > 0) {
       idioms.push({
         // Merge/keep consolidation calls ALWAYS need a human — no ruleset
-        // default exists by design, so these ride 'unmapped'.
+        // default exists by design, so these ride 'unmapped' here and the
+        // review pass proposes a starting point (labelled review-advised).
         family: 'consolidation',
         matcherKey: `consolidation:${kind}`,
         usageCount: acc.count,

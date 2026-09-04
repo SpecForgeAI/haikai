@@ -14,7 +14,10 @@
  *                example_cites: [{symbol, source_path}],
  *                matched_rule_code: string|null, from,
  *                default_to: string|null,
- *                provenance: 'ruleset_default'|'llm_proposed'|'unmapped',
+ *                provenance: 'ruleset_default'|'llm_proposed'
+ *                            |'llm_proposed_review_advised'|'unmapped',
+ *                (confirm rows may also carry 'user_provided' — derived by
+ *                the review UI when the operator typed/changed the value)
  *                notes: string|null, proposal_rationale?: string }],
  *       existing_decisions: [{ decision_id, decision_code, answer_value,
  *                              answer_summary, scope_kind, created_at }],

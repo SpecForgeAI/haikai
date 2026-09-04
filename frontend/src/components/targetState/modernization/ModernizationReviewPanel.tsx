@@ -56,6 +56,7 @@ import {
   type SclModernizationReview,
   type SclModernizationReviewRow,
   type SclProposalPass,
+  type SclModernizationProvenance,
 } from '../../../api/sclModernizationApi';
 import styles from './ModernizationReviewPanel.module.css';
 
@@ -94,11 +95,30 @@ function citesTitle(row: SclModernizationReviewRow): string | undefined {
   return cites.map((c) => `${c.symbol} — ${c.source_path}`).join('\n');
 }
 
-const PROVENANCE_LABEL: Record<SclModernizationReviewRow['provenance'], string> = {
+const PROVENANCE_LABEL: Record<SclModernizationProvenance, string> = {
   ruleset_default: 'ruleset default',
   llm_proposed: 'LLM proposed',
+  llm_proposed_review_advised: 'LLM proposed — user review highly advised',
+  user_provided: 'user provided',
   unmapped: 'unmapped — needs a value',
 };
+
+/**
+ * The provenance a row's value ACTUALLY has right now (2026-09-04): once the
+ * operator types or changes the target, it is theirs — the badge, its title
+ * and the confirm payload all say 'user_provided' rather than crediting the
+ * ruleset or the LLM for a value they did not produce. An untouched value
+ * keeps the row's own provenance; an empty input is still 'unmapped'.
+ */
+function effectiveRowProvenance(
+  row: Pick<SclModernizationReviewRow, 'provenance' | 'default_to'>,
+  value: string,
+): SclModernizationProvenance {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return row.provenance === 'unmapped' ? 'unmapped' : row.provenance;
+  if (trimmed !== (row.default_to ?? '').trim()) return 'user_provided';
+  return row.provenance;
+}
 
 export function ModernizationReviewPanel({
   projectId,
@@ -268,7 +288,7 @@ export function ModernizationReviewPanel({
         family: row.family,
         from: row.from,
         to: (targetValues[rowKey(row)] ?? '').trim(),
-        provenance: row.provenance,
+        provenance: effectiveRowProvenance(row, targetValues[rowKey(row)] ?? ''),
         usage_count: row.usage_count,
         example_cites: row.example_cites,
       }));
@@ -583,12 +603,17 @@ function FamilyGroup({
         const isEmpty = value.trim().length === 0;
         const isConfirmed = confirmedCodes.has(code);
         const rowError = rowErrors[code];
+        const provenance = effectiveRowProvenance(row, value);
         const provenanceClass =
-          row.provenance === 'llm_proposed'
+          provenance === 'llm_proposed'
             ? `${styles.provenanceBadge} ${styles.provenanceLlm}`
-            : row.provenance === 'unmapped'
-              ? `${styles.provenanceBadge} ${styles.provenanceUnmapped}`
-              : styles.provenanceBadge;
+            : provenance === 'llm_proposed_review_advised'
+              ? `${styles.provenanceBadge} ${styles.provenanceReviewAdvised}`
+              : provenance === 'user_provided'
+                ? `${styles.provenanceBadge} ${styles.provenanceUserProvided}`
+                : provenance === 'unmapped'
+                  ? `${styles.provenanceBadge} ${styles.provenanceUnmapped}`
+                  : styles.provenanceBadge;
         return (
           <tr key={key} data-testid="modernization-row" data-decision-code={code}>
             <td className={styles.fromCell} title={citesTitle(row)}>
@@ -632,13 +657,15 @@ function FamilyGroup({
               <span
                 className={provenanceClass}
                 title={
-                  row.provenance === 'llm_proposed'
+                  provenance === 'llm_proposed' || provenance === 'llm_proposed_review_advised'
                     ? row.proposal_rationale
-                    : undefined
+                    : provenance === 'user_provided'
+                      ? 'Value entered or changed by you'
+                      : undefined
                 }
                 data-testid="modernization-provenance-badge"
               >
-                {PROVENANCE_LABEL[row.provenance]}
+                {PROVENANCE_LABEL[provenance]}
               </span>
             </td>
             <td className={styles.notesCell}>{row.notes ?? ''}</td>
