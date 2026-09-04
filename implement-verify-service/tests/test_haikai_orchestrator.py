@@ -779,3 +779,53 @@ class TestBlockedWithReasonTasks:
         missing = tmp_path / "nope" / "tasks.md"
         assert HaikaiOrchestrator._count_unchecked_tasks(missing) is None
         assert HaikaiOrchestrator._count_blocked_tasks(missing) == (0, 0, [])
+
+    def test_reason_in_subtree_counts(self, tmp_path):
+        # The shape agents actually produce: the reason as an indented
+        # sub-bullet under the box (three reasoned, zero malformed).
+        f = self._write(
+            tmp_path,
+            "- [~] Live contexts=structural apply\n"
+            "  - BLOCKED: no JVM/Liquibase in this worktree; owner schema-apply-runner\n"
+            "- [~] Expected-schema diff\n"
+            "    Blocked - runs in the stage-closure story\n"
+            "- [~] Reconciliation\n"
+            "\t- blocked \u2014 deploy-time only\n"
+            "- [x] Write changesets\n",
+        )
+        with_reason, without_reason, notes = HaikaiOrchestrator._count_blocked_tasks(f)
+        assert (with_reason, without_reason) == (3, 0)
+        assert notes[0] == (
+            "Live contexts=structural apply \u2014 - BLOCKED: no JVM/Liquibase in this worktree; "
+            "owner schema-apply-runner"
+        )
+        assert HaikaiOrchestrator._count_unchecked_tasks(f) == 0
+
+    def test_unreasoned_parent_with_unreasoned_children_stays_malformed(self, tmp_path):
+        f = self._write(
+            tmp_path,
+            "- [~] Parent\n"
+            "  - [~] Child\n"
+            "  - some note without the keyword\n",
+        )
+        assert HaikaiOrchestrator._count_blocked_tasks(f) == (0, 2, [])
+
+    def test_same_indent_sibling_reason_does_not_leak(self, tmp_path):
+        f = self._write(
+            tmp_path,
+            "- [~] First (no reason)\n"
+            "- [~] Second \u2014 BLOCKED: deploy-time\n",
+        )
+        with_reason, without_reason, notes = HaikaiOrchestrator._count_blocked_tasks(f)
+        assert (with_reason, without_reason) == (1, 1)
+        assert notes == ["Second \u2014 BLOCKED: deploy-time"]
+
+    def test_tabs_and_spaces_compare_as_indent(self, tmp_path):
+        f = self._write(
+            tmp_path,
+            "\t- [~] Tabbed box\n"
+            "        - BLOCKED: reason at 8 spaces (deeper than one tab)\n"
+            "\t- [~] Sibling at same tab indent\n",
+        )
+        with_reason, without_reason, _ = HaikaiOrchestrator._count_blocked_tasks(f)
+        assert (with_reason, without_reason) == (1, 1)
