@@ -362,7 +362,35 @@ async function requestProposals(
     userPrompt: buildProposalPrompt(requests),
     requestTag,
   });
-  return parseProposals(content);
+  try {
+    return parseProposals(content);
+  } catch (parseError) {
+    // Diagnostic (2026-09-04): a proposal-parse failure used to surface only
+    // as the pass's generic "failed" outcome, with no way to see WHAT the LLM
+    // returned. Log the raw response shape (never the prompt) so the failure
+    // can be classified from the gateway log alone:
+    //   startsWithBrace / startsWithBracket -- an object or array came back
+    //     (a wrapper object around the array is the common case);
+    //   hasOpenBracket && !hasCloseBracket  -- truncated output (token cap);
+    //   neither bracket                     -- prose / refusal / fenced text;
+    //   contentLength 0                     -- empty completion.
+    // contentHead / contentTail carry the first 400 and last 200 chars so a
+    // fence or trailing prose is visible without dumping the whole body.
+    const shown = content ?? '';
+    logger.warn('[diag-gateway] scl_modernization proposal parse FAILED -- raw LLM response shape', {
+      requestTag,
+      requestedCount: targets.length,
+      parseError: parseError instanceof Error ? parseError.message : 'Unknown error',
+      contentLength: shown.length,
+      startsWithBrace: shown.trimStart().startsWith('{'),
+      startsWithBracket: shown.trimStart().startsWith('['),
+      hasOpenBracket: shown.includes('['),
+      hasCloseBracket: shown.includes(']'),
+      contentHead: shown.slice(0, 400),
+      contentTail: shown.length > 400 ? shown.slice(-200) : '',
+    });
+    throw parseError;
+  }
 }
 
 /** The wire-visible outcome of the proposal pass (bug fix 2026-08-30: a
