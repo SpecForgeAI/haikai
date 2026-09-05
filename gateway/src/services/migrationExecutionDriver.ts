@@ -2002,7 +2002,31 @@ export async function runSpecSegment(
   // decoupled (kills the bogus "deploy failed: no target serve spec" error
   // on every db-plane final item).
   const itemPlane = descriptor.plane ?? planeForWorkstream(descriptor.workstream);
-  const wantsHaiboxDeploy = (item.deploy_on_complete ?? false) && itemPlane !== 'db';
+  // A haibox deploy exists to serve the API reconcile over the plane's
+  // endpoints (2026-09-05). A plane-final SERVICE item whose plane bears no
+  // endpoint at all (a scaffold-only batch) has nothing to reconcile, so the
+  // deploy is not requested: the item completes at `implemented` and the plane
+  // boundary is handled without a reconcile (see advanceRunOnBuildResult). The
+  // old rule keyed the deploy on "last item of the plane" alone, so a deploy
+  // that could not run (no container runtime here) halted a run in which
+  // implement succeeded, tests passed and the MR was raised. The check is
+  // POSITIVE: the deploy is skipped only when the plane's items are all known
+  // to be endpoint-free; unknown (hand-built descriptor, unreadable book)
+  // keeps the deploy.
+  const planeEndpointFree =
+    itemPlane === 'service' &&
+    descriptor.hasEndpointIds === false &&
+    (item.deploy_on_complete ?? false) &&
+    !(await planeHasEndpointBearingItem(scope, run, item, itemPlane, deps));
+  if (planeEndpointFree) {
+    logger.info('[diag-gateway] migration_execution_driver deploy_skipped_endpoint_free_plane', {
+      projectId,
+      runId,
+      runItemId,
+      plane: itemPlane,
+    });
+  }
+  const wantsHaiboxDeploy = (item.deploy_on_complete ?? false) && itemPlane !== 'db' && !planeEndpointFree;
   // Run-branch chaining (2026-08-06): with chained branches the STAGE-FINAL
   // branch carries the whole chain's diff — only it opens the ONE MR.
   // Non-final items commit + push MR-less. DB-plane items ALL suppress: the
@@ -2493,6 +2517,8 @@ export type BuildResultOutcome =
 export type BugResultOutcome = Exclude<BuildResultOutcome, 'implemented'>;
 
 export interface BuildResultAdvanceInput {
+  /** Delivered branch (2026-09-05): folded from the IVS callback's spec_git. */
+  branch?: string | null;
   company: string;
   project: string;
   jobId: string;
@@ -2597,6 +2623,15 @@ export async function advanceRunOnBuildResult(
     return await advanceBatchOnBuildResult(input, scope, run, batchSiblings, deps);
   }
 
+  // Record where the work LANDED before deciding anything about the outcome
+  // (2026-09-05). A deploy failure after a successful push + MR used to leave
+  // the item with branch/pr_url null: the deployed/implemented paths wrote
+  // pr_url but every terminal-failure path (haltRunForItem / batch halts) wrote
+  // only status + outcome + error_detail, and `branch` was never written for a
+  // service-plane item on ANY path. The pointers are facts about delivery,
+  // independent of whether the deploy afterwards succeeded.
+  await recordDeliveredArtefacts(deps, projectId, runItemId, input);
+
   // Any terminal outcome that is not implemented/deployed halts the run —
   // UNLESS it is a TRANSIENT upstream failure with retry budget left
   // (Robustness R2, 2026-08-05): then the driver absorbs it and schedules a
@@ -2699,6 +2734,7 @@ export async function advanceRunOnBuildResult(
       outcome: 'deployed',
       target_base_url: input.targetBaseUrl ?? null,
       pr_url: input.prUrl ?? null,
+      ...(input.branch ? { branch: input.branch } : {}),
     });
 
     // Pending items still exist => a later plane awaits => this is a plane
@@ -2770,6 +2806,7 @@ export async function advanceRunOnBuildResult(
     status: RUN_ITEM_STATUS.IMPLEMENTED,
     outcome: 'implemented',
     pr_url: input.prUrl ?? null,
+    ...(input.branch ? { branch: input.branch } : {}),
   });
   logger.info('[diag-gateway] migration_execution_driver spec_implemented', {
     projectId,
@@ -2809,12 +2846,104 @@ export async function advanceRunOnBuildResult(
       kickDbPlaneCompletion(scope, run, item, deps);
       return 'db_completion_chain_started';
     }
+    if (plane === 'service') {
+      // The plane-final service item came back `implemented`, not `deployed`:
+      // no deploy was performed (an endpoint-free plane does not request one;
+      // a FAILED deploy reports `error`, never `implemented`). There is nothing
+      // to reconcile, so the plane boundary is honoured WITHOUT a reconcile: a
+      // later plane means PAUSE for approval exactly as a deployed plane
+      // would; the final plane completes the run at implemented.
+      const hasPendingLater = (run.items ?? []).some(
+        (i) => i.id !== runItemId && i.status === RUN_ITEM_STATUS.PENDING
+      );
+      logger.info('[diag-gateway] migration_execution_driver plane_complete_no_reconcile', {
+        projectId,
+        runId,
+        runItemId,
+        plane,
+        hasPendingLater,
+      });
+      if (hasPendingLater) {
+        await safePatchRun(deps, projectId, runId, { status: RUN_STATUS.AWAITING_APPROVAL });
+        trace.warn(`plane ${plane} implemented — no endpoint to reconcile; PAUSE for approval`, {
+          run: runId,
+          job: jobId,
+          project: scope.project,
+        });
+        return 'awaiting_approval';
+      }
+      trace.ok(`plane ${plane} implemented — no endpoint to reconcile; run complete`, {
+        run: runId,
+        job: jobId,
+        project: scope.project,
+      });
+    }
   }
 
   // Advance the run position + dispatch the next pending spec. If this was the
   // final spec, the run is fully implemented; the submit that carried
   // deploy_on_complete handles the deploy (a `deployed` callback will follow).
   return await dispatchNext(scope, run, item, deps);
+}
+
+/**
+ * Record the delivered branch / MR on a run item regardless of outcome
+ * (2026-09-05). Idempotent and fail-soft: no-ops when the callback carried
+ * neither pointer.
+ */
+async function recordDeliveredArtefacts(
+  deps: MigrationDriverDeps,
+  projectId: string,
+  runItemId: string,
+  input: Pick<BuildResultAdvanceInput, 'prUrl' | 'branch'>
+): Promise<void> {
+  const patch: { pr_url?: string; branch?: string } = {};
+  if (typeof input.prUrl === 'string' && input.prUrl.trim() !== '') patch.pr_url = input.prUrl;
+  if (typeof input.branch === 'string' && input.branch.trim() !== '') patch.branch = input.branch;
+  if (Object.keys(patch).length === 0) return;
+  await safePatchItem(deps, projectId, runItemId, patch);
+}
+
+/**
+ * Does ANY run item of `plane` map to a book item that lists committed
+ * endpoint ids? Returns TRUE when it cannot tell (book unreadable, no run item
+ * of the plane resolves to a book item) -- unknown keeps the deploy; only a
+ * POSITIVELY endpoint-free plane skips it.
+ */
+async function planeHasEndpointBearingItem(
+  scope: MigrateScope,
+  run: MigrationExecutionRun,
+  item: MigrationExecutionRunItem,
+  plane: MigrationPlane,
+  deps: MigrationDriverDeps
+): Promise<boolean> {
+  const bookId = run.book_of_work_id ?? scope.bookId;
+  if (!bookId) return true;
+  let bookItems: Array<Record<string, unknown>>;
+  try {
+    const book = await deps.fetchBookOfWork(scope.projectId, bookId);
+    bookItems = ((book?.book_of_work_json?.items ?? []) as unknown[]).filter(
+      (bi): bi is Record<string, unknown> => !!bi && typeof bi === 'object'
+    );
+  } catch {
+    return true;
+  }
+  const workItemIds = new Set(
+    (run.items ?? [])
+      .map((i) => i.work_item_id)
+      .filter((id): id is string => typeof id === 'string' && id !== '')
+  );
+  if (item.work_item_id) workItemIds.add(item.work_item_id);
+  let resolved = 0;
+  for (const bi of bookItems) {
+    const wid = typeof bi.workItemId === 'string' ? bi.workItemId : null;
+    if (!wid || !workItemIds.has(wid)) continue;
+    if (planeForItem(bi as unknown as Parameters<typeof planeForItem>[0]) !== plane) continue;
+    resolved++;
+    const ids = (bi as { apiEndpointIds?: unknown }).apiEndpointIds;
+    if (Array.isArray(ids) && ids.length > 0) return true;
+  }
+  return resolved === 0; // nothing resolved = unknown = keep the deploy
 }
 
 /**
@@ -2898,6 +3027,10 @@ async function advanceBatchOnBuildResult(
       await safePatchItem(deps, projectId, s.id, {
         status,
         outcome,
+        // Delivered-artefact pointers survive a halt (2026-09-05): the batch
+        // shares one branch + MR, and a failed deploy does not un-deliver them.
+        ...(input.prUrl ? { pr_url: input.prUrl } : {}),
+        ...(input.branch ? { branch: input.branch } : {}),
         error_detail: input.summary ?? `Build-results reported ${outcome}`,
         ...(haltClass ? { failure_class: haltClass } : {}),
       });
@@ -4357,6 +4490,7 @@ async function resolveDescriptorForItem(
   // guarantees distinct folders).
   let title = '';
   let bookItemId: string | null = null;
+  let hasEndpointIds: boolean | undefined;
   let plane: MigrationPlane | undefined;
   try {
     if (item.work_item_id) {
@@ -4369,6 +4503,10 @@ async function resolveDescriptorForItem(
       // Plane matters on the FINAL item: the submit decouples the haibox
       // deploy flag for db-plane items (WS2).
       plane = bookItem ? planeForItem(bookItem) : undefined;
+      hasEndpointIds = bookItem
+        ? Array.isArray((bookItem as { apiEndpointIds?: unknown }).apiEndpointIds) &&
+          (((bookItem as { apiEndpointIds?: unknown[] }).apiEndpointIds?.length) ?? 0) > 0
+        : undefined;
     }
   } catch {
     /* fail-soft — the fallback slug + suffix stay valid */
@@ -4382,6 +4520,7 @@ async function resolveDescriptorForItem(
     generatedSpecText: text,
     title,
     deployOnComplete: item.deploy_on_complete ?? false,
+    ...(hasEndpointIds === undefined ? {} : { hasEndpointIds }),
     plane,
   };
 }

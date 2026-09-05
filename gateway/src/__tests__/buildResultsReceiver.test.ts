@@ -163,6 +163,27 @@ describe('processBuildResult dispatch', () => {
     expect(out.body).toEqual({ acknowledged: true });
   });
 
+  it('folds branch + pr_url from spec_git onto the run item when top-level pr_url is absent (2026-09-05)', async () => {
+    const { deps } = depsWithAdvance('advanced_next_dispatched');
+    const out = await processBuildResult(
+      {
+        company: 'acme',
+        project: 'p',
+        outcome: 'implemented',
+        job_id: 'job-1',
+        pr_url: null,
+        spec_git: [
+          { spec: 's', repo: 'r', branch: 'feature/2026-09-05-scaffold--r', commit_sha: 'abc', pr_url: 'http://pr/69' },
+        ],
+      },
+      deps
+    );
+    expect(out.status).toBe(202);
+    const patches = (deps.patchMigrationExecutionRunItem as jest.Mock).mock.calls.map((c) => c[2]);
+    expect(patches.some((p) => p.pr_url === 'http://pr/69')).toBe(true);
+    expect(patches.some((p) => p.branch === 'feature/2026-09-05-scaffold--r')).toBe(true);
+  });
+
   it('is camelCase-tolerant (jobId / prUrl)', async () => {
     const { deps } = depsWithAdvance('advanced_next_dispatched');
     const out = await processBuildResult(

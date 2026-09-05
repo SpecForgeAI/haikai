@@ -73,7 +73,7 @@ import {
   MigrationExecutionRunItem,
   CreateMigrationExecutionRunRequest,
 } from '../services/migrationExecutionRunClient';
-import { BookOfWork, SpecGeneration } from '../services/migrationDriverAmsReads';
+import { BookOfWork, SpecGeneration, BookOfWorkItem } from '../services/migrationDriverAmsReads';
 import {
   answerShapeSpecQuestions,
   ShapeSpecAnswerDecision,
@@ -129,8 +129,12 @@ function twoStoryBook(): BookOfWork {
     book_of_work_json: {
       items: [
         { id: 'f1', parentId: null, type: 'feature', title: 'Feature 1', sequenceOrder: 0 },
-        { id: 's1', parentId: 'f1', type: 'story', title: 'Story 1', sequenceOrder: 0, workItemId: 'wi-1' },
-        { id: 's2', parentId: 'f1', type: 'story', title: 'Story 2', sequenceOrder: 1, workItemId: 'wi-2' },
+        // The happy path is an API migration: the stories carry committed endpoint
+        // ids, so the plane bears endpoints and the final spec DEPLOYS (2026-09-05:
+        // an endpoint-free plane no longer requests a deploy -- pinned in the
+        // driver suite, not here).
+        { id: 's1', parentId: 'f1', type: 'story', title: 'Story 1', sequenceOrder: 0, workItemId: 'wi-1', apiEndpointIds: ['ep-1'] } as BookOfWorkItem,
+        { id: 's2', parentId: 'f1', type: 'story', title: 'Story 2', sequenceOrder: 1, workItemId: 'wi-2', apiEndpointIds: ['ep-2'] } as BookOfWorkItem,
         { id: 't1', parentId: 'f1', type: 'test', title: 'TEST sibling', sequenceOrder: 2, workItemId: 'wi-test' },
       ],
     },
