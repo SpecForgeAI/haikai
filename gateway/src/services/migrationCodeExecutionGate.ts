@@ -434,7 +434,19 @@ export async function evaluateCodeReadiness(params: {
   }
 
   // --- Coverage floor (Spec K; persisted score on the pinned baseline) ---
-  if (params.pinnedBaselineId) {
+  // Only evaluable when the run actually implements an endpoint (2026-09-05).
+  // Two distinct states used to share one branch: (a) in-scope stories bear
+  // endpoints whose keys could not be resolved — the `inScopeKeys.length === 0`
+  // fail-closed fallback inside the block, still in force below; and (b) NO
+  // in-scope story bears an endpoint at all (a scaffold-only batch), where
+  // `endpointKeyById` was never populated (it is filled inside the
+  // `inScopeStories.length > 0` block above), so `inScopeKeys` was empty by
+  // construction rather than by failure. The old guard conflated the two and
+  // blocked scaffold stories on the WHOLE baseline summary — a floor miss on
+  // an endpoint no story in the batch touches. Skipping the floor here narrows
+  // nothing: a batch with no endpoint has no endpoint to score, and the
+  // unresolvable-keys case still fails closed once there IS an endpoint.
+  if (params.pinnedBaselineId && inScopeStories.length > 0) {
     try {
       const summary = await reads.fetchCoverageSummaryForBaseline(
         params.projectId,

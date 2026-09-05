@@ -345,7 +345,58 @@ test('GATE: code_coverage_floor_unmet from the persisted summary; null summary p
       },
     ],
   };
+  // 2026-09-05: the story must BEAR an endpoint for the floor to be evaluable.
+  // These cases used to pass `apiEndpointIds: []` and still expected the floor
+  // to fire — which only worked through the bug (an endpoint-less batch was
+  // scored against the whole summary). The story now owns the failing
+  // operation, so the floor fires legitimately.
+  const ownersRows = [
+    { endpoint_id: 'ep-owners', baseline_id: 'baseline-1', method: 'GET', path: '/owners/{id}' },
+  ];
   const result = await evaluateCodeReadiness({
+    projectId: 'proj-1',
+    currentArchitectureId: 'arch-1',
+    items: [storyItem('w1', { apiEndpointIds: ['ep-owners'] })],
+    deferredWorkItemIds: new Set(),
+    pinnedBaselineId: 'baseline-1',
+    reads: gateReads({
+      fetchEndpointBaselineCoverageRows: jest.fn(async () => ownersRows),
+      fetchCoverageSummaryForBaseline: jest.fn(async () => failingSummary),
+    }),
+  });
+  expect(result.reasons.map((r) => r.code)).toContain('code_coverage_floor_unmet');
+
+  const legacy = await evaluateCodeReadiness({
+    projectId: 'proj-1',
+    currentArchitectureId: 'arch-1',
+    items: [storyItem('w1', { apiEndpointIds: ['ep-owners'] })],
+    deferredWorkItemIds: new Set(),
+    pinnedBaselineId: 'baseline-1',
+    reads: gateReads({
+      fetchEndpointBaselineCoverageRows: jest.fn(async () => ownersRows),
+      fetchCoverageSummaryForBaseline: jest.fn(async () => null),
+    }),
+  });
+  expect(legacy.reasons.map((r) => r.code)).not.toContain('code_coverage_floor_unmet');
+});
+
+test('GATE: floor is SKIPPED when no in-scope story bears an endpoint; still fails CLOSED when keys are unresolvable', async () => {
+  const failingSummary = {
+    per_endpoint: [
+      {
+        operation_id: 'op-1',
+        method: 'GET',
+        path: '/owners/{id}',
+        dimensions: [
+          { name: 'happy_path', dimension_kind: 'happy', achieved: false, reason: null },
+        ],
+      },
+    ],
+  };
+
+  // (a) A scaffold-shaped batch: the story implements no endpoint, so there is
+  // nothing to score — the whole-baseline floor miss must NOT block it.
+  const scaffold = await evaluateCodeReadiness({
     projectId: 'proj-1',
     currentArchitectureId: 'arch-1',
     items: [storyItem('w1', { apiEndpointIds: [] })],
@@ -355,17 +406,27 @@ test('GATE: code_coverage_floor_unmet from the persisted summary; null summary p
       fetchCoverageSummaryForBaseline: jest.fn(async () => failingSummary),
     }),
   });
-  expect(result.reasons.map((r) => r.code)).toContain('code_coverage_floor_unmet');
+  expect(scaffold.reasons.map((r) => r.code)).not.toContain('code_coverage_floor_unmet');
 
-  const legacy = await evaluateCodeReadiness({
+  // (b) The story DOES bear an endpoint but its coverage row cannot resolve to
+  // a METHOD PATH key (baseline_id present, method/path absent), so
+  // `inScopeKeys` is empty by FAILURE, not by construction — the fail-closed
+  // fallback inside the block must still fire. This is the assertion that
+  // stops the guard from later being "simplified" into a genuine hole.
+  const unresolvable = await evaluateCodeReadiness({
     projectId: 'proj-1',
     currentArchitectureId: 'arch-1',
-    items: [storyItem('w1', { apiEndpointIds: [] })],
+    items: [storyItem('w1', { apiEndpointIds: ['ep-owners'] })],
     deferredWorkItemIds: new Set(),
     pinnedBaselineId: 'baseline-1',
-    reads: gateReads({ fetchCoverageSummaryForBaseline: jest.fn(async () => null) }),
+    reads: gateReads({
+      fetchEndpointBaselineCoverageRows: jest.fn(async () => [
+        { endpoint_id: 'ep-owners', baseline_id: 'baseline-1', method: null, path: null } as never,
+      ]),
+      fetchCoverageSummaryForBaseline: jest.fn(async () => failingSummary),
+    }),
   });
-  expect(legacy.reasons.map((r) => r.code)).not.toContain('code_coverage_floor_unmet');
+  expect(unresolvable.reasons.map((r) => r.code)).toContain('code_coverage_floor_unmet');
 });
 
 test('GATE: floor misses are SCOPED to in-scope story endpoints (Tier-1 batch)', async () => {
