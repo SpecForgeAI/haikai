@@ -42,7 +42,10 @@ async def salvage_worktree(payload: dict,
     """Salvage a dead run item's local worktree (2026-08-15): commit + push
     the spec's existing worktree as its branch so a Resume proceeds to the
     NEXT spec instead of re-doing finished work. Body:
-    {company, project, spec_name}. Single-repo projects only (the polyrepo
+    {company, project, spec_name}. Folder-aware since 2026-09-05: single-repo
+    roots, folder targets and unambiguous polyrepos all salvage; only a
+    polyrepo whose several targets each hold a worktree for the spec is
+    refused (the run item records ONE branch). Historic note (the polyrepo
     artifact layout has per-target trees — refused loudly, never guessed).
     """
     from src.api import _safe_project_dir
@@ -60,14 +63,16 @@ async def salvage_worktree(payload: dict,
     except Exception as exc:  # traversal-safe resolver rejects bad segments
         return JSONResponse({"status": "error", "message": str(exc)},
                             status_code=400)
-    if not (project_dir / ".git").exists():
-        return JSONResponse(
-            {"status": "error",
-             "message": f"{project_dir} is not a git repository root — polyrepo "
-                        "salvage is not supported; commit/push the target's "
-                        "worktree manually"},
-            status_code=409)
-    result = wr.salvage_spec_worktree(project_dir, spec_name.strip())
+    # Folder-aware (2026-09-05): resolve the repo target(s) exactly as the
+    # deploy / commit / MR paths do (`.git` at the root, a coordination file,
+    # or a repo subfolder) instead of demanding `.git` at the project root —
+    # which no folder-target project can satisfy, so salvage was dead for the
+    # layout the tool itself produces. An ambiguous polyrepo (several targets
+    # each holding a worktree for the spec) is still refused loudly, BEFORE
+    # anything is touched.
+    from src.job_queue.tasks import _resolve_repo_targets
+    result = wr.salvage_spec_worktree_in_project(
+        project_dir, spec_name.strip(), _resolve_repo_targets)
     status_code = 200 if result.get("status") == "salvaged" else 409
     logger.info("salvage-worktree %s/%s spec=%s -> %s", company, project,
                 spec_name, result.get("status"))

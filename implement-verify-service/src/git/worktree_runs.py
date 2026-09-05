@@ -353,7 +353,120 @@ def integration_base(live_repo: Path, folder, default_branch: str,
     return branch
 
 
-def salvage_spec_worktree(live_repo: Path, spec_name: str) -> dict:
+def _spec_branch_key(short: str, folder: "str | None") -> "str | None":
+    """Strip a folder target's ``--<folder>`` suffix from a branch short name.
+
+    Folder targets (a repo folder nested under the project directory, or a
+    polyrepo alias) name their branches ``feature/<spec>[-rN]--<folder>``;
+    single-repo projects use ``feature/<spec>[-rN]``. Returns the suffix-less
+    name when the branch belongs to ``folder`` (``None`` = no suffix
+    expected), else ``None``.
+    """
+    if folder is None:
+        return None if "--" in short.rsplit("/", 1)[-1] else short
+    suffix = f"--{folder}"
+    if not short.endswith(suffix):
+        return None
+    return short[: -len(suffix)]
+
+
+def _spec_worktree_candidates(live_repo: Path, spec_name: str,
+                              folder: "str | None" = None) -> "list[tuple[str, str]] | None":
+    """``[(worktree_path, branch_short), ...]`` holding ``feature/<spec>[-rN]``
+    (with the folder suffix when ``folder`` is given). ``None`` = the worktree
+    listing itself failed."""
+    cp = _git(live_repo, "worktree", "list", "--porcelain")
+    if cp.returncode != 0:
+        return None
+    candidates: list[tuple[str, str]] = []
+    path: str | None = None
+    base = f"feature/{spec_name}"
+    for line in (cp.stdout or "").splitlines():
+        line = line.strip()
+        if line.startswith("worktree "):
+            path = line[len("worktree "):]
+        elif line.startswith("branch ") and path:
+            short = line[len("branch "):]
+            short = short[len("refs/heads/"):] if short.startswith("refs/heads/") else short
+            key = _spec_branch_key(short, folder)
+            if key is not None and (key == base or key.startswith(f"{base}-r")):
+                candidates.append((path, short))
+            path = None
+    return candidates
+
+
+def has_spec_worktree(live_repo: Path, spec_name: str, folder: "str | None" = None) -> bool:
+    """Does ``live_repo`` hold a worktree for the spec's branch (any attempt)?
+    Read-only pre-check used by the folder-aware route to refuse an ambiguous
+    polyrepo BEFORE touching anything."""
+    return bool(_spec_worktree_candidates(live_repo, spec_name, folder))
+
+
+def salvage_spec_worktree_in_project(project_dir: Path, spec_name: str,
+                                     resolve_targets) -> dict:
+    """Folder-aware salvage (2026-09-05).
+
+    The route used to require ``.git`` directly at the project directory and
+    refused everything else as "polyrepo salvage is not supported". Every
+    other git path in the service resolves repo targets through the shared
+    resolver (``.git`` at the root, a coordination file, or a scan of direct
+    subfolders for a ``.git``) -- so a folder-target project, the layout the
+    tool itself produces, could deploy, commit and open MRs but never salvage.
+
+    ``resolve_targets(project_dir) -> [(folder_label|None, repo_dir), ...]``
+    is injected (the job-queue resolver in production; a fake in tests).
+
+    Decision:
+      - no target                -> 'error' (nothing to salvage in; loud)
+      - one target               -> salvage in it, branch suffixed for a folder
+      - several targets          -> only the targets holding a worktree for
+                                    the spec count; exactly one -> salvage
+                                    there; none -> 'no_worktree'; more than
+                                    one -> 'error' BEFORE touching anything
+                                    (the run item records ONE branch; the
+                                    ambiguous polyrepo stays refused loudly,
+                                    never guessed).
+    The returned dict carries ``folder`` (``None`` for a root repo).
+    """
+    try:
+        targets = list(resolve_targets(project_dir) or [])
+    except Exception as exc:  # resolver failure = cannot judge; refuse loudly
+        return {"status": "error",
+                "message": f"could not resolve repo targets under {project_dir}: {exc}"}
+    if not targets:
+        return {"status": "error",
+                "message": (f"{project_dir} holds no git repository (no .git at the "
+                            "root, no coordination file, no repo subfolder) — "
+                            "nothing to salvage in; commit/push the target's "
+                            "worktree manually or resume without salvage")}
+    if len(targets) > 1:
+        holding = []
+        for folder, repo_dir in targets:
+            if has_spec_worktree(Path(repo_dir), spec_name, folder):
+                holding.append((folder, repo_dir))
+        if not holding:
+            return {"status": "no_worktree",
+                    "message": (f"none of the {len(targets)} repo targets under "
+                                f"{project_dir} holds a feature/{spec_name}[-rN]--<folder> "
+                                "worktree — nothing to salvage (the worktrees may have "
+                                "been reclaimed); resume without salvage to retry the spec")}
+        if len(holding) > 1:
+            names = ", ".join(str(f) for f, _ in holding)
+            return {"status": "error",
+                    "message": (f"{len(holding)} repo targets ({names}) each hold a "
+                                f"worktree for {spec_name}; the run item records ONE "
+                                "branch, so a multi-target salvage is refused before "
+                                "touching anything — commit/push each target's worktree "
+                                "manually, then resume without salvage")}
+        targets = holding
+    folder, repo_dir = targets[0]
+    result = salvage_spec_worktree(Path(repo_dir), spec_name, folder=folder)
+    result["folder"] = folder
+    return result
+
+
+def salvage_spec_worktree(live_repo: Path, spec_name: str,
+                          folder: "str | None" = None) -> dict:
     """Salvage a dead run item's LOCAL worktree (2026-08-15).
 
     When a spec's implementation completed but the run died before commit/push
@@ -371,28 +484,17 @@ def salvage_spec_worktree(live_repo: Path, spec_name: str) -> dict:
     Never raises for content reasons.
     """
     live_repo = Path(live_repo).resolve()
-    cp = _git(live_repo, "worktree", "list", "--porcelain")
-    if cp.returncode != 0:
+    # Folder targets (2026-09-05): the branch carries a ``--<folder>`` suffix;
+    # candidates are matched and ranked on the suffix-less name.
+    candidates = _spec_worktree_candidates(live_repo, spec_name, folder)
+    if candidates is None:
         return {"status": "error", "message": "git worktree list failed"}
-    # Parse porcelain blocks -> (path, branch-short).
-    candidates: list[tuple[str, str]] = []
-    path: str | None = None
-    for line in (cp.stdout or "").splitlines():
-        line = line.strip()
-        if line.startswith("worktree "):
-            path = line[len("worktree "):]
-        elif line.startswith("branch ") and path:
-            short = line[len("branch "):]
-            short = short[len("refs/heads/"):] if short.startswith("refs/heads/") else short
-            base = f"feature/{spec_name}"
-            if short == base or short.startswith(f"{base}-r"):
-                candidates.append((path, short))
-            path = None
+    suffix = f"--{folder}" if folder is not None else ""
     if not candidates:
         return {
             "status": "no_worktree",
             "message": (
-                f"no local worktree holds a feature/{spec_name}[-rN] branch — "
+                f"no local worktree holds a feature/{spec_name}[-rN]{suffix} branch — "
                 "nothing to salvage (the worktree may have been reclaimed); "
                 "resume WITHOUT salvage to retry the spec"),
         }
@@ -404,9 +506,10 @@ def salvage_spec_worktree(live_repo: Path, spec_name: str) -> dict:
     # has no worktree does the highest surviving attempt stand in (the caller
     # re-aligns the item's spec_name to the returned branch).
     def _attempt(branch: str) -> int:
-        tail = branch.rsplit("-r", 1)
+        key = _spec_branch_key(branch, folder) or branch
+        tail = key.rsplit("-r", 1)
         return int(tail[1]) if len(tail) == 2 and tail[1].isdigit() else 0
-    exact = [c for c in candidates if c[1] == f"feature/{spec_name}"]
+    exact = [c for c in candidates if c[1] == f"feature/{spec_name}{suffix}"]
     wt_path, branch = (exact[0] if exact
                        else max(candidates, key=lambda c: _attempt(c[1])))
     wt = Path(wt_path)
