@@ -55,6 +55,17 @@ import {
 } from './migrationExecutionDriver';
 
 /** The inbound build-results callback body (snake_case + camelCase-tolerant). */
+/** One per-repo git record from the IVS callback's `spec_git` list (2026-09-05). */
+interface SpecGitRecord {
+  branch?: string | null;
+  pr_url?: string | null;
+  commit_sha?: string | null;
+  spec?: string | null;
+  repo?: string | null;
+  error?: string | null;
+  [k: string]: unknown;
+}
+
 export interface BuildResultCallbackBody {
   company?: string;
   project?: string;
@@ -67,6 +78,16 @@ export interface BuildResultCallbackBody {
   targetBaseUrl?: string | null;
   pr_url?: string | null;
   prUrl?: string | null;
+  /**
+   * Delivered-artefact pointers (2026-09-05). IVS carries the branch at top
+   * level on some paths and ALWAYS per repo in `spec_git[]` (branch /
+   * commit_sha / pr_url, even on `error` -- an MR may exist for a failed
+   * deploy). The receiver folds them so the run item can record where the
+   * work actually landed regardless of outcome.
+   */
+  branch?: string | null;
+  spec_git?: SpecGitRecord[] | null;
+  specGit?: SpecGitRecord[] | null;
   summary?: string | null;
   /**
    * Robustness R1 (IVS-side): the orchestrator's failure classification for a
@@ -162,7 +183,17 @@ export async function processBuildResult(
   const jobId = pick(body.job_id, body.jobId);
   const bugId = pick(body.bug_id, body.bugId);
   const targetBaseUrl = pick(body.target_base_url, body.targetBaseUrl);
-  const prUrl = pick(body.pr_url, body.prUrl);
+  // Delivered-artefact pointers: top-level first, then the first spec_git
+  // record carrying the field (single-spec jobs have one record; a batch
+  // shares one branch + MR across its records).
+  const specGit = (Array.isArray(body.spec_git) ? body.spec_git : Array.isArray(body.specGit) ? body.specGit : [])
+    .filter((r): r is NonNullable<typeof r> => !!r && typeof r === 'object');
+  const firstNonEmpty = (values: Array<string | null | undefined>): string | undefined => {
+    for (const v of values) if (typeof v === 'string' && v.trim() !== '') return v;
+    return undefined;
+  };
+  const prUrl = firstNonEmpty([pick(body.pr_url, body.prUrl), ...specGit.map((r) => r.pr_url)]);
+  const branch = firstNonEmpty([body.branch, ...specGit.map((r) => r.branch)]);
   const summary = pick(body.summary, undefined);
   // Robustness R1/R2: the failure classification + fatal step, when the IVS
   // build sends them. Parsed LENIENTLY — an unknown class value is passed as
@@ -259,6 +290,7 @@ export async function processBuildResult(
         jobId: jobId as string,
         outcome: outcome as BuildResultOutcome,
         prUrl,
+        branch,
         targetBaseUrl,
         summary,
         failureClass,

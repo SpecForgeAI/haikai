@@ -79,6 +79,30 @@ elif [ "$1" == "shell" ]; then
     echo "Type exit to leave the shell"
     echo ""
     bash
+elif [ "$1" == "haibox" ]; then
+    # Start the haibox control plane (target-service boxes for the deploy +
+    # API reconcile step). See run-local.ps1 for the full rationale (2026-09-05).
+    # Port precedence: explicit second argument, then HAIBOX_PORT, then 8780.
+    HAIBOX_PORT_VALUE="${HAIBOX_PORT:-8780}"
+    if [[ -n "${2:-}" && "$2" =~ ^[0-9]+$ ]]; then HAIBOX_PORT_VALUE="$2"; fi
+    export HAIBOX_PORT="$HAIBOX_PORT_VALUE"
+    # Loopback ONLY (a bearer-key holder can launch arbitrary processes).
+    export HAIBOX_HOST="${HAIBOX_HOST:-127.0.0.1}"
+    if [ -z "${HAIBOX_WORK_ROOT:-}" ]; then
+        export HAIBOX_WORK_ROOT="${API_WORKSPACE_DIR:-$SCRIPT_DIR/api_workspace}/haibox"
+    fi
+    if [ -z "${STANDARDS_API_KEY:-}" ]; then
+        echo "Error: STANDARDS_API_KEY is not set"
+        echo "Set it in .env.local; it must match the gateway's IMPLEMENTATION_LLM_SERVICE_BEARER_TOKEN."
+        exit 1
+    fi
+    echo "Starting haibox control plane..."
+    echo "  Listening:  http://$HAIBOX_HOST:$HAIBOX_PORT"
+    echo "  Backend:    ${HAIBOX_BACKEND:-process (default)}"
+    echo "  Work root:  $HAIBOX_WORK_ROOT"
+    echo "Press CTRL+C to stop"
+    echo ""
+    "$PYTHON_CMD" -m src.haibox.service
 else
     # Default: start the API server
     echo "Starting FastAPI server..."

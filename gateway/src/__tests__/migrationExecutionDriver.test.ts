@@ -647,6 +647,30 @@ describe('advanceRunOnBuildResult', () => {
     expect(deps.submitOrchestration).not.toHaveBeenCalled();
   });
 
+  it('failed AFTER push + MR -> the delivered branch and pr_url are recorded on the run-item before the halt (2026-09-05)', async () => {
+    const run = runWithItems();
+    const deps = mockDeps({
+      findMigrationRunItemByJobId: jest.fn().mockResolvedValue(run.items![0]),
+      getMigrationExecutionRun: jest.fn().mockResolvedValue(run),
+    });
+    const decision = await advanceRunOnBuildResult(
+      {
+        company: 'acme', project: 'order-mig', jobId: 'job-1', outcome: 'error', summary: 'deploy failed: no container runtime',
+        prUrl: 'http://pr/69', branch: 'feature/2026-09-05-scaffold--svc',
+      },
+      deps,
+    );
+    expect(decision).toBe('halted');
+    const patches = (deps.patchMigrationExecutionRunItem as jest.Mock).mock.calls
+      .filter((c) => c[1] === 'ri-0')
+      .map((c) => c[2]);
+    // The pointers are recorded (a fact about delivery) ...
+    expect(patches.some((p) => p.pr_url === 'http://pr/69' && p.branch === 'feature/2026-09-05-scaffold--svc')).toBe(true);
+    // ... AND the failure is still recorded and the run halted.
+    expect(patches.some((p) => p.status === RUN_ITEM_STATUS.FAILED && String(p.error_detail).includes('deploy failed'))).toBe(true);
+    expect((deps.patchMigrationExecutionRun as jest.Mock).mock.calls.some((c) => c[2].status === RUN_STATUS.HALTED)).toBe(true);
+  });
+
   it('rejected -> halts the run (per-item isolation, same as failed)', async () => {
     const run = runWithItems();
     const deps = mockDeps({
@@ -1077,6 +1101,128 @@ describe('DB-plane completion handover', () => {
 // Stage-2 (2026-07-31): the service plane serve spec rides the submit so
 // haibox can actually launch the migrated service.
 // ===========================================================================
+
+describe('endpoint-free service plane (2026-09-05): no deploy requested, plane completes without a reconcile', () => {
+  function scaffoldBook(withEndpointSibling: boolean): BookOfWork {
+    return {
+      ...twoStoryBook(),
+      book_of_work_json: {
+        ...twoStoryBook().book_of_work_json,
+        items: [
+          { id: 'f1', parentId: null, type: 'feature', title: 'Feature 1', sequenceOrder: 0 },
+          { id: 's-scaffold', parentId: 'f1', type: 'story', title: 'Scaffold', sequenceOrder: 0, workItemId: 'wi-scaffold', workstream: 'api_migration', apiEndpointIds: [] },
+          {
+            id: 's-api', parentId: 'f1', type: 'story', title: 'API', sequenceOrder: 1, workItemId: 'wi-api', workstream: 'api_migration',
+            apiEndpointIds: withEndpointSibling ? ['ep-1'] : [],
+          },
+        ],
+      },
+    } as unknown as BookOfWork;
+  }
+  const finalItem: MigrationExecutionRunItem = {
+    id: 'ri-1', run_id: 'run-svc', sequence_position: 1, work_item_id: 'wi-api',
+    status: RUN_ITEM_STATUS.PENDING, deploy_on_complete: true,
+  };
+  const runOf = (extra: Partial<MigrationExecutionRunItem>[] = []): MigrationExecutionRun => ({
+    id: 'run-svc', project_id: PROJECT_ID, book_of_work_id: BOOK_ID, status: RUN_STATUS.DISPATCHING,
+    items: [
+      { id: 'ri-0', run_id: 'run-svc', sequence_position: 0, work_item_id: 'wi-scaffold', status: RUN_ITEM_STATUS.IMPLEMENTED, outcome: 'implemented', deploy_on_complete: false },
+      finalItem,
+      ...(extra as MigrationExecutionRunItem[]),
+    ],
+  });
+  const descriptor: DispatchDescriptor = {
+    sequencePosition: 1, workItemId: 'wi-api', specGenerationId: 'sg-1', bookItemId: 's-api',
+    generatedSpecText: 'API body', title: 'API', deployOnComplete: true, workstream: 'api_migration',
+    plane: 'service', hasEndpointIds: false,
+  };
+
+  it('plane-final service item in an endpoint-free plane: submit WITHOUT deploy, no serve spec needed, MR still opened', async () => {
+    const getServeSpec = jest.fn();
+    const run = runOf();
+    const deps = mockDeps({
+      fetchBookOfWork: jest.fn().mockResolvedValue(scaffoldBook(false)),
+      getMigrationExecutionRun: jest.fn().mockResolvedValue(run),
+      getTargetServeSpec: getServeSpec,
+    });
+    await runSpecSegment(scope, run, finalItem, descriptor, deps);
+    expect(deps.submitOrchestration).toHaveBeenCalledTimes(1);
+    const submitArg = (deps.submitOrchestration as jest.Mock).mock.calls[0][0];
+    expect(submitArg.deployOnComplete).toBe(false);
+    expect(submitArg.commitPreparation).toBe(true);
+    expect(submitArg.openMergeRequest).toBe(true);
+    expect(submitArg.targetServeSpec).toBeUndefined();
+    expect(getServeSpec).not.toHaveBeenCalled();
+  });
+
+  it('a sibling in the plane WITH endpoints keeps the deploy (and the serve-spec requirement)', async () => {
+    const run = runOf();
+    const deps = mockDeps({
+      fetchBookOfWork: jest.fn().mockResolvedValue(scaffoldBook(true)),
+      getMigrationExecutionRun: jest.fn().mockResolvedValue(run),
+      getTargetServeSpec: jest.fn().mockReturnValue({ command: 'mvn spring-boot:run', healthPath: '/actuator/health' }),
+    });
+    await runSpecSegment(scope, run, finalItem, descriptor, deps);
+    const submitArg = (deps.submitOrchestration as jest.Mock).mock.calls[0][0];
+    expect(submitArg.deployOnComplete).toBe(true);
+  });
+
+  it('an UNKNOWN endpoint state (hand-built descriptor without hasEndpointIds) keeps the deploy', async () => {
+    const run = runOf();
+    const deps = mockDeps({
+      fetchBookOfWork: jest.fn().mockResolvedValue(scaffoldBook(false)),
+      getMigrationExecutionRun: jest.fn().mockResolvedValue(run),
+      getTargetServeSpec: jest.fn().mockReturnValue({ command: 'mvn spring-boot:run', healthPath: '/actuator/health' }),
+    });
+    const { hasEndpointIds: _omit, ...unknownDescriptor } = descriptor;
+    await runSpecSegment(scope, run, finalItem, unknownDescriptor as DispatchDescriptor, deps);
+    const submitArg = (deps.submitOrchestration as jest.Mock).mock.calls[0][0];
+    expect(submitArg.deployOnComplete).toBe(true);
+  });
+
+  it('plane-final service item reports implemented (no deploy): a later plane PAUSES for approval, no reconcile kicked', async () => {
+    const submitted = { ...finalItem, status: RUN_ITEM_STATUS.SUBMITTED, job_id: 'job-final' };
+    const laterDb: Partial<MigrationExecutionRunItem> = {
+      id: 'ri-2', run_id: 'run-svc', sequence_position: 2, work_item_id: 'wi-db', status: RUN_ITEM_STATUS.PENDING, deploy_on_complete: true,
+    };
+    const run = runOf([laterDb]);
+    run.items![1] = submitted;
+    const deps = mockDeps({
+      fetchBookOfWork: jest.fn().mockResolvedValue(scaffoldBook(false)),
+      findMigrationRunItemByJobId: jest.fn().mockResolvedValue(submitted),
+      getMigrationExecutionRun: jest.fn().mockResolvedValue(run),
+    });
+    const decision = await advanceRunOnBuildResult(
+      { company: 'acme', project: 'order-mig', jobId: 'job-final', outcome: 'implemented', prUrl: 'http://pr/70' },
+      deps,
+    );
+    expect(decision).toBe('awaiting_approval');
+    expect((deps.patchMigrationExecutionRun as jest.Mock).mock.calls.some((c) => c[2].status === RUN_STATUS.AWAITING_APPROVAL)).toBe(true);
+    // No reconcile is kicked (mockDeps leaves triggerReconcile undefined; when a
+    // harness supplies one it must stay untouched) and nothing new is dispatched.
+    if (deps.triggerReconcile) expect(deps.triggerReconcile).not.toHaveBeenCalled();
+    expect(deps.submitOrchestration).not.toHaveBeenCalled();
+  });
+
+  it('plane-final service item reports implemented (no deploy) on the FINAL plane: run completes, nothing halts', async () => {
+    const submitted = { ...finalItem, status: RUN_ITEM_STATUS.SUBMITTED, job_id: 'job-final' };
+    const run = runOf();
+    run.items![1] = submitted;
+    const deps = mockDeps({
+      fetchBookOfWork: jest.fn().mockResolvedValue(scaffoldBook(false)),
+      findMigrationRunItemByJobId: jest.fn().mockResolvedValue(submitted),
+      getMigrationExecutionRun: jest.fn().mockResolvedValue(run),
+    });
+    const decision = await advanceRunOnBuildResult(
+      { company: 'acme', project: 'order-mig', jobId: 'job-final', outcome: 'implemented', prUrl: 'http://pr/70' },
+      deps,
+    );
+    expect(decision).toBe('advanced_run_complete');
+    expect((deps.patchMigrationExecutionRun as jest.Mock).mock.calls.some((c) => c[2].status === RUN_STATUS.HALTED)).toBe(false);
+    const implPatch = (deps.patchMigrationExecutionRunItem as jest.Mock).mock.calls.find((c) => c[1] === 'ri-1' && c[2].outcome === 'implemented');
+    expect(implPatch?.[2].pr_url).toBe('http://pr/70');
+  });
+});
 
 describe('service-plane serve-spec threading', () => {
   const serveSpec = {

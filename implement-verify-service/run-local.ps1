@@ -90,6 +90,52 @@ elseif ($command -eq "worker") {
     Write-Host ""
     python -m src.entrypoints.debug_worker
 }
+elseif ($command -eq "haibox") {
+    # Start the haibox control plane (target-service boxes for the deploy +
+    # API reconcile step). 2026-09-05: haibox previously only ever started via
+    # docker-compose, so on a Docker-less setup nothing listened on 8780 and the
+    # deploy failed AFTER the implement succeeded and the MR was open --
+    # reporting failure for work that had been delivered.
+    #
+    # This branch MUST sit before the default `else`: that branch treats an
+    # unrecognised first argument as a PORT NUMBER.
+    # Port precedence: explicit second argument, then HAIBOX_PORT, then 8780.
+    $haiboxPort = "8780"
+    if ($env:HAIBOX_PORT) { $haiboxPort = $env:HAIBOX_PORT }
+    if ($args.Length -gt 1 -and $args[1] -match '^\d+$') { $haiboxPort = $args[1] }
+    $env:HAIBOX_PORT = $haiboxPort
+
+    # Loopback ONLY. The service merely warns on a non-loopback bind, and a
+    # bearer-key holder can launch arbitrary processes through it, so exposing
+    # it off-loopback is remotely reachable RCE. Do not change this without an
+    # authenticating proxy in front.
+    if (-not $env:HAIBOX_HOST) { $env:HAIBOX_HOST = "127.0.0.1" }
+
+    # Box workdirs land under the API workspace (mirrors docker-compose's
+    # /app/workspace/haibox) so a target's _haibox.log sits next to the
+    # orchestration logs rather than in a temp directory.
+    if (-not $env:HAIBOX_WORK_ROOT) {
+        $haiboxWorkspace = if ($env:API_WORKSPACE_DIR) { $env:API_WORKSPACE_DIR } else { "$SCRIPT_DIR\api_workspace" }
+        $env:HAIBOX_WORK_ROOT = Join-Path $haiboxWorkspace "haibox"
+    }
+
+    # Fail fast: every /boxes request verifies the bearer key and returns 500
+    # with no key set -- which would surface as another opaque deploy failure.
+    if (-not $env:STANDARDS_API_KEY) {
+        Write-Host "Error: STANDARDS_API_KEY is not set" -ForegroundColor Red
+        Write-Host "Set it in .env.local; it must match the gateway's IMPLEMENTATION_LLM_SERVICE_BEARER_TOKEN."
+        exit 1
+    }
+
+    Write-Host "Starting haibox control plane..."
+    Write-Host "  Listening:  http://$($env:HAIBOX_HOST):$haiboxPort"
+    Write-Host "  Backend:    $(if ($env:HAIBOX_BACKEND) { $env:HAIBOX_BACKEND } else { 'process (default)' })"
+    Write-Host "  Work root:  $env:HAIBOX_WORK_ROOT"
+    Write-Host "  Key source: STANDARDS_API_KEY (set)"
+    Write-Host "Press CTRL+C to stop"
+    Write-Host ""
+    python -m src.haibox.service
+}
 else {
     # Default: start both API server and worker
     # Check for port parameter (e.g., run-local.ps1 8004)
