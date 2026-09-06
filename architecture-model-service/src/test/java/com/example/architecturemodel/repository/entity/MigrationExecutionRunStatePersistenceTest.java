@@ -208,6 +208,51 @@ class MigrationExecutionRunStatePersistenceTest {
     }
 
     @Test
+    @DisplayName("a batch job_id shared by N run-items resolves to the lowest sequence position (never a 500)")
+    void batchJobIdSharedByManyItemsResolvesDeterministically() {
+        // Batch migrate (2026-09-06): N stories -> ONE orchestration job -> N
+        // run-items carrying the same job_id. The former Optional finder threw
+        // IncorrectResultSizeDataAccessException on the first callback and the
+        // door answered 500; the run wedged. One item is sufficient (the
+        // gateway re-derives the siblings from the run), so the first by
+        // sequence position is returned -- PATCHed here in REVERSE order so
+        // row order cannot masquerade as the contract.
+        UUID projectId = UUID.randomUUID();
+        MigrationExecutionRunDto runHeader = new MigrationExecutionRunDto(
+            null, projectId, UUID.randomUUID(),
+            MigrationExecutionRunStatus.STARTED, 0, null, null, null, null, null,
+            null);
+        MigrationExecutionRunDto created = runService.createRun(
+            projectId, new CreateRunRequest(runHeader,
+                List.of(pendingItem(0, false), pendingItem(1, false), pendingItem(2, true))));
+        UUID seq0 = created.items().get(0).id();
+        UUID seq1 = created.items().get(1).id();
+        UUID seq2 = created.items().get(2).id();
+        entityManager.flush();
+        entityManager.clear();
+
+        for (UUID id : List.of(seq2, seq1, seq0)) {
+            MigrationExecutionRunItemDto patch = new MigrationExecutionRunItemDto(
+                null, null, null, null, null, null,
+                MigrationExecutionRunItemStatus.SUBMITTED,
+                Boolean.TRUE, "job-batch-777", null, null, null,
+                null, null, null, null, null, null, null, null, null);
+            runService.updateRunItem(id, patch);
+        }
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(runItemRepository.findByJobIdOrderBySequencePositionAsc("job-batch-777"))
+            .extracting(e -> e.getSequencePosition())
+            .containsExactly(0, 1, 2);
+        MigrationExecutionRunItemDto first =
+            runService.findRunItemByJobId("job-batch-777").orElseThrow();
+        assertThat(first.id()).isEqualTo(seq0);
+        assertThat(first.sequencePosition()).isEqualTo(0);
+        assertThat(runService.findRunItemByJobId("job-unknown")).isEmpty();
+    }
+
+    @Test
     @DisplayName("partial run-item PATCH omitting dispatched/job_id/decision-log does NOT wipe them (primitive-overwrite guard)")
     void runItemPatchDoesNotWipeOmittedFields() {
         UUID projectId = UUID.randomUUID();

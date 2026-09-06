@@ -227,15 +227,25 @@ public class MigrationExecutionRunService {
      * {@link Optional#empty()} for an unknown {@code job_id} -- the door maps
      * that to {@code 404}.
      *
+     * <p>Batch-aware (2026-09-06): a batch migrate shares one job_id across N
+     * run-items, so the repository returns a list and this method answers the
+     * FIRST by sequence position. One item is sufficient for the caller -- the
+     * gateway driver uses it only to resolve the run, then re-derives the
+     * sibling set from the run's items by job_id -- and the ordering makes the
+     * answer deterministic instead of row-order dependent. The
+     * {@link Optional} contract (200/404 on the controller) is unchanged.</p>
+     *
      * @param jobId the orchestration job id
-     * @return the matching run-item DTO, or empty
+     * @return the lowest-sequence run-item DTO carrying the job_id, or empty
      */
     @Transactional(readOnly = true)
     public Optional<MigrationExecutionRunItemDto> findRunItemByJobId(String jobId) {
         if (jobId == null || jobId.isBlank()) {
             return Optional.empty();
         }
-        return runItemRepository.findByJobId(jobId)
+        return runItemRepository.findByJobIdOrderBySequencePositionAsc(jobId)
+            .stream()
+            .findFirst()
             .map(MigrationExecutionRunItemMapper::toDto);
     }
 
