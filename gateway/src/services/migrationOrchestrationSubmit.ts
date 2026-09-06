@@ -228,6 +228,67 @@ export async function salvageSpecWorktree(
   }
 }
 
+/**
+ * Outcome of a deploy-only replay request (2026-09-06). `refused` carries the
+ * upstream's fail-closed reason verbatim (its 409 `detail`) so the operator
+ * sees WHICH admissibility condition failed rather than a generic error.
+ */
+export interface DeployExistingRunResult {
+  status: 'accepted' | 'refused' | 'error';
+  /** The replay job's own id (audit trail); NOT the correlation key. */
+  deployJobId?: string | null;
+  message?: string;
+}
+
+/**
+ * Ask IVS to re-run ONLY the deploy + build-results tail of an already-built
+ * orchestration job (2026-09-06).
+ *
+ * The case: a run implemented its specs, committed, pushed and opened its
+ * merge request, then the deploy failed for an ENVIRONMENTAL reason. Nothing
+ * about the code was wrong, so re-running the pipeline to reach the deploy
+ * step again rebuilds hours of correct work. IVS consolidates the branches
+ * the run already pushed and re-emits the callback **under this same
+ * `jobId`**, which is why the caller's run-items still correlate.
+ *
+ * `jobId` is the ORIGINAL orchestration job id, not the replay job's id.
+ *
+ * Never throws -- a refusal or transport failure comes back as a status so
+ * the driver can roll its own state back and surface the reason verbatim.
+ */
+export async function deployExistingRun(jobId: string): Promise<DeployExistingRunResult> {
+  try {
+    const response = await request(`/api/v2/jobs/${encodeURIComponent(jobId)}/deploy`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'User-Agent': RIVVY_USER_AGENT,
+      },
+      body: {},
+    });
+    const body = (await response.json().catch(() => null)) as
+      | { job_id?: string; detail?: string }
+      | null;
+    if (response.status >= 200 && response.status < 300) {
+      return { status: 'accepted', deployJobId: body?.job_id ?? null };
+    }
+    // 409 = the upstream's fail-closed refusal (no committed work, no serve
+    // spec, job still in flight); 404 = it has never heard of the job. Both
+    // are answers, not faults.
+    return {
+      status: response.status === 409 || response.status === 404 ? 'refused' : 'error',
+      message:
+        body?.detail ?? `deploy-only replay returned HTTP ${response.status} with no detail`,
+    };
+  } catch (error) {
+    return {
+      status: 'error',
+      message: error instanceof Error ? error.message : 'deploy-only replay request failed',
+    };
+  }
+}
+
 /** One shipped-file hash reported by the IVS file-hashes endpoint. */
 export interface JobFileHashEntry {
   path: string;

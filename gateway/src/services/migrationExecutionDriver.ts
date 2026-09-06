@@ -76,6 +76,7 @@ import {
   submitOrchestration,
   submitOrchestrationBatch,
   salvageSpecWorktree,
+  deployExistingRun,
   OrchestrationSubmitResult,
 } from './migrationOrchestrationSubmit';
 import { recordWorkItemImplementationError } from './migrationWorkItemErrorSink';
@@ -286,6 +287,12 @@ export interface MigrationDriverDeps {
   submitOrchestrationBatch?: typeof submitOrchestrationBatch;
   /** Resume-with-salvage (2026-08-15): the IVS worktree salvage client. */
   salvageSpecWorktree?: typeof salvageSpecWorktree;
+  /**
+   * Deploy-only replay (2026-09-06): ask IVS to re-run JUST the deploy +
+   * build-results tail of a job whose specs are already built and merged.
+   * Optional + lazily defaulted so pre-existing deps mocks keep compiling.
+   */
+  deployExistingRun?: typeof deployExistingRun;
   /**
    * IVS job-status read (2026-08-15): the boot sweep's callback-lost
    * reconcile — the C5 "durable + pollable" promise finally consumed. A run
@@ -923,6 +930,9 @@ export function defaultMigrationDriverDeps(
     findMigrationRunItemByJobId,
     submitOrchestration,
     submitOrchestrationBatch,
+    // Deploy-only replay (2026-09-06): the recovery path for a run whose build
+    // succeeded and whose deploy failed environmentally.
+    deployExistingRun,
     recordWorkItemImplementationError,
     autoAnswerer,
     buildResultsCallbackUrl,
@@ -3495,6 +3505,166 @@ export async function dispatchRemainingRunItems(
     retryAttempt: opts.retryAttempt ?? null,
   });
   return { mode: 'single', itemCount: 1 };
+}
+
+/** Outcome of an operator deploy-only retry request (2026-09-06). */
+export type RetryRunDeployResult =
+  | { status: 'deploying'; runId: string; jobId: string; itemsReset: number }
+  | { status: 'not_found' }
+  | { status: 'not_retryable'; reason: string };
+
+/**
+ * Operator "retry the deploy only" (2026-09-06): re-deploy a HALTED run whose
+ * specs were already implemented, committed, pushed and merge-requested,
+ * WITHOUT re-running the pipeline that produced them.
+ *
+ * **The failure this answers.** A four-spec service-plane batch ran for four
+ * hours, passed `mvn clean verify`, landed four commits on one branch and
+ * opened one merge request -- then the deploy failed because a stale machine
+ * environment variable pointed the served process at the wrong database.
+ * Every run-item went `failed`, and the only supported recovery was
+ * {@link resumeFailedMigrationRun}, which resets items to PENDING and re-runs
+ * the specs. That rebuilds work which was never wrong. This path replays only
+ * the deploy.
+ *
+ * **Why the items must be un-terminalled first.** The build-results door's
+ * CD-6 idempotency guard drops any callback for an item already carrying a
+ * terminal outcome, and `error` IS terminal. A fresh `deployed` callback would
+ * therefore be acknowledged and then silently discarded. So the siblings are
+ * put back into the exact shape a pending callback expects -- status
+ * SUBMITTED, outcome and error cleared, **`job_id` deliberately RETAINED**
+ * because it is the correlation key the replayed callback arrives on.
+ *
+ * **Ordering, and why the rollback exists.** State is reset BEFORE asking
+ * IVS, because the callback can land the moment IVS accepts. If IVS then
+ * refuses (its fail-closed check: no committed work, no serve spec, job still
+ * in flight), the items would be stranded mid-flight waiting for a callback
+ * that will never come -- so a refusal restores them to FAILED with the
+ * refusal reason recorded. The run never silently drifts into a state
+ * nothing will complete.
+ *
+ * **Whose judgement is whose.** The gateway decides only that the run is in a
+ * shape worth retrying (halted, with failed items sharing a deploy job). IVS
+ * owns the "was anything actually built" question, because only IVS holds
+ * the commit records -- the gateway cannot tell a halted-with-commits run
+ * from a halted-with-nothing one, and guessing would deploy an empty branch.
+ */
+export async function retryRunDeploy(
+  scope: MigrateScope,
+  runId: string,
+  deps: MigrationDriverDeps
+): Promise<RetryRunDeployResult> {
+  scope = normalizeScopeIdentifiers(scope);
+  const projectId = scope.projectId;
+  const run = await deps.getMigrationExecutionRun(projectId, runId);
+  if (!run) return { status: 'not_found' };
+  if (run.status !== RUN_STATUS.HALTED) {
+    return {
+      status: 'not_retryable',
+      reason: `run status is '${run.status}' — only a halted run can have its deploy retried`,
+    };
+  }
+
+  const items = (run.items ?? [])
+    .slice()
+    .sort((a, b) => (a.sequence_position ?? 0) - (b.sequence_position ?? 0));
+
+  // The deploy belongs to the job of the LAST failed item: `deploy_on_complete`
+  // is set on the final item of a dispatch unit, and it is that item's submit
+  // which carried the serve spec. Searching from the end also picks the right
+  // job in a sequential run, where each item has its own.
+  const failedItems = items.filter(
+    (i) =>
+      i.id &&
+      (i.status === RUN_ITEM_STATUS.FAILED || i.status === RUN_ITEM_STATUS.REJECTED) &&
+      (i.job_id ?? '').trim() !== ''
+  );
+  if (failedItems.length === 0) {
+    return {
+      status: 'not_retryable',
+      reason:
+        'no failed run-item carries a job id — there is no completed build whose deploy ' +
+        'could be replayed. Use Resume failed to re-run the specs instead.',
+    };
+  }
+  const deployItem = failedItems[failedItems.length - 1];
+  const jobId = (deployItem.job_id as string).trim();
+
+  // Every item sharing that job id was produced by the same dispatch (a batch
+  // shares one job and one branch), so they all complete on the one callback.
+  const siblings = failedItems.filter((i) => (i.job_id ?? '').trim() === jobId);
+
+  // Snapshot the terminal shape BEFORE mutating anything: the rollback below
+  // restores from this, never from the (possibly already reset) live rows.
+  const originals = siblings.map((s) => ({
+    id: s.id as string,
+    status: s.status ?? RUN_ITEM_STATUS.FAILED,
+    outcome: s.outcome ?? 'error',
+  }));
+
+  // Reset to the pre-callback shape. job_id is KEPT (correlation key); outcome,
+  // error_detail and failure_class are cleared through the AMS mapper's
+  // empty-string explicit-clear sentinel, because leaving a terminal outcome
+  // behind would make the door drop the replayed callback at the CD-6 guard.
+  for (const sibling of siblings) {
+    await safePatchItem(deps, projectId, sibling.id as string, {
+      status: RUN_ITEM_STATUS.SUBMITTED,
+      outcome: '',
+      error_detail: '',
+      failure_class: '',
+    });
+  }
+  await safePatchRun(deps, projectId, runId, { status: RUN_STATUS.DISPATCHING });
+
+  logger.info('[diag-gateway] migration_execution_driver retry_deploy_items_reset', {
+    projectId,
+    runId,
+    jobId,
+    itemsReset: siblings.length,
+  });
+
+  const deploy = deps.deployExistingRun ?? deployExistingRun;
+  const outcome = await deploy(jobId);
+
+  if (outcome.status !== 'accepted') {
+    // Roll the reset back: nothing is coming, and an item parked at SUBMITTED
+    // with no inbound callback is the wedge state this whole path exists to
+    // avoid creating.
+    const reason =
+      outcome.status === 'refused'
+        ? `the build service refused the deploy-only replay: ${outcome.message ?? 'no reason given'}`
+        : `the deploy-only replay request failed: ${outcome.message ?? 'unknown error'}`;
+    for (const original of originals) {
+      await safePatchItem(deps, projectId, original.id, {
+        status: original.status,
+        outcome: original.outcome,
+        error_detail: reason,
+      });
+    }
+    await safePatchRun(deps, projectId, runId, { status: RUN_STATUS.HALTED });
+    logger.warn('[diag-gateway] migration_execution_driver retry_deploy_rejected', {
+      projectId,
+      runId,
+      jobId,
+      status: outcome.status,
+      reason,
+    });
+    return { status: 'not_retryable', reason };
+  }
+
+  logger.info('[diag-gateway] migration_execution_driver retry_deploy_accepted', {
+    projectId,
+    runId,
+    jobId,
+    deployJobId: outcome.deployJobId ?? null,
+    itemsReset: siblings.length,
+  });
+  trace.step('deploy-only replay accepted', {
+    run: runId,
+    job: jobId,
+    project: scope.project,
+  });
+  return { status: 'deploying', runId, jobId, itemsReset: siblings.length };
 }
 
 /** Outcome of an operator resume-from-failure request (Robustness R2). */

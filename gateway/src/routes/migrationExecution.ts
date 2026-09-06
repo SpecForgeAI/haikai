@@ -40,6 +40,7 @@ import {
   resumeMigration,
   haltMigrationRunByOperator,
   retryDbPlaneCompletion,
+  retryRunDeploy,
   resumeFailedMigrationRun,
   defaultMigrationDriverDeps,
   MigrateScope,
@@ -581,6 +582,74 @@ migrationExecutionRouter.post(
       return res
         .status(500)
         .json({ status: 'error', message: 'Failed to retry the DB build' });
+    }
+  }
+);
+
+// ---------------------------------------------------------------------------
+// POST .../migration-execution-runs/:runId/retry-deploy — operator "retry the
+// deploy only" (2026-09-06). A HALTED run whose specs were already implemented,
+// committed, pushed and merge-requested but whose DEPLOY failed environmentally
+// re-deploys the branch it already produced, WITHOUT re-running the pipeline.
+// The failed siblings are un-terminalled (status SUBMITTED, outcome/error
+// cleared, job_id RETAINED as the callback correlation key) so the replayed
+// build-results callback is not dropped at the door's idempotency guard; a
+// refusal from the build service rolls that reset back.
+//   200 { deploying: true, jobId, itemsReset } | 409 { allowed: false, reason }
+//   | 404
+// ---------------------------------------------------------------------------
+
+migrationExecutionRouter.post(
+  '/projects/:projectId/migration-execution-runs/:runId/retry-deploy',
+  async (req: Request, res: Response) => {
+    const { projectId, runId } = req.params;
+    const body = (req.body ?? {}) as {
+      company?: string;
+      project?: string;
+      book_id?: string;
+    };
+    if (!body.company || !body.project) {
+      return res.status(400).json({
+        error: 'body must include company + project (the workspace identifiers)',
+      });
+    }
+    try {
+      const deps = defaultMigrationDriverDeps(buildResultsCallbackUrl());
+      const result = await retryRunDeploy(
+        {
+          projectId,
+          bookId: body.book_id ?? '',
+          company: body.company,
+          project: body.project,
+        },
+        runId,
+        deps
+      );
+      logger.info('[diag-gateway] migration_execution_driver retry_deploy_requested', {
+        projectId,
+        runId,
+        outcome: result.status,
+      });
+      if (result.status === 'deploying') {
+        return res.status(200).json({
+          deploying: true,
+          jobId: result.jobId,
+          itemsReset: result.itemsReset,
+        });
+      }
+      if (result.status === 'not_retryable') {
+        return res.status(409).json({ allowed: false, reason: result.reason });
+      }
+      return res.status(404).json({ error: 'Migration execution run not found' });
+    } catch (error) {
+      logger.error('[diag-gateway] migration_execution_driver retry_deploy_error', {
+        projectId,
+        runId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return res
+        .status(500)
+        .json({ status: 'error', message: 'Failed to retry the deploy for this run' });
     }
   }
 );
