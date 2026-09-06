@@ -96,6 +96,30 @@ const BOOTSTRAP_RECIPES: RequirementRecipe[] = [
       `Wire configuration loading per the captured decision: ${v('service.config')}. ` +
       `Configuration must load and validate at startup, BEFORE any handler registers ` +
       `(the environment-wiring foundation story extends this abstraction — create it here). ` +
+      // Mandatory toggle (2026-09-06). Live failure: a scaffold-less build
+      // (the prior run's pushed scaffold was not integrated) re-derived the
+      // config wiring from scratch and chose fail-fast -- a config-server
+      // import with `optional:` deliberately omitted and a server URI the
+      // environment did not have. The app threw at prepareEnvironment, the
+      // build exited 1, and the deploy failed AFTER a clean push + MR. The
+      // scaffold that HAD been pushed already carried the right shape (an
+      // optional import behind a boolean defaulting to false, with a default
+      // URI); what was missing was that the shape was incidental to that
+      // agent's judgement rather than a stated requirement. Every environment
+      // this tool drives -- verification worktrees, deploy boxes -- runs the
+      // app as a bare child process with no such server, so a startup that
+      // hard-fails on an unreachable configuration server makes the service
+      // unverifiable and undeployable here. The client stays available;
+      // enabling it later is configuration, not a code change.
+      `The external configuration client MUST be wired behind a boolean toggle that ` +
+      `defaults to OFF (disabled), and its import MUST be optional, so the application ` +
+      `starts successfully when no ${v('service.config')} server is reachable — every ` +
+      `verification and deploy environment this tool drives runs the app as a bare child ` +
+      `process with no such server. Give the toggle and the server URI environment-variable ` +
+      `overrides with safe defaults (enabled=false, and a localhost URI), so enabling it ` +
+      `later is configuration, not a code change. A startup that HARD-FAILS on an ` +
+      `unreachable configuration server is a defect, not a safety feature: it makes the ` +
+      `service unverifiable and undeployable here. ` +
       cite('service.config'),
   },
   {
