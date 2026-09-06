@@ -279,6 +279,21 @@ migrationExecutionRouter.post(
       project?: string;
       selected_work_item_ids?: unknown;
       batch_name?: string;
+      /**
+       * Run base mode (2026-09-06). `/migrate` has accepted and validated
+       * `baseMode` since 2026-08-15; this route never did, so a subset
+       * re-start after a halted stage could not ask for `integration` and
+       * silently took the auto-derived mode. Live shape: the scaffold batch
+       * pushed + opened its MR, its deploy failed, the run halted; the
+       * re-start of the SAME work items resolved `restart_of_same_stage`
+       * (mode chain) -- deliberately, because auto-integrating a same-stage
+       * restart would re-merge the wreckage being restarted away from -- and
+       * the operator had no way to choose otherwise here. Both spellings are
+       * accepted: `base_mode` matches this route's other snake_case fields,
+       * `baseMode` matches `/migrate`. Omitting it changes nothing.
+       */
+      base_mode?: string;
+      baseMode?: string;
     };
 
     if (!body.company || typeof body.company !== 'string' || body.company.trim() === '') {
@@ -302,6 +317,17 @@ migrationExecutionRouter.post(
 
     const batchName = sanitizeBatchName(body.batch_name) || defaultBatchName(bookId);
 
+    // Kept literal rather than shared with /migrate so neither route can
+    // silently widen the other's contract.
+    const VALID_SUBSET_BASE_MODES = new Set(['chain', 'fresh', 'mr', 'integration']);
+    const requestedBaseMode = body.base_mode ?? body.baseMode;
+    if (requestedBaseMode !== undefined && !VALID_SUBSET_BASE_MODES.has(requestedBaseMode)) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'base_mode must be one of chain|fresh|mr|integration',
+      });
+    }
+
     const scope: MigrateScope = {
       projectId,
       bookId,
@@ -309,6 +335,7 @@ migrationExecutionRouter.post(
       project: body.project,
       selectedWorkItemIds: selected,
       batchName,
+      baseMode: (requestedBaseMode as MigrateScope['baseMode']) ?? null,
     };
 
     logger.info('[diag-gateway] migration_execution_driver migrate_selected_trigger', {
@@ -319,6 +346,7 @@ migrationExecutionRouter.post(
       project: body.project,
       selectedCount: selected.length,
       batchName,
+      baseMode: requestedBaseMode ?? 'auto',
     });
 
     try {
