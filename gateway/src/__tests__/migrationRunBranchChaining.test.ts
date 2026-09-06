@@ -396,6 +396,31 @@ describe('startMigration baseMode', () => {
     expect(submit.integrationBase).toBe(true);
   });
 
+  it("a prior run for OTHER work that never reached deployed still INTEGRATES its pushed branches (2026-09-06) — never a silent fresh base", async () => {
+    // The scaffold batch pushed + opened its MR, then its deploy failed and
+    // the run halted. Its branches exist on origin; 'chain' would resolve no
+    // single-lineage base and silently degrade to bare main.
+    const halted: MigrationExecutionRun = { ...priorStageRun(), status: RUN_STATUS.HALTED };
+    halted.items = [
+      { id: 'old-0', sequence_position: 0, work_item_id: 'wi-db-1', spec_name: '2026-08-01-stage1-scaffold-cccc3333', status: RUN_ITEM_STATUS.FAILED, outcome: 'error' },
+    ];
+    const created: { run?: MigrationExecutionRun } = {};
+    const deps = startDeps(halted, created);
+
+    const result = await startMigration(scope, deps);
+    await flush();
+
+    expect(result.status).toBe('started');
+    const req = (deps.createMigrationExecutionRun as jest.Mock).mock.calls[0][1];
+    expect(req.run.base_spec).toBeNull();
+    expect(req.run.decision_log_json).toEqual([
+      expect.objectContaining({ type: 'run_base_mode', mode: 'integration', reason: 'prior_run_not_deployed' }),
+    ]);
+    const submit = (deps.submitOrchestration as jest.Mock).mock.calls[0][0];
+    expect(submit.baseSpec).toBeUndefined();
+    expect(submit.integrationBase).toBe(true);
+  });
+
   it("'fresh': no prior-run read, base_spec null, first dispatch has NO baseSpec (default-branch base)", async () => {
     const created: { run?: MigrationExecutionRun } = {};
     const deps = startDeps(priorStageRun(), created);

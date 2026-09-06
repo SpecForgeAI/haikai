@@ -1475,6 +1475,25 @@ export async function startMigration(
         if (overlaps) {
           baseReason = 'restart_of_same_stage';
         } else if (latest.status !== RUN_STATUS.DEPLOYED) {
+          // A prior run for OTHER work items that never reached `deployed`
+          // (2026-09-06). This used to keep mode 'chain', which at a stage
+          // boundary resolves no single-lineage base and silently degrades to
+          // a fresh default-branch base -- discarding the prior stage's pushed
+          // branches. Live shape: the scaffold batch implemented, pushed and
+          // opened its MR, then its deploy failed (no container runtime), so
+          // the run halted short of `deployed`; the next stage then started
+          // from bare main and re-derived everything the scaffold MR already
+          // carried, opening a second MR against the first. Whether a run
+          // reached `deployed` says nothing about whether its branches exist:
+          // a deploy can fail long after a clean push. `integration` merges
+          // the freshly-fetched default branch plus every remote
+          // db-migration/* and feature/* branch by pattern, so prior pushed
+          // work is picked up regardless of the prior run's status, and "no
+          // branches to integrate" still degrades to the plain fresh default.
+          // Strictly safer than the silent fallback; the reason string is
+          // unchanged on purpose (log analysis + the stage_integration pins
+          // key on it), only the mode moves.
+          runBaseMode = 'integration';
           baseReason = 'prior_run_not_deployed';
         } else {
           runBaseMode = 'integration';
