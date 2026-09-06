@@ -32,7 +32,8 @@ jest.mock('../services/logger', () => ({
 import {
   advanceRunOnBuildResult,
   recoverInFlightRuns,
-  resumeFailedMigrationRun,
+  resumeFailedMigrationRun,
+  retryRunDeploy,
   MigrationDriverDeps,
   MigrateScope,
 } from '../services/migrationExecutionDriver';
@@ -460,6 +461,114 @@ describe('batch transient auto-retry', () => {
 // ===========================================================================
 // Resume-from-failure
 // ===========================================================================
+
+describe('retryRunDeploy (deploy-only replay, 2026-09-06)', () => {
+  /** A halted BATCH run: item 0 implemented earlier; items 1+2 share the deploy job and failed on it. */
+  function haltedAfterDeployFailure(): MigrationExecutionRun {
+    return {
+      id: 'run-1',
+      project_id: PROJECT_ID,
+      book_of_work_id: BOOK_ID,
+      status: RUN_STATUS.HALTED,
+      items: [
+        { id: 'ri-0', run_id: 'run-1', sequence_position: 0, work_item_id: 'wi-1', spec_generation_id: 'sg-1', status: RUN_ITEM_STATUS.IMPLEMENTED, job_id: 'job-0', outcome: 'implemented', deploy_on_complete: false, retry_attempt_count: 0 },
+        { id: 'ri-1', run_id: 'run-1', sequence_position: 1, work_item_id: 'wi-2', spec_generation_id: 'sg-2', status: RUN_ITEM_STATUS.FAILED, job_id: 'job-batch', outcome: 'error', error_detail: 'deploy failed: box never healthy', failure_class: 'real', deploy_on_complete: false, retry_attempt_count: 0 },
+        { id: 'ri-2', run_id: 'run-1', sequence_position: 2, work_item_id: 'wi-3', spec_generation_id: 'sg-3', status: RUN_ITEM_STATUS.FAILED, job_id: 'job-batch', outcome: 'error', error_detail: 'deploy failed: box never healthy', failure_class: 'real', deploy_on_complete: true, retry_attempt_count: 0 },
+      ],
+    };
+  }
+
+  it('refuses a non-halted run', async () => {
+    const run = sequentialRun(); // dispatching
+    const deps = statefulDeps(run, [], { deployExistingRun: jest.fn() });
+    const result = await retryRunDeploy(scope, 'run-1', deps);
+    expect(result.status).toBe('not_retryable');
+    expect((result as { reason: string }).reason).toContain('dispatching');
+    expect(deps.deployExistingRun).not.toHaveBeenCalled();
+  });
+
+  it('returns not_found for an unknown run', async () => {
+    const deps = statefulDeps(sequentialRun(), [], {
+      getMigrationExecutionRun: jest.fn().mockResolvedValue(null),
+    });
+    expect((await retryRunDeploy(scope, 'run-x', deps)).status).toBe('not_found');
+  });
+
+  it('refuses a halted run whose failed items carry no job id (nothing was built)', async () => {
+    const run = haltedAfterDeployFailure();
+    for (const i of run.items!) i.job_id = undefined;
+    const deps = statefulDeps(run, [], { deployExistingRun: jest.fn() });
+    const result = await retryRunDeploy(scope, 'run-1', deps);
+    expect(result.status).toBe('not_retryable');
+    expect((result as { reason: string }).reason).toContain('no failed run-item carries a job id');
+    expect(deps.deployExistingRun).not.toHaveBeenCalled();
+    expect(deps.patchMigrationExecutionRunItem).not.toHaveBeenCalled();
+  });
+
+  it('un-terminals the deploy job\'s siblings (job_id RETAINED), sets the run dispatching, and asks IVS to replay the deploy', async () => {
+    const run = haltedAfterDeployFailure();
+    const deployExistingRun = jest.fn().mockResolvedValue({ status: 'accepted', deployJobId: 'job-replay' });
+    const deps = statefulDeps(run, [], { deployExistingRun });
+
+    const result = await retryRunDeploy(scope, 'run-1', deps);
+
+    expect(result).toEqual({ status: 'deploying', runId: 'run-1', jobId: 'job-batch', itemsReset: 2 });
+    expect(deployExistingRun).toHaveBeenCalledWith('job-batch');
+    // The implemented item is untouched; the two failed siblings are back in
+    // the pre-callback shape with the correlation key kept.
+    const [ri0, ri1, ri2] = run.items!;
+    expect(ri0.status).toBe(RUN_ITEM_STATUS.IMPLEMENTED);
+    for (const i of [ri1, ri2]) {
+      expect(i.status).toBe(RUN_ITEM_STATUS.SUBMITTED);
+      expect(i.outcome).toBeNull();
+      expect(i.error_detail).toBeNull();
+      expect(i.failure_class).toBeNull();
+      expect(i.job_id).toBe('job-batch');
+    }
+    expect(run.status).toBe(RUN_STATUS.DISPATCHING);
+    // The reset happened BEFORE the replay was requested (the callback may
+    // land the instant IVS accepts).
+    const patchOrder = (deps.patchMigrationExecutionRunItem as jest.Mock).mock.invocationCallOrder;
+    expect(Math.max(...patchOrder)).toBeLessThan(deployExistingRun.mock.invocationCallOrder[0]);
+    // No pipeline re-run.
+    expect(deps.submitOrchestration).not.toHaveBeenCalled();
+    expect(deps.submitOrchestrationBatch).not.toHaveBeenCalled();
+  });
+
+  it('a refusal from IVS rolls the reset back: items FAILED with the reason recorded, run HALTED', async () => {
+    const run = haltedAfterDeployFailure();
+    const deployExistingRun = jest.fn().mockResolvedValue({
+      status: 'refused',
+      message: 'job job-batch recorded no committed work (no spec_git record carries a commit_sha)',
+    });
+    const deps = statefulDeps(run, [], { deployExistingRun });
+
+    const result = await retryRunDeploy(scope, 'run-1', deps);
+
+    expect(result.status).toBe('not_retryable');
+    expect((result as { reason: string }).reason).toContain('refused the deploy-only replay');
+    expect((result as { reason: string }).reason).toContain('no committed work');
+    const [, ri1, ri2] = run.items!;
+    for (const i of [ri1, ri2]) {
+      expect(i.status).toBe(RUN_ITEM_STATUS.FAILED);
+      expect(i.outcome).toBe('error');
+      expect(String(i.error_detail)).toContain('no committed work');
+    }
+    expect(run.status).toBe(RUN_STATUS.HALTED);
+  });
+
+  it('a transport error is rolled back the same way, with the error named', async () => {
+    const run = haltedAfterDeployFailure();
+    const deps = statefulDeps(run, [], {
+      deployExistingRun: jest.fn().mockResolvedValue({ status: 'error', message: 'ECONNREFUSED' }),
+    });
+    const result = await retryRunDeploy(scope, 'run-1', deps);
+    expect(result.status).toBe('not_retryable');
+    expect((result as { reason: string }).reason).toContain('ECONNREFUSED');
+    expect(run.status).toBe(RUN_STATUS.HALTED);
+    expect(run.items![2].status).toBe(RUN_ITEM_STATUS.FAILED);
+  });
+});
 
 describe('resumeFailedMigrationRun', () => {
   it('refuses a non-halted run with a 409-shaped reason', async () => {

@@ -443,6 +443,88 @@ async def create_assembly_job(
         )
 
 
+@router.post(
+    "/api/v2/jobs/{job_id}/deploy",
+    tags=["Git Integration"],
+    summary="Deploy-only replay: re-run JUST the deploy + build-results tail of a built run",
+    responses={
+        401: {"description": "Invalid or missing API key"},
+        404: {"description": "Job not found"},
+        409: {"description": "Job is not deploy-replayable (reason in `detail`)"},
+        500: {"description": "Server error"},
+    },
+)
+async def redeploy_job(
+    job_id: str,
+    background_tasks: BackgroundTasks,
+    authenticated: bool = Depends(verify_api_key),
+):
+    """Re-run ONLY the consolidate + deploy + build-results tail of an
+    orchestration that already committed, pushed and merge-requested its work.
+
+    The case this serves: a long multi-spec run finished cleanly, its tests
+    passed and its merge request is open, but `deploy_on_complete` failed for
+    an ENVIRONMENTAL reason (an unreachable box, a stale variable pointing the
+    served process at the wrong database). Re-running the pipeline to reach
+    the deploy step again costs hours and rebuilds work that was never wrong.
+
+    NOTHING is regenerated: no spec is written, no task list is created, no
+    implementer runs, no commit is made. The branches the original run pushed
+    are consolidated and handed to haibox, and the build-results callback is
+    re-emitted **under the ORIGINAL job id** so the caller's run-items
+    correlate.
+
+    FAILS CLOSED. The stored job result must prove committed work exists
+    (`spec_git` carrying a `commit_sha`); the source job must have asked for a
+    deploy, must still hold its serve spec, and must not still be in flight.
+    Every refusal is a 409 whose `detail` says which condition failed --
+    validated synchronously, BEFORE any job is enqueued, so an impermissible
+    request never becomes a silent background failure.
+
+    Returns 202 with the replay `job_id`; poll `GET /api/v2/jobs/{job_id}`.
+    """
+    from ...job_queue.redeploy import RedeployRefused, enqueue_redeploy, resolve_replay
+    from .. import _require_git_manager, _run_job_in_background, job_queue
+
+    source_job = job_queue.get_job_status(job_id)
+    if source_job is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Job {job_id} not found"
+        )
+
+    # Synchronous admissibility check: the caller learns WHY on the same
+    # request, and nothing is enqueued for a request that cannot succeed.
+    try:
+        _, facts = resolve_replay(source_job, job_id)
+    except RedeployRefused as refusal:
+        logger.warning("deploy-only replay refused for job %s: %s", job_id, refusal.reason)
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=refusal.reason)
+
+    _require_git_manager(source_job.company, source_job.project)
+
+    try:
+        job = enqueue_redeploy(source_job, job_id, job_queue)
+        if os.getenv("API_INLINE_JOBS", "on").strip().lower() not in ("off", "false", "0"):
+            background_tasks.add_task(_run_job_in_background, job.job_id)
+        logger.info(
+            "deploy-only replay job %s created for source job %s (branch=%s, %d commit(s))",
+            job.job_id, job_id, facts["branch"], len(facts["commit_shas"]),
+        )
+        return JobResponse(
+            job_id=job.job_id,
+            status=JobStatus.QUEUED,
+            created_at=job.created_at,
+        )
+    except Exception as e:
+        logger.error(
+            "Failed to create deploy-only replay job for %s: %s", job_id, e, exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create deploy-only replay job: {str(e)}",
+        )
+
+
 @router.get(
     "/api/v2/jobs/{job_id}/file-hashes",
     tags=["Git Integration"],

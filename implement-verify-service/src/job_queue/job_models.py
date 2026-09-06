@@ -64,6 +64,11 @@ class JobType(str, Enum):
     # WS2 DB-plane execution chain (2026-07-31): merge a run's spec branches
     # into one assembled branch + overlay the full DB pack from AMS.
     ASSEMBLE_RUN = "assemble-run"
+    # Deploy-only replay (2026-09-06): re-run JUST the consolidate+deploy+
+    # callback tail of an ALREADY-COMPLETED orchestration whose deploy failed
+    # for an environmental reason. Never re-runs write-spec/create-tasks/
+    # implement -- the commits already exist on the branch.
+    DEPLOY_RUN = "deploy-run"
 
 
 class JobProgress(BaseModel):

@@ -720,6 +720,9 @@ def _run_job_in_background(job_id: str):
         elif job.type == JobType.ASSEMBLE_RUN:
             from ..job_queue.assembly import run_assembly
             run_assembly(job_id, storage)
+        elif job.type == JobType.DEPLOY_RUN:
+            from ..job_queue.redeploy import run_redeploy
+            run_redeploy(job_id, storage)
         else:
             logger.error(f"Background job runner: unsupported job type {job.type}")
             job.status = JobStatus.FAILED
