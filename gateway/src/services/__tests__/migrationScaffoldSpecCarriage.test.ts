@@ -202,6 +202,30 @@ describe('buildScaffoldBootstrapSpecText', () => {
     expect(warnings.every((w) => w.code === 'DECISION_NOT_CAPTURED')).toBe(true);
   });
 
+  it('makes the external-configuration toggle MANDATORY: optional import, off by default, env overrides (2026-09-06)', () => {
+    const { text } = buildScaffoldBootstrapSpecText({
+      story: STORY,
+      enrichmentText: ENRICHMENT_TEXT,
+      decisions: FULL_DECISIONS,
+    });
+    // Live failure: a scaffold-less build re-derived the config wiring and
+    // chose fail-fast (a config-server import with `optional:` omitted and a
+    // URI the environment did not have) -- the app threw at startup and the
+    // deploy failed after a clean push + MR. The shape that works was already
+    // in the pushed scaffold; it is now a stated requirement, not a judgement.
+    const configReq = text.slice(
+      text.indexOf('Wire configuration loading'),
+      text.indexOf('[decision:service.config]'),
+    );
+    expect(configReq.length).toBeGreaterThan(0);
+    expect(configReq).toContain('MUST be wired behind a boolean toggle');
+    expect(configReq).toContain('defaults to OFF (disabled)');
+    expect(configReq).toContain('import MUST be optional');
+    expect(configReq).toContain('Spring Cloud Config server is reachable');
+    expect(configReq).toContain('enabled=false, and a localhost URI');
+    expect(configReq).toContain('HARD-FAILS on an unreachable configuration server is a defect');
+  });
+
   it('demands app-wide 404 mapping for unmatched paths in the error skeleton (2026-08-17)', () => {
     const { text } = buildScaffoldBootstrapSpecText({
       story: STORY,
