@@ -795,8 +795,10 @@ class TestBlockedWithReasonTasks:
         )
         with_reason, without_reason, notes = HaikaiOrchestrator._count_blocked_tasks(f)
         assert (with_reason, without_reason) == (3, 0)
+        # 2026-09-07: the sub-bullet is continuation prose (not a checkbox), so it
+        # is joined onto the box text rather than reported as a child reason.
         assert notes[0] == (
-            "Live contexts=structural apply \u2014 - BLOCKED: no JVM/Liquibase in this worktree; "
+            "Live contexts=structural apply - BLOCKED: no JVM/Liquibase in this worktree; "
             "owner schema-apply-runner"
         )
         assert HaikaiOrchestrator._count_unchecked_tasks(f) == 0
@@ -829,3 +831,49 @@ class TestBlockedWithReasonTasks:
         )
         with_reason, without_reason, _ = HaikaiOrchestrator._count_blocked_tasks(f)
         assert (with_reason, without_reason) == (1, 1)
+
+    def test_wrapped_reason_across_lines_counts(self, tmp_path):
+        """The live halt (2026-09-07): `BLOCKED:` at the end of the box line with
+        the reason wrapped onto the following more-indented lines. Ordinary
+        markdown wrapping must not change the verdict."""
+        f = self._write(
+            tmp_path,
+            "- [~] 4.1 Resolve the cross-spec type dependency \u2014 BLOCKED:\n"
+            "  `core.domain.HierarchyFilter` is absent from this branch. It\n"
+            "  is carried by the sibling spec and a stub would be shadowed.\n"
+            "- [x] 4.2 Add the carried enums\n"
+            "- [~] 5.0 Implement ValueLengthException \u2014 BLOCKED: its field\n"
+            "      types against core.domain.HierarchyFilter, which the\n"
+            "      sibling spec carries.\n",
+        )
+        with_reason, without_reason, notes = HaikaiOrchestrator._count_blocked_tasks(f)
+        assert (with_reason, without_reason) == (2, 0)
+        assert notes[0].startswith("4.1 Resolve the cross-spec type dependency")
+        assert "absent from this branch" in notes[0]
+        assert HaikaiOrchestrator._count_unchecked_tasks(f) == 0
+
+    def test_wrapped_reason_broken_by_blank_line_is_malformed(self, tmp_path):
+        f = self._write(
+            tmp_path,
+            "- [~] 4.1 Resolve the dependency \u2014 BLOCKED:\n"
+            "\n"
+            "  this paragraph is no longer the box's continuation\n",
+        )
+        assert HaikaiOrchestrator._count_blocked_tasks(f) == (0, 1, [])
+
+    def test_nested_checkbox_ends_the_continuation_and_children_supply_the_reason(self, tmp_path):
+        # The parent's own line has no reason; its children are reasoned. The
+        # children are NOT joined into the parent's text as prose (a nested
+        # checkbox terminates the continuation), but the subtree search still
+        # credits the parent from a reasoned descendant.
+        f = self._write(
+            tmp_path,
+            "- [~] 5 Exception types\n"
+            "  - [~] 5.1 ValueLengthException \u2014 BLOCKED: type absent from branch\n"
+            "  - [~] 5.2 RangeException \u2014 BLOCKED: same dependency\n",
+        )
+        with_reason, without_reason, notes = HaikaiOrchestrator._count_blocked_tasks(f)
+        assert (with_reason, without_reason) == (3, 0)
+        # The parent's note carries the child's reason, not a joined paragraph.
+        assert notes[0].startswith("5 Exception types \u2014 ")
+        assert "5.1 ValueLengthException" in notes[0]
