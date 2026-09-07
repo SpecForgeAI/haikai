@@ -1292,8 +1292,31 @@ async function runEpicPipeline(args: {
             `stories=${corpusItems.filter((i) => i.type === 'story').length} ` +
             `clustering_rule=${corpusPlan.stats.clusteringRule ?? 'row_budget'} ` +
             `over_budget=${(corpusPlan.stats.overBudgetStories ?? []).length} ` +
+            `constants_evicted=${(corpusPlan.stats.constantsEvicted ?? []).length} ` +
+            `forward_refs=${(corpusPlan.stats.forwardReferences ?? []).length} ` +
+            `dep_cycles=${(corpusPlan.stats.dependencyCycles ?? []).length} ` +
             `projectId=${projectId} epicId=${epic.id} epicKind=foundations`
         );
+        // A forward reference means a foundation story will be asked to build
+        // against a type a LATER story owns — the defect that cost three
+        // overnight runs. The partition now orders by dependency, so this should
+        // be unreachable; if it fires, say so at plan time rather than letting an
+        // implementer discover it hours later as a blocked task.
+        for (const violation of corpusPlan.stats.forwardReferences ?? []) {
+          logger.warn('[diag-gateway] SCL corpus plan FORWARD REFERENCE between foundation stories', {
+            projectId,
+            epicId: epic.id,
+            violation,
+          });
+        }
+        for (const cycle of corpusPlan.stats.dependencyCycles ?? []) {
+          logger.warn('[diag-gateway] SCL corpus plan dependency CYCLE (emitted in symbol order)', {
+            projectId,
+            epicId: epic.id,
+            members: cycle.slice(0, 12),
+            memberCount: cycle.length,
+          });
+        }
         return [...legacyStories, ...corpusItems];
       }
       if (epicKind === 'interfaces') {
