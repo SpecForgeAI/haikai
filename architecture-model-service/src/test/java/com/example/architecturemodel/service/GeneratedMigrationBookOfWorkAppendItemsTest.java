@@ -208,6 +208,89 @@ class GeneratedMigrationBookOfWorkAppendItemsTest {
     }
 
     @Test
+    @DisplayName("re-expand carries over workItemId + saveState for a regenerated SAME-id story (text replaced, identity kept)")
+    void reExpandCarriesOverIdentityForRegeneratedIds() {
+        UUID projectId = UUID.randomUUID();
+        GeneratedMigrationBookOfWorkDto draft =
+            service.createDraft(projectId, buildSkeletonCreateRequest());
+        String workItemId = UUID.randomUUID().toString();
+        // First expand: the story is subsequently SAVED to the backlog -- it
+        // carries its work item linkage and save state on the blob item.
+        service.appendItems(projectId, draft.id(),
+            new AppendGeneratedMigrationBookOfWorkItemsRequest(
+                "api:E1",
+                List.of(Map.of("id", "api:S1", "type", "story", "parentId", "api:F1",
+                    "title", "old text", "expansionGenerated", true,
+                    "workItemId", workItemId, "saveState", "saved")),
+                AppendGeneratedMigrationBookOfWorkItemsRequest.STATE_EXPANDED,
+                null));
+        // Re-expand under the SAME id with new text and NO identity fields (the
+        // planner regenerates content, never identity).
+        GeneratedMigrationBookOfWorkDto updated = service.appendItems(projectId, draft.id(),
+            new AppendGeneratedMigrationBookOfWorkItemsRequest(
+                "api:E1",
+                List.of(Map.of("id", "api:S1", "type", "story", "parentId", "api:F1",
+                    "title", "new text", "expansionGenerated", true)),
+                AppendGeneratedMigrationBookOfWorkItemsRequest.STATE_EXPANDED,
+                true));
+        List<Map<String, Object>> items = itemsOf(updated.bookOfWorkJson());
+        Map<String, Object> story = itemById(items, "api:S1");
+        // Text replaced; identity survived -- the work_item row is still linked.
+        assertThat(story).containsEntry("title", "new text");
+        assertThat(story).containsEntry("workItemId", workItemId);
+        assertThat(story).containsEntry("saveState", "saved");
+        assertThat(items).hasSize(5); // 4 skeleton + the one regenerated story
+    }
+
+    @Test
+    @DisplayName("re-expand never fabricates or overwrites identity: new ids get none, caller values win, un-regenerated ids are dropped")
+    void reExpandDoesNotFabricateOrOverwriteIdentity() {
+        UUID projectId = UUID.randomUUID();
+        GeneratedMigrationBookOfWorkDto draft =
+            service.createDraft(projectId, buildSkeletonCreateRequest());
+        String heldA = UUID.randomUUID().toString();
+        String heldB = UUID.randomUUID().toString();
+        service.appendItems(projectId, draft.id(),
+            new AppendGeneratedMigrationBookOfWorkItemsRequest(
+                "api:E1",
+                List.of(
+                    Map.of("id", "api:S1", "type", "story", "parentId", "api:F1",
+                        "title", "one", "expansionGenerated", true,
+                        "workItemId", heldA, "saveState", "saved"),
+                    Map.of("id", "api:S9", "type", "story", "parentId", "api:F1",
+                        "title", "nine", "expansionGenerated", true,
+                        "workItemId", heldB, "saveState", "saved")),
+                AppendGeneratedMigrationBookOfWorkItemsRequest.STATE_EXPANDED,
+                null));
+        String callerSupplied = UUID.randomUUID().toString();
+        GeneratedMigrationBookOfWorkDto updated = service.appendItems(projectId, draft.id(),
+            new AppendGeneratedMigrationBookOfWorkItemsRequest(
+                "api:E1",
+                List.of(
+                    // Same id, but the caller supplies its own workItemId: not overwritten.
+                    Map.of("id", "api:S1", "type", "story", "parentId", "api:F1",
+                        "title", "one again", "expansionGenerated", true,
+                        "workItemId", callerSupplied),
+                    // Brand-new id: gets NO identity.
+                    Map.of("id", "api:S2", "type", "story", "parentId", "api:F1",
+                        "title", "two", "expansionGenerated", true)),
+                    // api:S9 is NOT regenerated: its held identity is dropped, never
+                    // re-attached to another story.
+                AppendGeneratedMigrationBookOfWorkItemsRequest.STATE_EXPANDED,
+                true));
+        List<Map<String, Object>> items = itemsOf(updated.bookOfWorkJson());
+        Map<String, Object> s1 = itemById(items, "api:S1");
+        assertThat(s1).containsEntry("workItemId", callerSupplied);
+        assertThat(s1).containsEntry("saveState", "saved"); // only the missing field is filled
+        Map<String, Object> s2 = itemById(items, "api:S2");
+        assertThat(s2).doesNotContainKeys("workItemId", "saveState");
+        assertThat(itemById(items, "api:S9")).isNull();
+        for (Map<String, Object> it : items) {
+            assertThat(it.get("workItemId")).isNotEqualTo(heldB);
+        }
+    }
+
+    @Test
     @DisplayName("delete story: tombstoned in suppressed_item_ids; re-append of the SAME id is silently skipped (no resurrection); non-story delete rejects")
     void deleteStoryTombstonesAndSuppressesResurrection() {
         UUID projectId = UUID.randomUUID();

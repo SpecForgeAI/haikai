@@ -34,6 +34,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -1801,6 +1802,29 @@ public class GeneratedMigrationBookOfWorkService {
         // parents its new stories onto. Runs BEFORE the dup-id scan below so the
         // replaced ids are free for the fresh append, all inside the one
         // transaction (a later validation failure rolls the removal back too).
+        // IDENTITY CARRY-OVER across a re-expansion (2026-09-07).
+        //
+        // A re-expansion may rewrite a story's TEXT; it must never change its
+        // IDENTITY. Before this, the removal below dropped every descendant
+        // story and the freshly appended replacements carried no
+        // {@code workItemId} and no {@code saveState}, so a re-expand SEVERED
+        // the blob's link to the `work_item` rows. The rows survived but nothing
+        // pointed at them, the next save-to-backlog minted new ids, and the
+        // superseded-cleanup path then deleted the orphans together with their
+        // spec-generation rows -- silently discarding the implementation state,
+        // specs and merge-request linkage of stories that were already BUILT.
+        //
+        // Live case that forced this: a foundations epic holding dozens of
+        // regenerable corpus-foundation stories alongside a handful of
+        // IMPLEMENTED ones (the scaffold and the cross-cutting foundation
+        // stories). Re-expanding to pick up a planner fix for the regenerable
+        // ones would have orphaned the implemented ones.
+        //
+        // Keying on the book-item id is sound and already precedent here: the
+        // tombstone suppression below relies on the same property ("Deterministic
+        // re-expansion regenerates stories under the SAME ids"). Only identity is
+        // carried -- generated content is deliberately allowed to be replaced.
+        Map<String, Map<String, Object>> identityByRemovedId = new HashMap<>();
         if (Boolean.TRUE.equals(request.replaceEpicExpansion())) {
             Set<String> descendantIds = collectDescendantIds(request.epicId(), items);
             int before = items.size();
@@ -1811,11 +1835,27 @@ public class GeneratedMigrationBookOfWorkService {
                 }
                 boolean isStory = "story".equalsIgnoreCase(stringField(it, "type"));
                 boolean tagged = Boolean.TRUE.equals(it.get("expansionGenerated"));
-                return isStory || tagged;
+                if (!isStory && !tagged) {
+                    return false;
+                }
+                Map<String, Object> identity = new LinkedHashMap<>();
+                Object workItemId = it.get("workItemId");
+                if (workItemId != null) {
+                    identity.put("workItemId", workItemId);
+                }
+                Object saveState = it.get("saveState");
+                if (saveState != null) {
+                    identity.put("saveState", saveState);
+                }
+                if (!identity.isEmpty()) {
+                    identityByRemovedId.put(id, identity);
+                }
+                return true;
             });
             log.info(
-                "[diag-ams] book_of_work stage=replace_epic_expansion draftId={} epicId={} removed={}",
-                bookId, request.epicId(), before - items.size());
+                "[diag-ams] book_of_work stage=replace_epic_expansion draftId={} epicId={} "
+                    + "removed={} identitiesHeld={}",
+                bookId, request.epicId(), before - items.size(), identityByRemovedId.size());
         }
 
         // Validate every appended item BEFORE mutating anything, so a bad
@@ -1839,6 +1879,10 @@ public class GeneratedMigrationBookOfWorkService {
         // re-expansion; never an error.
         Set<String> suppressedIds = readSuppressedIds(bookOfWork);
         int skippedSuppressed = 0;
+        // Stories whose pre-existing `work_item` linkage was re-attached rather
+        // than severed. A re-expand of an epic containing already-BUILT stories
+        // must report a non-zero count here.
+        int identitiesCarriedOver = 0;
         for (Map<String, Object> rawItem : toAppend) {
             if (rawItem == null) {
                 throw new IllegalArgumentException("appended items must be objects");
@@ -1887,6 +1931,21 @@ public class GeneratedMigrationBookOfWorkService {
             if (type != null) {
                 batchTypesById.put(id, type);
             }
+            // Re-stamp the identity this id held before the re-expansion removed
+            // it (see IDENTITY CARRY-OVER above). Never OVERWRITES a value the
+            // caller supplied, and a genuinely new id gets nothing -- it stays
+            // unsaved and the normal save-to-backlog path mints its work item.
+            Map<String, Object> identity = identityByRemovedId.get(id);
+            if (identity != null) {
+                for (Map.Entry<String, Object> field : identity.entrySet()) {
+                    if (copy.get(field.getKey()) == null) {
+                        copy.put(field.getKey(), field.getValue());
+                        if ("workItemId".equals(field.getKey())) {
+                            identitiesCarriedOver++;
+                        }
+                    }
+                }
+            }
             appendedCopies.add(copy);
         }
 
@@ -1901,10 +1960,33 @@ public class GeneratedMigrationBookOfWorkService {
         draft.setUpdatedAt(Instant.now());
         GeneratedMigrationBookOfWorkEntity saved = repository.save(draft);
 
+        int identitiesHeld = identityByRemovedId.size();
+        int identitiesDropped = identitiesHeld - identitiesCarriedOver;
         log.info(
             "[diag-ams] book_of_work stage=append_items draftId={} epicId={} appended={} "
-                + "skippedSuppressed={} expansionState={}",
-            bookId, request.epicId(), appendedCopies.size(), skippedSuppressed, expansionState);
+                + "skippedSuppressed={} identitiesCarriedOver={} identitiesDropped={} "
+                + "expansionState={}",
+            bookId, request.epicId(), appendedCopies.size(), skippedSuppressed,
+            identitiesCarriedOver, identitiesDropped, expansionState);
+        if (identitiesDropped > 0) {
+            // An id that existed before the re-expansion and was NOT regenerated:
+            // its `work_item` row is now unreferenced by this book. That is a
+            // legitimate outcome (a story the plan no longer contains, or one the
+            // operator suppressed), but it is also how implementation state gets
+            // orphaned, so name the ids rather than letting it pass silently.
+            List<String> dropped = new ArrayList<>();
+            for (Map.Entry<String, Map<String, Object>> e : identityByRemovedId.entrySet()) {
+                if (!knownIds.contains(e.getKey())) {
+                    dropped.add(e.getKey());
+                }
+            }
+            Collections.sort(dropped);
+            log.warn(
+                "[diag-ams] book_of_work stage=append_items_identity_dropped draftId={} epicId={} "
+                    + "count={} ids={}",
+                bookId, request.epicId(), dropped.size(),
+                dropped.size() > 20 ? dropped.subList(0, 20) + " (+more)" : dropped);
+        }
 
         return GeneratedMigrationBookOfWorkMapper.toDto(saved);
     }
