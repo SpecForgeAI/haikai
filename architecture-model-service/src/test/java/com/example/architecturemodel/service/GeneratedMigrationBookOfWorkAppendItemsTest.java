@@ -291,6 +291,52 @@ class GeneratedMigrationBookOfWorkAppendItemsTest {
     }
 
     @Test
+    @DisplayName("re-expand EXEMPTS the out-of-band scaffold seed story (seed_build_files) that expansion cannot regenerate; ordinary stories still replaced")
+    void reExpandExemptsSeedBuildFilesScaffoldStory() {
+        UUID projectId = UUID.randomUUID();
+        GeneratedMigrationBookOfWorkDto draft =
+            service.createDraft(projectId, buildSkeletonCreateRequest());
+        String scaffoldWorkItemId = UUID.randomUUID().toString();
+        // The live shape: a scaffold feature with no codeFeatureKind hosting the
+        // seed story minted by the scaffold-story endpoint, saved + implemented,
+        // plus an ordinary regenerable story. A prior expansion stamped both
+        // expansionGenerated:true.
+        service.appendItems(projectId, draft.id(),
+            new AppendGeneratedMigrationBookOfWorkItemsRequest(
+                "api:E1",
+                List.of(
+                    Map.of("id", "api:SF", "type", "feature", "parentId", "api:E1",
+                        "title", "Scaffold", "expansionGenerated", true),
+                    Map.of("id", "api:SEED", "type", "story", "parentId", "api:SF",
+                        "title", "Scaffold the app and reproduce pom.xml",
+                        "expansionGenerated", true,
+                        "tags", List.of("seed_build_files", "stream:api_migration",
+                            "provenance:scaffold"),
+                        "workItemId", scaffoldWorkItemId, "saveState", "saved"),
+                    Map.of("id", "api:S1", "type", "story", "parentId", "api:F1",
+                        "title", "old story", "expansionGenerated", true)),
+                AppendGeneratedMigrationBookOfWorkItemsRequest.STATE_EXPANDED,
+                null));
+        // Re-expand: the batch OMITS the seed id (expansion cannot regenerate it)
+        // and regenerates the ordinary story under its same id.
+        GeneratedMigrationBookOfWorkDto updated = service.appendItems(projectId, draft.id(),
+            new AppendGeneratedMigrationBookOfWorkItemsRequest(
+                "api:E1",
+                List.of(Map.of("id", "api:S1", "type", "story", "parentId", "api:F1",
+                    "title", "regenerated story", "expansionGenerated", true)),
+                AppendGeneratedMigrationBookOfWorkItemsRequest.STATE_EXPANDED,
+                true));
+        List<Map<String, Object>> items = itemsOf(updated.bookOfWorkJson());
+        Map<String, Object> seed = itemById(items, "api:SEED");
+        assertThat(seed).isNotNull();
+        assertThat(seed).containsEntry("workItemId", scaffoldWorkItemId);
+        assertThat(seed).containsEntry("saveState", "saved");
+        assertThat(seed).containsEntry("title", "Scaffold the app and reproduce pom.xml");
+        // The ordinary story was still replaced -- the exemption is narrow.
+        assertThat(itemById(items, "api:S1")).containsEntry("title", "regenerated story");
+    }
+
+    @Test
     @DisplayName("delete story: tombstoned in suppressed_item_ids; re-append of the SAME id is silently skipped (no resurrection); non-story delete rejects")
     void deleteStoryTombstonesAndSuppressesResurrection() {
         UUID projectId = UUID.randomUUID();
