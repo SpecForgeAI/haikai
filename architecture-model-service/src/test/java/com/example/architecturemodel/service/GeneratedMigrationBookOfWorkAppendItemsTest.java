@@ -291,8 +291,8 @@ class GeneratedMigrationBookOfWorkAppendItemsTest {
     }
 
     @Test
-    @DisplayName("re-expand EXEMPTS the out-of-band scaffold seed story (seed_build_files) that expansion cannot regenerate; ordinary stories still replaced")
-    void reExpandExemptsSeedBuildFilesScaffoldStory() {
+    @DisplayName("re-expand REPLACES the scaffold seed story (re-injected under its deterministic id) and carries its identity -- exactly one copy, never a stale twin")
+    void reExpandReplacesSeedBuildFilesScaffoldStoryCarryingIdentity() {
         UUID projectId = UUID.randomUUID();
         GeneratedMigrationBookOfWorkDto draft =
             service.createDraft(projectId, buildSkeletonCreateRequest());
@@ -317,23 +317,67 @@ class GeneratedMigrationBookOfWorkAppendItemsTest {
                         "title", "old story", "expansionGenerated", true)),
                 AppendGeneratedMigrationBookOfWorkItemsRequest.STATE_EXPANDED,
                 null));
-        // Re-expand: the batch OMITS the seed id (expansion cannot regenerate it)
-        // and regenerates the ordinary story under its same id.
+        // Re-expand exactly as the real pipeline does: the scaffold injection
+        // RE-SUPPLIES the scaffold feature + seed story under their deterministic
+        // ids (no identity fields -- expansion regenerates content, never
+        // identity), alongside the regenerated ordinary story.
         GeneratedMigrationBookOfWorkDto updated = service.appendItems(projectId, draft.id(),
             new AppendGeneratedMigrationBookOfWorkItemsRequest(
                 "api:E1",
-                List.of(Map.of("id", "api:S1", "type", "story", "parentId", "api:F1",
-                    "title", "regenerated story", "expansionGenerated", true)),
+                List.of(
+                    Map.of("id", "api:SF", "type", "feature", "parentId", "api:E1",
+                        "title", "Scaffold", "expansionGenerated", true),
+                    Map.of("id", "api:SEED", "type", "story", "parentId", "api:SF",
+                        "title", "Scaffold the app and reproduce pom.xml",
+                        "expansionGenerated", true,
+                        "tags", List.of("seed_build_files", "stream:api_migration",
+                            "provenance:scaffold")),
+                    Map.of("id", "api:S1", "type", "story", "parentId", "api:F1",
+                        "title", "regenerated story", "expansionGenerated", true)),
                 AppendGeneratedMigrationBookOfWorkItemsRequest.STATE_EXPANDED,
                 true));
         List<Map<String, Object>> items = itemsOf(updated.bookOfWorkJson());
+        // Exactly ONE copy of the seed story: no exemption kept a stale twin
+        // (which would have collided with the re-injected copy on the dup-id scan).
+        assertThat(items.stream().filter(i -> "api:SEED".equals(i.get("id"))).count())
+            .isEqualTo(1);
+        // Its identity was carried onto the re-injected copy, so the implemented
+        // scaffold work item is NOT orphaned.
         Map<String, Object> seed = itemById(items, "api:SEED");
-        assertThat(seed).isNotNull();
         assertThat(seed).containsEntry("workItemId", scaffoldWorkItemId);
         assertThat(seed).containsEntry("saveState", "saved");
-        assertThat(seed).containsEntry("title", "Scaffold the app and reproduce pom.xml");
-        // The ordinary story was still replaced -- the exemption is narrow.
         assertThat(itemById(items, "api:S1")).containsEntry("title", "regenerated story");
+    }
+
+    @Test
+    @DisplayName("a SAVED book allows the pipeline's item-less STATE-ONLY merges (expanding / failed) -- nothing invented, status stays saved")
+    void savedBookAllowsStateOnlyMerge() {
+        UUID projectId = UUID.randomUUID();
+        GeneratedMigrationBookOfWorkDto draft =
+            service.createDraft(projectId, buildSkeletonCreateRequest());
+        GeneratedMigrationBookOfWorkEntity entity =
+            repository.findById(draft.id()).orElseThrow();
+        entity.setStatus(GeneratedMigrationBookOfWorkStatus.SAVED);
+        repository.save(entity);
+
+        // Exactly what the expansion pipeline sends before running: empty items,
+        // state 'expanding', no replace flag.
+        GeneratedMigrationBookOfWorkDto expanding = service.appendItems(projectId, draft.id(),
+            new AppendGeneratedMigrationBookOfWorkItemsRequest(
+                "api:E1", List.of(),
+                AppendGeneratedMigrationBookOfWorkItemsRequest.STATE_EXPANDING, null));
+        assertThat(itemById(itemsOf(expanding.bookOfWorkJson()), "api:E1"))
+            .containsEntry("expansionState", "expanding");
+        // ...and what it sends if it throws: null items, state 'failed'.
+        GeneratedMigrationBookOfWorkDto failed = service.appendItems(projectId, draft.id(),
+            new AppendGeneratedMigrationBookOfWorkItemsRequest(
+                "api:E1", null,
+                AppendGeneratedMigrationBookOfWorkItemsRequest.STATE_FAILED, null));
+        List<Map<String, Object>> items = itemsOf(failed.bookOfWorkJson());
+        assertThat(itemById(items, "api:E1")).containsEntry("expansionState", "failed");
+        assertThat(items).hasSize(4); // skeleton untouched: nothing invented
+        assertThat(repository.findById(draft.id()).orElseThrow().getStatus())
+            .isEqualTo(GeneratedMigrationBookOfWorkStatus.SAVED);
     }
 
     @Test

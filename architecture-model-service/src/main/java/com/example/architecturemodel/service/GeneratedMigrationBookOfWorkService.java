@@ -1779,14 +1779,23 @@ public class GeneratedMigrationBookOfWorkService {
         // constants story must therefore fail, but the fix had no route into an
         // already-saved book.
         //
-        // So a REPLACE-expansion (`replace_epic_expansion=true`) is now allowed
-        // on a saved book, and ONLY a replace-expansion. Two reasons it is safe
-        // now and was not before:
-        //   1. identity carry-over re-stamps `workItemId` + `saveState` onto
-        //      every regenerated id, so the blob keeps pointing at the same
-        //      `work_item` rows (nothing is orphaned, nothing is re-minted);
-        //   2. the `seed_build_files` exemption protects the out-of-band
-        //      scaffold story the expansion cannot regenerate.
+        // What makes this safe now and not before: IDENTITY CARRY-OVER (below)
+        // re-stamps `workItemId` + `saveState` onto every regenerated id, so the
+        // blob keeps pointing at the same `work_item` rows. Nothing is orphaned
+        // and nothing is re-minted, which was the whole hazard of rewriting a
+        // plan whose items are already in the backlog.
+        //
+        // The permitted set on a non-draft book is exactly "operations that do
+        // NOT ADD items":
+        //   - a REPLACE-expansion, which swaps an epic's stories for regenerated
+        //     ones under the same ids;
+        //   - a STATE-ONLY merge (no items), which stamps only the epic's
+        //     expansionState. The expansion pipeline REQUIRES this: it marks the
+        //     epic `expanding` before running and `failed` if it throws, both as
+        //     item-less merges carrying no replace flag (the gateway's
+        //     expansion handler). Allowing only the replace-append left the
+        //     whole path unreachable -- the pipeline died on its FIRST call and
+        //     never got as far as the append that carries the flag.
         //
         // An ADDITIVE append is still refused on a non-draft book. Growing a
         // saved plan through the expansion path has no identity story at all --
@@ -1798,14 +1807,16 @@ public class GeneratedMigrationBookOfWorkService {
         // content changed while their ids and work items did not.
         boolean isDraft = GeneratedMigrationBookOfWorkStatus.DRAFT.equals(draft.getStatus());
         boolean isReplaceExpansion = Boolean.TRUE.equals(request.replaceEpicExpansion());
-        if (!isDraft && !isReplaceExpansion) {
+        boolean isStateOnly = request.items() == null || request.items().isEmpty();
+        if (!isDraft && !isReplaceExpansion && !isStateOnly) {
             throw new IllegalArgumentException(
                 "items/append is only allowed on a draft book; current status: "
                     + draft.getStatus()
-                    + " (a replace-expansion -- replace_epic_expansion=true -- is permitted "
-                    + "post-save, but an additive append is not; use the add-item endpoint)");
+                    + " (post-save, a replace-expansion -- replace_epic_expansion=true -- and an "
+                    + "item-less state-only merge are permitted, but an additive append is not; "
+                    + "use the add-item endpoint)");
         }
-        if (!isDraft) {
+        if (!isDraft && !isStateOnly) {
             log.warn(
                 "[diag-ams] book_of_work stage=post_save_replace_expansion draftId={} epicId={} "
                     + "status={} -- rewriting a SAVED plan; identity carry-over must keep every "
@@ -1865,11 +1876,9 @@ public class GeneratedMigrationBookOfWorkService {
         // re-expansion regenerates stories under the SAME ids"). Only identity is
         // carried -- generated content is deliberately allowed to be replaced.
         Map<String, Map<String, Object>> identityByRemovedId = new HashMap<>();
-        int exemptedSeedStories = 0;
         if (Boolean.TRUE.equals(request.replaceEpicExpansion())) {
             Set<String> descendantIds = collectDescendantIds(request.epicId(), items);
             int before = items.size();
-            int[] exempted = {0}; // a lambda cannot mutate a local
             items.removeIf(it -> {
                 String id = stringField(it, "id");
                 if (id == null || !descendantIds.contains(id)) {
@@ -1880,33 +1889,34 @@ public class GeneratedMigrationBookOfWorkService {
                 if (!isStory && !tagged) {
                     return false;
                 }
-                // NEVER DELETE WHAT THE EXPANSION CANNOT REGENERATE (2026-09-07).
+                // DO NOT ADD AN EXEMPTION HERE FOR THE SCAFFOLD SEED STORY.
                 //
-                // The scaffold seed story is minted OUT OF BAND by the
-                // scaffold-story endpoint, not by epic expansion. Its parent
-                // feature carries no codeFeatureKind, so the expansion's code
-                // branch emits nothing for it: expansion has no way to reproduce
-                // this story. The predicate above still matched it (it IS a
-                // story, and a prior expansion also stamped it
-                // expansionGenerated:true), so a re-expand DESTROYED it outright.
+                // Tried and reverted (2026-09-07). The reasoning that looked
+                // sound: the seed story is also mintable out of band via the
+                // scaffold-story endpoint, and the code-epic story builder has no
+                // branch for its unkinded parent feature, so "expansion cannot
+                // regenerate it".
                 //
-                // Identity carry-over cannot save it either -- that only
-                // re-attaches ids that come BACK in the same batch, and this one
-                // never does. The observed damage: the scaffold story (already
-                // implemented and merged) was removed, its work_item row
-                // orphaned, and a re-mint would have minted a NEW id, cutting the
-                // book's link to the built work and leaving the old
-                // spec-generation rows for the superseded-cleanup path to delete.
+                // That is FALSE. The expansion injects it on a separate path,
+                // `buildScaffoldInjectionForEpic` -> `buildScaffoldFeatureAndStory`,
+                // which rebuilds it under the DETERMINISTIC `${epic.id}-scaffold-story`
+                // id with the same tags and title whenever a confirmed target
+                // manifest resolves. The gateway's `epicExpansionOutputIds` mirrors
+                // the predicate above and PRUNES that id before hierarchy
+                // validation, precisely because it expects this removal to happen.
                 //
-                // So exempt it. This is narrower than an "implemented" exemption
-                // (which the blob cannot express -- it holds no
-                // implementationStatus) and it is precise: the marker identifies
-                // items sourced from a different endpoint, which is exactly the
-                // set the expansion has no authority to replace.
-                if (hasTag(it, SEED_BUILD_FILES_TAG)) {
-                    exempted[0]++;
-                    return false;
-                }
+                // Exempting it therefore keeps the old copy while the pipeline
+                // appends a fresh one under the same id -> duplicate id -> the
+                // dup-id scan below throws -> the epic is marked `failed`. The
+                // exemption caused the failure it was meant to prevent.
+                //
+                // Identity carry-over already covers this story correctly: its id
+                // comes back in the batch, so `workItemId` + `saveState` are
+                // re-stamped. The one case that genuinely drops it -- no confirmed
+                // manifest, so the injection returns [] -- is a PRE-FLIGHT concern
+                // (verify the manifest resolves before re-expanding) and is
+                // reported by the identity_dropped WARN below. It is not something
+                // to paper over here.
                 Map<String, Object> identity = new LinkedHashMap<>();
                 Object workItemId = it.get("workItemId");
                 if (workItemId != null) {
@@ -1921,12 +1931,10 @@ public class GeneratedMigrationBookOfWorkService {
                 }
                 return true;
             });
-            exemptedSeedStories = exempted[0];
             log.info(
                 "[diag-ams] book_of_work stage=replace_epic_expansion draftId={} epicId={} "
-                    + "removed={} identitiesHeld={} exemptedSeedStories={}",
-                bookId, request.epicId(), before - items.size(), identityByRemovedId.size(),
-                exemptedSeedStories);
+                    + "removed={} identitiesHeld={}",
+                bookId, request.epicId(), before - items.size(), identityByRemovedId.size());
         }
 
         // Validate every appended item BEFORE mutating anything, so a bad
@@ -2036,9 +2044,9 @@ public class GeneratedMigrationBookOfWorkService {
         log.info(
             "[diag-ams] book_of_work stage=append_items draftId={} epicId={} appended={} "
                 + "skippedSuppressed={} identitiesCarriedOver={} identitiesDropped={} "
-                + "exemptedSeedStories={} expansionState={}",
+                + "expansionState={}",
             bookId, request.epicId(), appendedCopies.size(), skippedSuppressed,
-            identitiesCarriedOver, identitiesDropped, exemptedSeedStories, expansionState);
+            identitiesCarriedOver, identitiesDropped, expansionState);
         if (identitiesDropped > 0) {
             // An id that existed before the re-expansion and was NOT regenerated:
             // its `work_item` row is now unreferenced by this book. That is a
@@ -2119,33 +2127,6 @@ public class GeneratedMigrationBookOfWorkService {
             return out;
         }
         return null;
-    }
-
-    /**
-     * Tag marking the out-of-band scaffold seed story. Stamped by the gateway's
-     * scaffold-story mint (see the AddWorkItemRequest tags) and already
-     * load-bearing downstream -- the deterministic bootstrap carriage selects the
-     * story by this tag. Reused here as the re-expansion exemption marker rather
-     * than inventing a second one.
-     */
-    private static final String SEED_BUILD_FILES_TAG = "seed_build_files";
-
-    /**
-     * Case-insensitive membership test against a blob item's {@code tags} list.
-     * Tolerates a missing/!List {@code tags} and non-String entries, because the
-     * blob is caller-supplied JSON rather than a typed projection.
-     */
-    private static boolean hasTag(Map<String, Object> item, String tag) {
-        Object raw = item.get("tags");
-        if (!(raw instanceof List<?> list)) {
-            return false;
-        }
-        for (Object entry : list) {
-            if (entry instanceof String s && s.equalsIgnoreCase(tag)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private static String stringField(Map<String, Object> m, String key) {
