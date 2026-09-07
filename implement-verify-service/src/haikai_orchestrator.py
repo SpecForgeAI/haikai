@@ -830,6 +830,9 @@ class HaikaiOrchestrator:
 
     _BLOCKED_LINE_RE = re.compile(r"^(?P<indent>\s*)[-*]\s*\[~\]\s*(?P<body>.*)$")
     _BLOCKED_REASON_RE = re.compile(r"\bBLOCKED\s*[:\-\u2013\u2014]\s*(?P<reason>\S.*)$", flags=re.IGNORECASE)
+    # ANY checkbox (done / not done / blocked): marks where a wrapped reason
+    # paragraph ends and a nested child task begins.
+    _BOX_ANY_RE = re.compile(r"^[ \t]*[-*]\s*\[[ xX~]\]")
     @staticmethod
     def _width(indent: str) -> int:
         """Indent width with tabs normalised to 4 so mixed whitespace compares."""
@@ -877,14 +880,53 @@ class HaikaiOrchestrator:
                 with_reason += 1
                 notes.append(body)
                 continue
-            # No reason on this line: look for one in the subtree beneath it
+            my_indent = cls._width(m.group("indent"))
+
+            # WRAPPED REASON (2026-09-07 live halt). The reason may begin on the
+            # box's own line and CONTINUE on the following lines, or start
+            # after a ``BLOCKED:`` that sits at the very end of the line:
+            #
+            #     - [~] 4.1 Resolve the cross-spec type dependency — BLOCKED:
+            #       `core.domain.HierarchyFilter` is absent from this branch. It
+            #       is carried by the sibling spec ...
+            #
+            # ``_BLOCKED_REASON_RE`` needs non-space text AFTER the separator on
+            # the SAME line, and the subtree search below needs a descendant
+            # containing the literal word BLOCKED — a plain continuation line
+            # satisfies neither, so a correctly-authored block was scored as
+            # unreasoned and failed the step (the run lost the specs behind
+            # it). Ordinary markdown wrapping must not change the verdict, so
+            # the box's own text is joined with its continuation lines — the
+            # MORE-INDENTED following lines that are NOT themselves checkboxes
+            # — before the subtree reason is looked for. Three terminators,
+            # each deliberate: a blank line ends the paragraph, dedenting
+            # leaves the subtree, and a nested checkbox is a child task rather
+            # than continuation prose (which stops a parent silently absorbing
+            # a child's text as its own reason).
+            continuation: List[str] = []
+            for nxt in lines[i + 1:]:
+                if not nxt.strip():
+                    break  # a blank line ends the wrapped paragraph
+                nxt_indent = cls._width(nxt[: len(nxt) - len(nxt.lstrip())])
+                if nxt_indent <= my_indent:
+                    break  # left this box's subtree
+                if cls._BOX_ANY_RE.match(nxt):
+                    break  # a nested checkbox is a child task, not a continuation
+                continuation.append(nxt.strip())
+            if continuation:
+                joined = f"{body} {' '.join(continuation)}"
+                if cls._BLOCKED_REASON_RE.search(joined):
+                    with_reason += 1
+                    notes.append(joined[:400])
+                    continue
+
+            # Still no reason: look for one in the subtree beneath it
             # (2026-09-04 correction: agents record the reason as an indented
             # sub-bullet under the box, the natural tasks.md shape). The
             # subtree ends at the first non-blank line indented no deeper than
             # the box itself, so a same-indent sibling's reason never leaks
             # onto an unreasoned box. A child that is itself a bare ``[~]``
             # carries no reason and does not rescue its parent.
-            my_indent = cls._width(m.group("indent"))
             child_reason = None
             for nxt in lines[i + 1:]:
                 if not nxt.strip():
