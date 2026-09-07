@@ -1767,10 +1767,50 @@ public class GeneratedMigrationBookOfWorkService {
         }
 
         GeneratedMigrationBookOfWorkEntity draft = requireDraftForUpdate(projectId, bookId);
-        if (!GeneratedMigrationBookOfWorkStatus.DRAFT.equals(draft.getStatus())) {
+        // POST-SAVE REPLACE-EXPANSION (2026-09-07).
+        //
+        // Originally DRAFT-only. That made a planner defect discovered AFTER
+        // save-to-backlog permanently unfixable: the plan structure froze, and
+        // the only escape was regenerating the whole book, which archives the
+        // old one and orphans every `work_item` it had already created. The live
+        // case: the corpus foundation plan was built by a dependency-blind
+        // planner, so a constants story owned an exception type whose field
+        // needs a domain type a later DTO story owns. Implementation of the
+        // constants story must therefore fail, but the fix had no route into an
+        // already-saved book.
+        //
+        // So a REPLACE-expansion (`replace_epic_expansion=true`) is now allowed
+        // on a saved book, and ONLY a replace-expansion. Two reasons it is safe
+        // now and was not before:
+        //   1. identity carry-over re-stamps `workItemId` + `saveState` onto
+        //      every regenerated id, so the blob keeps pointing at the same
+        //      `work_item` rows (nothing is orphaned, nothing is re-minted);
+        //   2. the `seed_build_files` exemption protects the out-of-band
+        //      scaffold story the expansion cannot regenerate.
+        //
+        // An ADDITIVE append is still refused on a non-draft book. Growing a
+        // saved plan through the expansion path has no identity story at all --
+        // its new items would need minting, which is what the dedicated
+        // add-item endpoint is for (see {@code AddWorkItemRequest}).
+        //
+        // Status is deliberately NOT changed: a saved book stays saved. Callers
+        // must regenerate the specs of the rewritten stories, because their
+        // content changed while their ids and work items did not.
+        boolean isDraft = GeneratedMigrationBookOfWorkStatus.DRAFT.equals(draft.getStatus());
+        boolean isReplaceExpansion = Boolean.TRUE.equals(request.replaceEpicExpansion());
+        if (!isDraft && !isReplaceExpansion) {
             throw new IllegalArgumentException(
                 "items/append is only allowed on a draft book; current status: "
-                    + draft.getStatus());
+                    + draft.getStatus()
+                    + " (a replace-expansion -- replace_epic_expansion=true -- is permitted "
+                    + "post-save, but an additive append is not; use the add-item endpoint)");
+        }
+        if (!isDraft) {
+            log.warn(
+                "[diag-ams] book_of_work stage=post_save_replace_expansion draftId={} epicId={} "
+                    + "status={} -- rewriting a SAVED plan; identity carry-over must keep every "
+                    + "workItemId and the affected stories' specs are now stale",
+                bookId, request.epicId(), draft.getStatus());
         }
 
         // Mutable working copy of book_of_work_json (same defensive-copy

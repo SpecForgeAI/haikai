@@ -337,6 +337,67 @@ class GeneratedMigrationBookOfWorkAppendItemsTest {
     }
 
     @Test
+    @DisplayName("a SAVED book allows a replace-expansion: text rewritten, identity kept, status stays saved")
+    void savedBookAllowsReplaceExpansion() {
+        UUID projectId = UUID.randomUUID();
+        GeneratedMigrationBookOfWorkDto draft =
+            service.createDraft(projectId, buildSkeletonCreateRequest());
+        String workItemId = UUID.randomUUID().toString();
+        service.appendItems(projectId, draft.id(),
+            new AppendGeneratedMigrationBookOfWorkItemsRequest(
+                "api:E1",
+                List.of(Map.of("id", "api:S1", "type", "story", "parentId", "api:F1",
+                    "title", "planned by the dependency-blind planner", "expansionGenerated", true,
+                    "workItemId", workItemId, "saveState", "saved")),
+                AppendGeneratedMigrationBookOfWorkItemsRequest.STATE_EXPANDED,
+                null));
+        // The book was saved to the backlog.
+        GeneratedMigrationBookOfWorkEntity entity =
+            repository.findById(draft.id()).orElseThrow();
+        entity.setStatus(GeneratedMigrationBookOfWorkStatus.SAVED);
+        repository.save(entity);
+
+        // A planner fix lands: re-expand the epic on the SAVED book.
+        GeneratedMigrationBookOfWorkDto updated = service.appendItems(projectId, draft.id(),
+            new AppendGeneratedMigrationBookOfWorkItemsRequest(
+                "api:E1",
+                List.of(Map.of("id", "api:S1", "type", "story", "parentId", "api:F1",
+                    "title", "planned by the FIXED planner", "expansionGenerated", true)),
+                AppendGeneratedMigrationBookOfWorkItemsRequest.STATE_EXPANDED,
+                true));
+        List<Map<String, Object>> items = itemsOf(updated.bookOfWorkJson());
+        Map<String, Object> story = itemById(items, "api:S1");
+        assertThat(story).containsEntry("title", "planned by the FIXED planner");
+        assertThat(story).containsEntry("workItemId", workItemId);
+        assertThat(story).containsEntry("saveState", "saved");
+        assertThat(repository.findById(draft.id()).orElseThrow().getStatus())
+            .isEqualTo(GeneratedMigrationBookOfWorkStatus.SAVED);
+    }
+
+    @Test
+    @DisplayName("a SAVED book still refuses an ADDITIVE append (the allowance is replace-expansion only)")
+    void savedBookStillRefusesAdditiveAppend() {
+        UUID projectId = UUID.randomUUID();
+        GeneratedMigrationBookOfWorkDto draft =
+            service.createDraft(projectId, buildSkeletonCreateRequest());
+        GeneratedMigrationBookOfWorkEntity entity =
+            repository.findById(draft.id()).orElseThrow();
+        entity.setStatus(GeneratedMigrationBookOfWorkStatus.SAVED);
+        repository.save(entity);
+
+        assertThatThrownBy(() -> service.appendItems(projectId, draft.id(),
+            new AppendGeneratedMigrationBookOfWorkItemsRequest(
+                "api:E1",
+                List.of(Map.of("id", "api:S1", "type", "story", "parentId", "api:F1",
+                    "title", "Too late")),
+                AppendGeneratedMigrationBookOfWorkItemsRequest.STATE_EXPANDED,
+                false)))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("only allowed on a draft book")
+            .hasMessageContaining("additive append is not");
+    }
+
+    @Test
     @DisplayName("delete story: tombstoned in suppressed_item_ids; re-append of the SAME id is silently skipped (no resurrection); non-story delete rejects")
     void deleteStoryTombstonesAndSuppressesResurrection() {
         UUID projectId = UUID.randomUUID();
