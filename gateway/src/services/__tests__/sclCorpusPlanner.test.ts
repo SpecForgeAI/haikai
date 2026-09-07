@@ -143,12 +143,18 @@ describe('deriveCorpusPlan — 6-layer foundation partition', () => {
   const plan = deriveCorpusPlan(fixture());
 
   it('emits exactly the 6 layers, in order, with exact membership', () => {
+    // LAYER ORDER revised 2026-09-07: utilities + data-access precede the
+    // cross-cutting fragments, because the fragments call INTO both and neither
+    // calls back. Measured on the live corpus: 48 fragment->data-access and 2
+    // fragment->utilities edges, versus ZERO outbound edges from either layer.
+    // The previous order asked 50 fragment contracts to be built against
+    // repositories and helpers that did not exist yet.
     expect(plan.foundationStories.map((s) => s.layer)).toEqual([
       'constants-exceptions',
       'dto-shapes',
-      'cross-cutting-fragments',
       'utilities',
       'data-access',
+      'cross-cutting-fragments',
       'test-kit',
     ]);
     const byLayer = new Map(plan.foundationStories.map((s) => [s.layer, s]));
@@ -248,6 +254,13 @@ describe('deriveCorpusPlan — endpoint groups', () => {
       rowBudget: 40,
       clusteringRule: 'row_budget',
       overBudgetStories: [],
+      // Dependency-order fields (2026-09-07). All three EMPTY is the assertion
+      // that matters: this fixture's foundation layers carry no contract that
+      // references a later story, no *Exception had to leave the constants
+      // layer, and nothing formed an unorderable cycle.
+      constantsEvicted: [],
+      dependencyCycles: [],
+      forwardReferences: [],
     });
   });
 });

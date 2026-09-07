@@ -10,15 +10,20 @@
  *
  * Derivation rules (design §"Spec plan restructure"):
  *   - fan-in >= 2 → HOISTED into a foundational layer (the hoisting rule);
- *   - 6 foundational layers, in build (topological) order:
- *       1. constants-exceptions   enums + *Exception shapes
+ *   - 6 foundational layers, in build (topological) order — VALIDATED against
+ *     the contracts' own reference edges since 2026-09-07, not merely asserted:
+ *       1. constants-exceptions   enums + *Exception shapes that reference
+ *                                 nothing outside this layer
  *       2. dto-shapes             every remaining shape contract
- *       3. cross-cutting-fragments shared (fan-in>=2) non-root, non-utility
- *                                 behaviour tables (envelope builders etc.)
- *       4. utilities              shared *Utils/*Util/*Helper fragments
- *       5. data-access            ALL boundary [Q-] contracts
+ *       3. utilities              shared *Utils/*Util/*Helper fragments
+ *       4. data-access            ALL boundary [Q-] contracts
+ *       5. cross-cutting-fragments shared (fan-in>=2) non-root, non-utility
+ *                                 behaviour tables (envelope builders etc.),
+ *                                 which call INTO utilities + data-access
  *       6. test-kit               fixture builders from the shape contracts
- *     EMPTY layers are omitted;
+ *     EMPTY layers are omitted. Within a layer the parts are partitioned in
+ *     dependency order too, and `stats.forwardReferences` reports any contract
+ *     still placed before something it references;
  *   - then EXTERNAL endpoint groups, then INTERNAL endpoint groups: 1–n
  *     endpoints per story, grouped by declaring legacy controller class,
  *     budgeted by behaviour-table ROW COUNT (config SCL_STORY_ROW_BUDGET,
@@ -103,6 +108,27 @@ export interface SclCorpusPlanStats {
    * split further). Logged by the expansion so the rule that fired is visible.
    */
   overBudgetStories?: string[];
+  /**
+   * FORWARD REFERENCES across the foundation stories (2026-09-07): a story
+   * carrying a contract that references a contract in a LATER story. Should
+   * always be EMPTY now the layers are partitioned in build order — a non-empty
+   * list means an implementer WILL be asked to build against an absent type, so
+   * the expansion logs it loudly rather than letting it surface four hours into
+   * a run as a blocked task.
+   */
+  forwardReferences?: string[];
+  /**
+   * Dependency cycles the topological partition could not order. Members are
+   * emitted in symbol order (the fallback `shapeExtractor` also uses) — a cycle
+   * is unorderable by construction, so it is reported, not hidden.
+   */
+  dependencyCycles?: string[][];
+  /**
+   * Shapes whose NAME matched the constants layer (`*Exception`) but which
+   * reference shapes built later, so they were moved to the DTO layer. Non-empty
+   * means the name-only classification would have produced a forward reference.
+   */
+  constantsEvicted?: string[];
 }
 
 export interface SclCorpusPlan {
@@ -565,6 +591,151 @@ function buildEndpointGroups(args: {
   return stories;
 }
 
+// ---------------------------------------------------------------------------
+// Dependency awareness for the foundation layers (2026-09-07)
+//
+// WHY. A live foundations run lost three specs in sequence to the same
+// defect: the planner asserted its six layers were in "build (topological)
+// order" but partitioned each layer ALPHABETICALLY and classified the
+// constants layer BY NAME. So a `*Exception` whose field typed against a
+// DTO landed in the "zero-dependency layer — built first", ahead of the DTO
+// it needed; and inside the DTO layer a shape sorted before the shape it
+// referenced. Each implementer hit an absent type, did the honest thing
+// (marked the task blocked), and the run halted — hours in. Three fixes,
+// all measured against the live corpus rather than argued:
+//   1. edges: SHAPE contracts depend on the shape contracts they reference
+//      (`references` edges, plus an unresolved opaque/carrier leaf resolved
+//      to a corpus shape by UNIQUE simple class name — never an ambiguous
+//      one, which is how the seq 47/49/50 circular case was mis-attributed);
+//   2. the constants layer is filtered to shapes that reference NOTHING
+//      outside the layer, iterated to a fixed point (evicting one shape can
+//      strand another that referenced it), so its "zero-dependency" promise
+//      is true; the evictions are reported;
+//   3. within a layer the parts are emitted in topological (build) order
+//      with alphabetical tie-break, a cycle is force-broken on its
+//      alphabetically-first member and REPORTED, and every foundation story
+//      is validated against the edges — `stats.forwardReferences` names any
+//      contract still placed before something it references.
+// ---------------------------------------------------------------------------
+
+/** One shape field as the planner reads it (see discovery-service SclShapeField). */
+interface PlannerShapeField {
+  kind?: unknown;
+  sourceCarrier?: unknown;
+  source_carrier?: unknown;
+}
+
+function shapeFieldsOf(contract: SclContractDto): PlannerShapeField[] {
+  const fields = (bodyOf(contract) as Record<string, unknown>).fields;
+  return Array.isArray(fields) ? (fields as PlannerShapeField[]) : [];
+}
+
+function unresolvedCarrierLeaves(contract: SclContractDto): string[] {
+  const leaves = new Set<string>();
+  for (const field of shapeFieldsOf(contract)) {
+    const kind = typeof field.kind === 'string' ? field.kind : '';
+    for (const m of kind.matchAll(/opaque:([A-Za-z_$][\w$.]*)/g)) {
+      leaves.add(simpleClassName(m[1]));
+    }
+    const carrier = field.sourceCarrier ?? field.source_carrier;
+    if (typeof carrier === 'string' && carrier.length > 0) {
+      leaves.add(simpleClassName(stripTypeArguments(carrier)));
+    }
+  }
+  return [...leaves];
+}
+
+/** `List<Foo>` -> `List`; leaves a plain name untouched. */
+function stripTypeArguments(text: string): string {
+  const lt = text.indexOf('<');
+  return (lt >= 0 ? text.slice(0, lt) : text).trim();
+}
+
+export function buildContractDependencies(
+  contracts: SclContractDto[]
+): Map<string, Set<string>> {
+  const known = new Set(contracts.map(keyOf));
+  // SHAPES ONLY, and that restriction is load-bearing. A field's type is a TYPE,
+  // so only a shape contract can satisfy it. Including behaviour tables made the
+  // lookup ambiguous for every type that also has methods in the corpus: on the
+  // live corpus a domain filter type had both a shape contract and behaviour
+  // tables whose `Class#method()` symbols reduce to the same leaf, so the
+  // exception -> filter edge was discarded as unattributable and the very
+  // defect this code exists to prevent survived the first version of it.
+  const keysByLeaf = new Map<string, Set<string>>();
+  for (const contract of contracts) {
+    if (contract.kind !== 'shape' || isBoundary(contract)) continue;
+    const leaf = simpleClassName(classOfSymbol(symbolOf(contract)));
+    if (!leaf) continue;
+    const set = keysByLeaf.get(leaf) ?? new Set<string>();
+    set.add(keyOf(contract));
+    keysByLeaf.set(leaf, set);
+  }
+
+  const deps = new Map<string, Set<string>>();
+  for (const contract of contracts) {
+    const self = keyOf(contract);
+    const set = new Set<string>();
+    for (const ref of referencesOf(contract)) {
+      if (ref !== self && known.has(ref)) set.add(ref);
+    }
+    for (const leaf of unresolvedCarrierLeaves(contract)) {
+      const candidates = keysByLeaf.get(leaf);
+      if (!candidates || candidates.size !== 1) continue; // absent or ambiguous
+      const target = [...candidates][0];
+      if (target !== self) set.add(target);
+    }
+    deps.set(self, set);
+  }
+  return deps;
+}
+
+export function topologicalContractOrder(
+  contracts: SclContractDto[],
+  deps: Map<string, Set<string>>,
+  onCycle?: (members: string[]) => void
+): SclContractDto[] {
+  const inScope = new Map<string, SclContractDto>();
+  for (const c of [...contracts].sort(bySymbol)) inScope.set(keyOf(c), c);
+
+  const pending = new Map<string, Set<string>>();
+  for (const key of inScope.keys()) {
+    const all = deps.get(key) ?? new Set<string>();
+    pending.set(key, new Set([...all].filter((d) => d !== key && inScope.has(d))));
+  }
+
+  const ordered: SclContractDto[] = [];
+  const emitted = new Set<string>();
+  let cycleReported = false;
+  while (emitted.size < inScope.size) {
+    // Ready = every dependency already emitted. Insertion order of `inScope` is
+    // symbol order, so `find` yields the alphabetically-first ready contract.
+    const readyKey = [...inScope.keys()].find(
+      (k) => !emitted.has(k) && [...pending.get(k)!].every((d) => emitted.has(d))
+    );
+    if (readyKey === undefined) {
+      // CYCLE. Break it by force-emitting ONE member (alphabetically first) and
+      // resuming, rather than dumping every remaining contract in symbol order:
+      // the live corpus has a single 47-member fragment cycle, and flushing the
+      // remainder on the first stall lost the ordering for everything behind it.
+      // Resuming instead leaves only genuinely cyclic edges violated — on the
+      // live corpus 6 survive, all inside that one cycle.
+      const stuck = [...inScope.keys()].filter((k) => !emitted.has(k));
+      if (!cycleReported) {
+        onCycle?.(stuck);
+        cycleReported = true;
+      }
+      const forced = stuck[0];
+      ordered.push(inScope.get(forced)!);
+      emitted.add(forced);
+      continue;
+    }
+    ordered.push(inScope.get(readyKey)!);
+    emitted.add(readyKey);
+  }
+  return ordered;
+}
+
 /**
  * Cost of ONE contract against the story budget.
  *
@@ -613,8 +784,18 @@ function planFoundationLayer(args: {
   countRows: boolean;
   rowBudget: number;
   onSplit: () => void;
+  /**
+   * Intra-corpus dependency edges (2026-09-07). When supplied, the layer is
+   * partitioned in BUILD order rather than alphabetical order, so a contract
+   * never lands in an earlier part than something it references. Omitted =>
+   * alphabetical, byte-identical to the pre-fix behaviour.
+   */
+  deps?: Map<string, Set<string>>;
+  onCycle?: (members: string[]) => void;
 }): SclPlannedStory[] {
-  const sorted = [...args.contracts].sort(bySymbol);
+  const sorted = args.deps
+    ? topologicalContractOrder(args.contracts, args.deps, args.onCycle)
+    : [...args.contracts].sort(bySymbol);
   const total = sorted.reduce((sum, c) => sum + contractCostOf(c), 0);
 
   const mk = (
@@ -630,7 +811,12 @@ function planFoundationLayer(args: {
         : `${args.description} PART ${part} of ${totalParts}: ` +
           `${slice.length} of ${sorted.length} contract(s) in this layer. The layer is ` +
           `split on the ${args.rowBudget}-unit story budget; the parts partition the ` +
-          `layer in symbol order with NO overlap and NO omission.`,
+          `layer in ${args.deps ? 'BUILD (dependency) order' : 'symbol order'} with NO ` +
+          `overlap and NO omission.` +
+          (args.deps
+            ? ` A contract never appears in an earlier part than a contract it ` +
+              `references, so each part is buildable once its predecessors are done.`
+            : ''),
     contractKeys: slice.map(keyOf),
     rowCount: args.countRows ? slice.reduce((sum, c) => sum + rowCountOf(c), 0) : 0,
     tags: ['scl', `scl:foundation:${args.layer}`],
@@ -654,6 +840,37 @@ function planFoundationLayer(args: {
   }
   if (current.length > 0) slices.push(current);
   return slices.map((slice, i) => mk(slice, i + 1, slices.length));
+}
+
+/**
+ * Forward references across the foundation stories: a story carrying a
+ * contract that references a contract carried by a LATER story. Exported for
+ * tests; reported on `stats.forwardReferences`.
+ */
+export function foundationForwardReferences(
+  stories: SclPlannedStory[],
+  deps: Map<string, Set<string>>
+): string[] {
+  const storyIndexByKey = new Map<string, number>();
+  stories.forEach((story, index) => {
+    for (const key of story.contractKeys) {
+      if (!storyIndexByKey.has(key)) storyIndexByKey.set(key, index);
+    }
+  });
+  const violations: string[] = [];
+  stories.forEach((story, index) => {
+    for (const key of story.contractKeys) {
+      for (const dep of deps.get(key) ?? new Set<string>()) {
+        const depIndex = storyIndexByKey.get(dep);
+        if (depIndex === undefined || depIndex <= index) continue;
+        violations.push(
+          `'${story.title}' carries ${key} which references ${dep}, carried by the ` +
+            `later story '${stories[depIndex].title}'`
+        );
+      }
+    }
+  });
+  return violations.sort();
 }
 
 /**
@@ -692,8 +909,45 @@ export function deriveCorpusPlan(
     (bodyOf(c) as Record<string, unknown>).representation === 'enum';
   const isExceptionShape = (c: SclContractDto) =>
     simpleClassName(classOfSymbol(symbolOf(c))).endsWith('Exception');
-  const constantsShapes = shapes.filter((c) => isEnumShape(c) || isExceptionShape(c));
-  const dtoShapes = shapes.filter((c) => !isEnumShape(c) && !isExceptionShape(c));
+
+  // -- Dependency edges (2026-09-07) -----------------------------------------
+  const contractDeps = buildContractDependencies(contracts);
+  const dependencyCycles: string[][] = [];
+  const onCycle = (members: string[]) => {
+    // The same shapes are partitioned twice (their own layer + the test kit),
+    // so a cycle would otherwise be reported once per layer it appears in.
+    const sorted = [...members].sort();
+    const seen = dependencyCycles.some(
+      (c) => c.length === sorted.length && c.every((k, i) => k === sorted[i])
+    );
+    if (!seen) dependencyCycles.push(sorted);
+  };
+
+  // The constants layer is built FIRST and its description promises a
+  // zero-dependency layer, so a shape may only join it when EVERYTHING it
+  // references is also in it. Classifying by name alone broke that promise:
+  // an exception whose field typed against a DTO was built before the DTO.
+  // Iterated to a fixed point: evicting one shape can strand another that
+  // referenced it.
+  const shapeKeys = new Set(shapes.map(keyOf));
+  const constantsById = new Map(
+    shapes.filter((c) => isEnumShape(c) || isExceptionShape(c)).map((c) => [keyOf(c), c])
+  );
+  const evictedFromConstants: string[] = [];
+  for (;;) {
+    const offender = [...constantsById.values()].find((c) =>
+      [...(contractDeps.get(keyOf(c)) ?? new Set<string>())].some(
+        (d) => shapeKeys.has(d) && !constantsById.has(d)
+      )
+    );
+    if (!offender) break;
+    constantsById.delete(keyOf(offender));
+    evictedFromConstants.push(symbolOf(offender));
+  }
+  evictedFromConstants.sort();
+
+  const constantsShapes = shapes.filter((c) => constantsById.has(keyOf(c)));
+  const dtoShapes = shapes.filter((c) => !constantsById.has(keyOf(c)));
 
   const shapeFlags = (c: SclContractDto): string[] => {
     const flags = (bodyOf(c) as Record<string, unknown>).flags;
@@ -724,11 +978,21 @@ export function deriveCorpusPlan(
         title: 'Constants, enums & exception types',
         description:
           `${enums.length} enum(s) and ${exceptions.length} exception type(s) from the SCL ` +
-          `corpus shape contracts: ${boundedSymbols(constantsShapes)}. Zero-dependency layer — built first.`,
+          `corpus shape contracts: ${boundedSymbols(constantsShapes)}. Built first: every ` +
+          `contract here references only other contracts in this layer` +
+          (evictedFromConstants.length > 0
+            ? `. ${evictedFromConstants.length} name-matched type(s) were moved to the ` +
+              `DTO & domain shapes layer because they reference shapes built later: ` +
+              `${evictedFromConstants.slice(0, 5).join(', ')}` +
+              (evictedFromConstants.length > 5 ? ` (+${evictedFromConstants.length - 5} more)` : '')
+            : ' — a genuinely zero-dependency layer') +
+          '.',
         contracts: constantsShapes,
         countRows: false,
         rowBudget,
         onSplit: onFoundationSplit,
+        deps: contractDeps,
+        onCycle,
       })
     );
   }
@@ -747,27 +1011,25 @@ export function deriveCorpusPlan(
         countRows: false,
         rowBudget,
         onSplit: onFoundationSplit,
+        deps: contractDeps,
+        onCycle,
       })
     );
   }
 
-  if (crossCuttingFragments.length > 0) {
-    foundationStories.push(
-      ...planFoundationLayer({
-        layer: 'cross-cutting-fragments',
-        title: 'Cross-cutting shared fragments',
-        description:
-          `${crossCuttingFragments.length} shared behaviour fragment(s) (fan-in >= 2) hoisted ` +
-          `out of the endpoint verticals: ${boundedSymbols(crossCuttingFragments)}. ` +
-          `Implemented ONCE here; endpoint stories reference their outcome labels.`,
-        contracts: crossCuttingFragments,
-        countRows: true,
-        rowBudget,
-        onSplit: onFoundationSplit,
-      })
-    );
-  }
-
+  // LAYER ORDER (revised 2026-09-07). Utilities and data-access are emitted
+  // BEFORE the cross-cutting fragments, because the dependency edges run that
+  // way and the previous order contradicted them. Measured on the live corpus:
+  //
+  //   cross-cutting-fragments -> dto-shapes            109  (satisfied)
+  //   cross-cutting-fragments -> data-access            48  (was VIOLATED)
+  //   dto-shapes -> constants-exceptions                30  (satisfied)
+  //   cross-cutting-fragments -> constants-exceptions   16  (satisfied)
+  //   cross-cutting-fragments -> utilities               2  (was VIOLATED)
+  //
+  // and, decisively, data-access and utilities have ZERO outbound cross-layer
+  // edges -- they are pure sinks, so promoting them cannot create a new
+  // violation. Fragments call DAOs and utils, never the reverse.
   if (utilityFragments.length > 0) {
     foundationStories.push(
       ...planFoundationLayer({
@@ -781,6 +1043,8 @@ export function deriveCorpusPlan(
         countRows: true,
         rowBudget,
         onSplit: onFoundationSplit,
+        deps: contractDeps,
+        onCycle,
       })
     );
   }
@@ -797,6 +1061,30 @@ export function deriveCorpusPlan(
         countRows: false,
         rowBudget,
         onSplit: onFoundationSplit,
+        deps: contractDeps,
+        onCycle,
+      })
+    );
+  }
+
+  // Fragments come AFTER utilities + data-access: they call into both (48 + 2
+  // measured edges) and neither calls back.
+  if (crossCuttingFragments.length > 0) {
+    foundationStories.push(
+      ...planFoundationLayer({
+        layer: 'cross-cutting-fragments',
+        title: 'Cross-cutting shared fragments',
+        description:
+          `${crossCuttingFragments.length} shared behaviour fragment(s) (fan-in >= 2) hoisted ` +
+          `out of the endpoint verticals: ${boundedSymbols(crossCuttingFragments)}. ` +
+          `Implemented ONCE here; endpoint stories reference their outcome labels. ` +
+          `Built after the utility and data-access layers, which these fragments call into.`,
+        contracts: crossCuttingFragments,
+        countRows: true,
+        rowBudget,
+        onSplit: onFoundationSplit,
+        deps: contractDeps,
+        onCycle,
       })
     );
   }
@@ -814,6 +1102,8 @@ export function deriveCorpusPlan(
         countRows: false,
         rowBudget,
         onSplit: onFoundationSplit,
+        deps: contractDeps,
+        onCycle,
       })
     );
   }
@@ -835,6 +1125,9 @@ export function deriveCorpusPlan(
     splitCount: 0,
     foundationSplitCount,
     rowBudget,
+    constantsEvicted: evictedFromConstants,
+    dependencyCycles,
+    forwardReferences: foundationForwardReferences(foundationStories, contractDeps),
   };
   const onController = () => {
     stats.controllerCount += 1;
