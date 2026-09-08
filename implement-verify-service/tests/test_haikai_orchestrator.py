@@ -877,3 +877,42 @@ class TestBlockedWithReasonTasks:
         # The parent's note carries the child's reason, not a joined paragraph.
         assert notes[0].startswith("5 Exception types \u2014 ")
         assert "5.1 ValueLengthException" in notes[0]
+
+    def test_qualified_reason_shape_counts_and_bare_blocked_does_not(self, tmp_path):
+        """2026-09-08 live halt: `BLOCKED for `mvn -q clean verify`: no JDK...`
+        names WHICH command is blocked before the colon. Strictly more
+        informative than the canonical form; must count. A bare `-- BLOCKED`
+        with nothing after it must still be malformed."""
+        f = self._write(
+            tmp_path,
+            "- [~] 8.7 Compile-check and clean up \u2014 BLOCKED for `mvn -q clean verify`: "
+            "no JDK on this host. The scope checks it guards were run directly and PASS.\n"
+            "- [~] 8.8 Run the suite \u2014 BLOCKED\n"
+            "- [~] 8.9 Publish \u2014 BLOCKED, see 8.7\n",
+        )
+        with_reason, without_reason, notes = HaikaiOrchestrator._count_blocked_tasks(f)
+        assert (with_reason, without_reason) == (1, 2)
+        assert notes[0].startswith("8.7 Compile-check")
+        assert HaikaiOrchestrator._has_reason("x BLOCKED: short") is True
+        assert HaikaiOrchestrator._has_reason("x BLOCKED for `mvn verify`: no JDK on this host") is True
+        assert HaikaiOrchestrator._has_reason("x -- BLOCKED") is False
+        assert HaikaiOrchestrator._has_reason("x BLOCKED, see 8.7") is False
+
+    def test_preserve_failed_tasks_md_writes_a_non_step_prefixed_copy(self, tmp_path):
+        import types
+        tasks = self._write(tmp_path, "- [~] 1 Do it\n")
+        log_dir = tmp_path / "logs"
+        log_dir.mkdir()
+        fake_self = types.SimpleNamespace(orchestration_log_dir=log_dir)
+        dest = HaikaiOrchestrator._preserve_failed_tasks_md(
+            fake_self, 3, "/implement-tasks", "2026-09-08-spec a/b", tasks)
+        assert dest is not None
+        written = list(log_dir.iterdir())
+        assert len(written) == 1
+        # NOT `step-...`: recovery parses step-{n}-* and the routes glob step-*.json.
+        assert not written[0].name.startswith("step-")
+        assert written[0].name.startswith("failed-tasks-md-step3-implement-tasks-")
+        assert written[0].read_text(encoding="utf-8") == "- [~] 1 Do it\n"
+        # Best-effort: an unwritable destination returns None, never raises.
+        fake_self = types.SimpleNamespace(orchestration_log_dir=tmp_path / "missing" / "dir")
+        assert HaikaiOrchestrator._preserve_failed_tasks_md(fake_self, 3, "/x", "s", tasks) is None

@@ -189,3 +189,42 @@ def test_kiro_cli_args_prefixes_wsl_with_posix_path():
 def test_kiro_cli_args_native_passthrough():
     args = kiro_cli_args("/usr/bin/kiro-cli", False, "chat")
     assert args == ["/usr/bin/kiro-cli", "chat"]
+
+
+# ---------------------------------------------------------------------------
+# WSL env prefix (2026-09-08): kiro-cli is exec'd through `wsl` directly, not a
+# shell, so ~/.profile never runs and JAVA_HOME is absent -> Maven refuses to
+# start and no test can run. KIRO_WSL_ENV injects `env KEY=VAL` ahead of the
+# binary; malformed pairs are skipped, never re-parsed by a shell.
+# ---------------------------------------------------------------------------
+
+def test_wsl_env_prefix_empty_when_unset(monkeypatch):
+    monkeypatch.delenv(locator_mod.WSL_ENV_VAR, raising=False)
+    assert locator_mod.wsl_env_prefix() == []
+    assert kiro_cli_args("/home/u/.local/bin/kiro-cli", True, "chat") == [
+        "wsl", "/home/u/.local/bin/kiro-cli", "chat",
+    ]
+
+
+def test_wsl_env_prefix_injects_env_assignments_ahead_of_the_binary(monkeypatch):
+    monkeypatch.setenv(locator_mod.WSL_ENV_VAR,
+                       "JAVA_HOME=/home/u/jdks/jdk-21.0.12+8; MAVEN_OPTS=-Xmx1g ;")
+    assert locator_mod.wsl_env_prefix() == [
+        "env", "JAVA_HOME=/home/u/jdks/jdk-21.0.12+8", "MAVEN_OPTS=-Xmx1g",
+    ]
+    argv = kiro_cli_args("/home/u/.local/bin/kiro-cli", True, "chat", "--no-interactive")
+    assert argv == [
+        "wsl", "env", "JAVA_HOME=/home/u/jdks/jdk-21.0.12+8", "MAVEN_OPTS=-Xmx1g",
+        "/home/u/.local/bin/kiro-cli", "chat", "--no-interactive",
+    ]
+    # Native (non-WSL) invocations are untouched.
+    assert kiro_cli_args(r"C:\\tools\\kiro-cli.exe", False, "chat")[0].endswith("kiro-cli.exe")
+
+
+def test_wsl_env_prefix_skips_malformed_pairs(monkeypatch):
+    monkeypatch.setenv(locator_mod.WSL_ENV_VAR,
+                       "not-a-pair;1BAD=x;bad key=y;GOOD=1;NL=a\nb;OK2=two=parts")
+    # Only POSIX-named KEY=VALUE pairs survive; a value may itself contain '='.
+    assert locator_mod.wsl_env_prefix() == ["env", "GOOD=1", "OK2=two=parts"]
+    monkeypatch.setenv(locator_mod.WSL_ENV_VAR, "  ;  ;nope")
+    assert locator_mod.wsl_env_prefix() == []

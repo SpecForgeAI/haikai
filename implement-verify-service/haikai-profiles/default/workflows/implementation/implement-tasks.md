@@ -29,12 +29,15 @@ Rules that decide between a passing step and a lost run:
 - The marker MUST be exactly `[~]`. A `[ ]` box carrying a warning emoji, a
   note, or a "BLOCKED, see 5.1" comment is read as an ordinary unfinished task
   and fails the step.
-- After `BLOCKED` you MUST write `:`, `-`, `–` or `—` and then the reason. A bare
+- After the word `BLOCKED` you MUST state WHY. A bare
   `- [~] 5.0 Implement the exception type` with no reason is malformed and also
   fails the step — `[~]` is not an escape hatch for work you found hard.
-- The reason may sit on the box's own line, continue on the following
-  more-indented lines, or sit on any MORE-INDENTED line beneath it, so a parent
-  summarising blocked children need not restate their reasons.
+  Punctuation is not dictated: `BLOCKED: <why>`, `BLOCKED — <why>` and
+  `BLOCKED for `mvn -q clean verify`: <why>` are all accepted. Naming WHICH
+  command or artefact is blocked before explaining why is encouraged.
+- The reason may sit on the box's own line, on a WRAPPED continuation of that
+  line, or on any MORE-INDENTED line beneath it, so a parent summarising blocked
+  children need not restate their reasons.
 - NEVER invent a stub, placeholder or `Object`-typed stand-in to turn a blocked
   task into a ticked one. A local duplicate of a type another spec owns will be
   silently shadowed when that spec lands. Mark it blocked and state why.
