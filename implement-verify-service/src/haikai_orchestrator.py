@@ -27,6 +27,12 @@ from .trace import tracer
 logger = logging.getLogger(__name__)
 _trace = tracer("impl-verify")
 
+#: Minimum characters of prose after the word BLOCKED for the QUALIFIED reason
+#: shape to count as an explanation (see
+#: :meth:`HaikaiOrchestrator._count_blocked_tasks`). Long enough that a bare
+#: `... -- BLOCKED` cannot pass, short enough that a terse honest reason can.
+_BLOCKED_REASON_MIN_CHARS = 24
+
 
 def _polyrepo_extra_dirs(
     workspace_dir,
@@ -661,13 +667,20 @@ class HaikaiOrchestrator:
                 # A bare ``[~]`` with no reason is a dodge, not a block.
                 success = False
                 msg = (
-                    f"Step {step} ({command}) finished but tasks.md has "
-                    f"{blocked_malformed} blocked task checkbox(es) `[~]` with no "
-                    "`BLOCKED: <reason>` — a block must say what could not be "
-                    "evidenced and why (environment-impossible items only)."
+                    f"Step {step} ({command}) marked {blocked_malformed} task(s) "
+                    "BLOCKED with `[~]` but gave no reason. A blocked task MUST "
+                    "say WHY, on its own line, on a wrapped continuation of that "
+                    "line, or on a nested sub-task. Any of these are accepted: "
+                    "'- [~] run the live apply — BLOCKED: no Liquibase/JVM here'; "
+                    "'- [~] compile-check — BLOCKED for `mvn verify`: no JDK on "
+                    f"this host'. At least {_BLOCKED_REASON_MIN_CHARS} characters "
+                    "of explanation must follow the word BLOCKED. Unreasoned "
+                    "blocks are treated as incomplete. The tasks.md as written "
+                    "has been preserved beside the orchestration log for triage."
                 )
                 logger.error(msg)
                 errors.append(msg)
+                self._preserve_failed_tasks_md(step, command, spec_name, tasks_md)
             elif unchecked is not None and unchecked > 0:
                 success = False
                 msg = (
@@ -829,7 +842,39 @@ class HaikaiOrchestrator:
         return unchecked
 
     _BLOCKED_LINE_RE = re.compile(r"^(?P<indent>\s*)[-*]\s*\[~\]\s*(?P<body>.*)$")
+    # CANONICAL shape: `BLOCKED:` / `BLOCKED -` / `BLOCKED --` + text.
     _BLOCKED_REASON_RE = re.compile(r"\bBLOCKED\s*[:\-\u2013\u2014]\s*(?P<reason>\S.*)$", flags=re.IGNORECASE)
+    # QUALIFIED shape (2026-09-08 live halt). The separator need not be
+    # ADJACENT to the word BLOCKED. The failing line was:
+    #
+    #     - [~] 8.7 Compile-check and clean up -- BLOCKED for `mvn -q clean
+    #       verify`: no JDK on this host. The scope checks it guards were run
+    #       directly and PASS: ...
+    #
+    # which names WHICH command is blocked before explaining why -- strictly
+    # more informative than the canonical form, and rejected by it because
+    # " for `mvn -q clean verify`" sits between BLOCKED and the colon. Eleven
+    # sibling tasks in the same file used `BLOCKED:` and passed, so one
+    # phrasing choice failed the step, the spec, and (via stop-on-error) the
+    # remaining specs of the batch.
+    #
+    # Widening to "BLOCKED followed by enough prose to be an explanation"
+    # keeps the anti-dodge property that motivated the gate: a bare
+    # `- [~] 8.7 Compile-check and clean up` carries no BLOCKED at all, and
+    # `... -- BLOCKED` with nothing after it is under the threshold. What it
+    # stops doing is dictating punctuation to the author.
+    _BLOCKED_REASON_LOOSE_RE = re.compile(
+        r"BLOCKED\b(?P<why>.{%d,})$" % _BLOCKED_REASON_MIN_CHARS,
+        flags=re.IGNORECASE,
+    )
+
+    @classmethod
+    def _has_reason(cls, text: str) -> bool:
+        """Canonical `BLOCKED<sep> <reason>` OR qualified `BLOCKED <enough prose>`."""
+        canonical = cls._BLOCKED_REASON_RE.search(text)
+        if canonical and canonical.group("reason").strip():
+            return True
+        return bool(cls._BLOCKED_REASON_LOOSE_RE.search(text))
     # ANY checkbox (done / not done / blocked): marks where a wrapped reason
     # paragraph ends and a nested child task begins.
     _BOX_ANY_RE = re.compile(r"^[ \t]*[-*]\s*\[[ xX~]\]")
@@ -875,8 +920,7 @@ class HaikaiOrchestrator:
             if not m:
                 continue
             body = m.group("body").strip()
-            r = cls._BLOCKED_REASON_RE.search(body)
-            if r and r.group("reason").strip():
+            if cls._has_reason(body):
                 with_reason += 1
                 notes.append(body)
                 continue
@@ -915,7 +959,7 @@ class HaikaiOrchestrator:
                 continuation.append(nxt.strip())
             if continuation:
                 joined = f"{body} {' '.join(continuation)}"
-                if cls._BLOCKED_REASON_RE.search(joined):
+                if cls._has_reason(joined):
                     with_reason += 1
                     notes.append(joined[:400])
                     continue
@@ -934,8 +978,7 @@ class HaikaiOrchestrator:
                 nxt_indent = cls._width(nxt[: len(nxt) - len(nxt.lstrip())])
                 if nxt_indent <= my_indent:
                     break  # left this box's subtree
-                rr = cls._BLOCKED_REASON_RE.search(nxt)
-                if rr and rr.group("reason").strip():
+                if cls._has_reason(nxt):
                     child_reason = nxt.strip()
                     break
             if child_reason is not None:
@@ -971,6 +1014,37 @@ class HaikaiOrchestrator:
 
         logger.info(f"Created step log: {log_file}")
         return str(log_file).replace("\\", "/")
+
+    def _preserve_failed_tasks_md(
+        self, step: int, command: str, spec_name: str, tasks_md: Path
+    ) -> Optional[str]:
+        """Copy a tasks.md that FAILED its completeness gate beside the log.
+
+        WHY (2026-09-08). A batch halted on one malformed ``[~]`` marker, and by
+        the time anyone looked the worktree had been reclaimed -- the tasks.md
+        was gone and the only surviving trace was the truncated reason list on
+        the step log. Diagnosing which task failed, and whether the guard or the
+        author was wrong, took recovering the text from a 540KB stdout dump.
+
+        The filename deliberately does NOT start with ``step-``: both
+        ``api/recovery.py`` (which parses ``step-{n}-...`` to find completed
+        steps) and ``api/routes/orchestration.py`` (which globs ``step-*.json``)
+        would otherwise pick this up as a step log.
+
+        Best-effort: a failure to preserve must never mask the real failure.
+        """
+        try:
+            safe_spec = re.sub(r"[^A-Za-z0-9._-]+", "-", spec_name).strip("-")
+            dest = (
+                self.orchestration_log_dir
+                / f"failed-tasks-md-step{step}-{command.replace('/', '')}-{safe_spec}.md"
+            )
+            dest.write_text(tasks_md.read_text(encoding="utf-8"), encoding="utf-8")
+            logger.error("Preserved the failing tasks.md at: %s", dest)
+            return str(dest).replace("\\", "/")
+        except OSError as exc:
+            logger.warning("Could not preserve the failing tasks.md: %s", exc)
+            return None
 
     def _create_orchestration_log(
         self,

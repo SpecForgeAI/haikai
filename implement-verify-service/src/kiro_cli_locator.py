@@ -26,7 +26,9 @@ lists remain.
 from __future__ import annotations
 
 import logging
+import os
 import platform
+import re
 import shutil
 import subprocess
 # Imported DIRECTLY so tests that substitute the `subprocess` module handle
@@ -177,13 +179,78 @@ def locate_kiro_cli() -> Tuple[str, bool]:
     )
 
 
+#: Extra environment for the WSL-side kiro-cli process, as ``KEY=VALUE`` pairs
+#: separated by ``;`` -- e.g. ``JAVA_HOME=/home/me/jdks/jdk-21.0.12+8``.
+WSL_ENV_VAR = "KIRO_WSL_ENV"
+
+#: A conservative POSIX environment-variable name.
+_ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def wsl_env_prefix() -> List[str]:
+    """Build an ``env KEY=VAL ...`` prefix for WSL invocations, or ``[]``.
+
+    WHY THIS EXISTS (2026-09-08 live halt). :func:`kiro_cli_args` execs the
+    binary DIRECTLY through ``wsl`` -- ``["wsl", "/home/u/.local/bin/kiro-cli",
+    ...]`` -- which is deliberately not a shell, so neither ``~/.profile`` nor
+    ``~/.bashrc`` is sourced. Windows ``PATH`` still crosses via WSL interop,
+    so ``mvn`` RESOLVES inside the agent's shell, but ``JAVA_HOME`` does not
+    exist. Maven then dies with "The JAVA_HOME environment variable is not
+    defined correctly" and NO test can run.
+
+    The observed consequence was not a crash but something worse: the agent
+    correctly detected the broken toolchain, marked all twelve of its
+    test-execution tasks ``[~] ... BLOCKED: no JDK on this host`` and
+    substituted static verification. Sibling specs had papered over the same
+    hole by GREPPING an earlier spec's ``final-verification.md`` for a JDK path
+    a previous agent had downloaded -- so whether a spec could run its own tests
+    depended on whether it happened to find that note. Non-deterministic
+    verification is not verification.
+
+    A prefix rather than a login shell on purpose: ``env`` takes an argv, so
+    the prompt arguments (which contain quotes, backticks and newlines) are
+    never re-parsed by a shell. Malformed pairs are skipped with a warning
+    rather than silently corrupting the argv.
+    """
+    raw = (os.environ.get(WSL_ENV_VAR) or "").strip()
+    if not raw:
+        return []
+    assignments: List[str] = []
+    for pair in raw.split(";"):
+        pair = pair.strip()
+        if not pair:
+            continue
+        key, sep, value = pair.partition("=")
+        key = key.strip()
+        if not sep or not _ENV_KEY_RE.match(key):
+            logger.warning(
+                "%s entry %r is not a KEY=VALUE pair with a POSIX name -- skipped.",
+                WSL_ENV_VAR, pair,
+            )
+            continue
+        if "\n" in value or "\x00" in value:
+            logger.warning(
+                "%s value for %s contains a newline/NUL -- skipped.", WSL_ENV_VAR, key
+            )
+            continue
+        assignments.append(f"{key}={value}")
+    if not assignments:
+        return []
+    logger.info("Injecting WSL env into kiro-cli: %s", " ".join(assignments))
+    return ["env", *assignments]
+
+
 def kiro_cli_args(cli_path: Union[str, Path], use_wsl: bool, *args: str) -> List[str]:
     """Build a kiro-cli argv, prefixing ``wsl`` on Windows.
 
     ALWAYS build kiro-cli invocations through this helper: ``str(Path)`` of
     a POSIX path on Windows flips the slashes to backslashes, which is the
     bug this helper exists to prevent (clear_session hit it).
+
+    On WSL the argv also carries the :func:`wsl_env_prefix` assignments, so the
+    agent's shell has a toolchain (see that function for why ``~/.profile`` is
+    not an option here).
     """
     if use_wsl:
-        return ["wsl", Path(cli_path).as_posix(), *args]
+        return ["wsl", *wsl_env_prefix(), Path(cli_path).as_posix(), *args]
     return [str(cli_path), *args]
