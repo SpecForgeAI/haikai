@@ -1031,6 +1031,25 @@ def _resolve_request_context(job) -> tuple[OrchestrationRequest, str, str, str]:
     # resolution) agrees.
     workspace_dir = str(Path(workspace_dir).resolve())
 
+    # Execution-environment preflight (2026-09-09): gate on the runtimes the
+    # repo ACTUALLY needs (JDK for a JVM build, Docker for Testcontainers)
+    # before any LLM money is spent. A missing runtime does not fail loudly on
+    # its own -- a Testcontainers suite whose classes are all skipped exits 0
+    # and reads green -- so this is the only place the gap surfaces as a named
+    # error. Raising here rides the same path as the credential check: the
+    # caller's except emits the failure callback, so the run item never
+    # strands at `submitted`. Disable with IVS_SKIP_ENV_PREFLIGHT=1 for
+    # deliberately toolchain-less dry runs.
+    if os.getenv("IVS_SKIP_ENV_PREFLIGHT", "").strip().lower() not in ("1", "true", "on"):
+        from src.preflight import preflight_repo_targets
+        product_root = Path(workspace_dir) / request.company / request.project
+        env_problems = preflight_repo_targets(_resolve_repo_targets(product_root))
+        if env_problems:
+            raise ValueError(
+                "Execution environment preflight failed -- the run would not be "
+                "verifiable: " + " | ".join(env_problems)
+            )
+
     session_id = get_active_session(
         Path(workspace_dir), request.company, request.project
     )
