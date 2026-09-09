@@ -1108,6 +1108,24 @@ export function runSclSpecCarriage(args: {
       'CONTESTED (flag with evidence via the contested-test protocol) — never edited; ' +
       'upheld contests quarantine the test visibly.'
   );
+  // Assertion guidance for the implementer's OWN tests (2026-09-09). Live
+  // cost: three consecutive parts of one layer each quarantined the previous
+  // part's "scope boundary" / "roster" assertions -- exact file or class
+  // counts in a package -- because every part ADDS files, so each part is
+  // structurally guaranteed to invalidate its predecessor's counts. Seven
+  // quarantine entries with multi-paragraph justifications, for assertions
+  // nothing tool-side ever asked for: the implementing agent invented the
+  // pattern. The valuable assertions in those same classes never needed
+  // quarantining, because they pinned semantic invariants.
+  lines.push(
+    '   Additional tests you write yourself MUST NOT pin the NUMBER of files or ' +
+      'classes in a package, nor enumerate a "roster" of expected types: every later ' +
+      'part of this layer ADDS files, so such an assertion is guaranteed to break and ' +
+      'be quarantined. Pin the semantic invariant instead — no controller mapping ' +
+      'added, every mapped table pre-existing, one repository home per aggregate, no ' +
+      'duplicate DAO beyond the declared seam. If you find yourself counting, you are ' +
+      'asserting the wrong thing.'
+  );
   lines.push(
     '3. Every behaviour-table row above corresponds to implemented behaviour; verbatim ' +
       'conditions/outcomes are the contract — representation may modernize per the ' +
