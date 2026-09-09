@@ -404,3 +404,24 @@ describe('captured behaviour facts (2026-09-03, BEHAV-03 / BEHAV-04 / BEHAV-05)'
     expect(text).toContain('**Authorisation (data-derived):** access is decided by `if (!acl.isReadPermitted(user, view))`, denying with `value:PERMISSION_DENIED`; the predicate reads [Q-ORD]');
   });
 });
+
+describe('assertion guidance for implementer-written tests (2026-09-09)', () => {
+  it('tells the implementer not to pin file/class counts or type rosters, and what to pin instead', () => {
+    const row = runSclSpecCarriage({
+      story: story(null),
+      baseRow: baseRow(),
+      contracts: [table(['S-RESP'])],
+      decisions: [decision()],
+      wireFactsSectionText: null,
+      targetStackSectionText: null,
+    });
+    const text = row.generatedSpecText as string;
+    const ac = text.slice(text.indexOf('## Acceptance criteria'));
+    expect(ac).toContain('MUST NOT pin the NUMBER of files or classes in a package');
+    expect(ac).toContain('every later part of this layer ADDS files');
+    expect(ac).toContain('Pin the semantic invariant instead');
+    // It sits under the no-modification rule, before the behaviour-row rule.
+    expect(ac.indexOf('2. NO shipped test file was modified')).toBeLessThan(ac.indexOf('MUST NOT pin the NUMBER'));
+    expect(ac.indexOf('MUST NOT pin the NUMBER')).toBeLessThan(ac.indexOf('3. Every behaviour-table row'));
+  });
+});
