@@ -13,6 +13,7 @@
 
 import {
   buildContractDependencies,
+  contractIsUnimplementable,
   deriveCorpusPlan,
   foundationForwardReferences,
   SclContractDto,
@@ -195,5 +196,47 @@ describe('reference edges', () => {
     ]);
     // Reverse order: no violation.
     expect(foundationForwardReferences([stories[1], stories[0]], deps)).toEqual([]);
+  });
+});
+
+describe('contract sufficiency (2026-09-09)', () => {
+  function boundary(key: string, ops: Array<{ name: string; sqlVerbatim?: string | null; sql?: string | null }>): SclContractDto {
+    return {
+      contract_key: key,
+      kind: 'boundary',
+      source_path: 'src/com/app/Dao.java',
+      source_symbol: 'com.app.Dao#op()',
+      fan_in: 1,
+      roots_json: { roots: [] },
+      body_json: { symbol: 'com.app.Dao#op()', operations: ops },
+    };
+  }
+
+  it('a boundary with no SQL-bearing operation is unimplementable; one verbatim statement makes it implementable', () => {
+    expect(contractIsUnimplementable(boundary('Q-EMPTY', []))).toBe(true);
+    expect(contractIsUnimplementable(boundary('Q-NAMED', [{ name: 'findById', sqlVerbatim: null }]))).toBe(true);
+    expect(contractIsUnimplementable(boundary('Q-SQL', [{ name: 'findById', sqlVerbatim: 'select 1' }]))).toBe(false);
+    expect(contractIsUnimplementable(boundary('Q-SQL2', [{ name: 'findById', sql: 'select 1' }]))).toBe(false);
+  });
+
+  it('a table with zero rows is unimplementable; a shape with no fields is unimplementable; rows/fields make them buildable', () => {
+    expect(contractIsUnimplementable(table({ key: 'T-EMPTY', symbol: 'com.app.Svc#a()', rows: 0 }))).toBe(true);
+    expect(contractIsUnimplementable(table({ key: 'T-ROWS', symbol: 'com.app.Svc#b()', rows: 2 }))).toBe(false);
+    expect(contractIsUnimplementable(shape({ key: 'S-NOFIELDS', symbol: 'com.app.Empty', fields: [] }))).toBe(true);
+    expect(contractIsUnimplementable(shape({ key: 'S-FIELDS', symbol: 'com.app.Full' }))).toBe(false);
+  });
+
+  it('is reported on the plan stats per contract, never keyed on the layer row count', () => {
+    const contracts = [
+      shape({ key: 'S-FULL', symbol: 'com.app.Full' }),
+      shape({ key: 'S-NOFIELDS', symbol: 'com.app.Empty', fields: [] }),
+      boundary('Q-EMPTY', []),
+      boundary('Q-SQL', [{ name: 'findById', sqlVerbatim: 'select 1' }]),
+      table({ key: 'T-EMPTY', symbol: 'com.app.Svc#a()', rows: 0, fanIn: 2 }),
+    ];
+    const plan = deriveCorpusPlan(contracts);
+    expect(plan.stats.unimplementableContracts).toEqual(['Q-EMPTY', 'S-NOFIELDS', 'T-EMPTY']);
+    // The data-access layer is zero-ROW by design and still contains Q-SQL: not flagged.
+    expect(plan.stats.unimplementableContracts).not.toContain('Q-SQL');
   });
 });

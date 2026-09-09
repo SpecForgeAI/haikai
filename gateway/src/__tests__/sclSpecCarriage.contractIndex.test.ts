@@ -425,3 +425,58 @@ describe('assertion guidance for implementer-written tests (2026-09-09)', () => 
     expect(ac.indexOf('MUST NOT pin the NUMBER')).toBeLessThan(ac.indexOf('3. Every behaviour-table row'));
   });
 });
+
+describe('contract sufficiency at render time (2026-09-09)', () => {
+  function emptyBoundary(key: string): SclContractDto {
+    return {
+      contract_key: key,
+      kind: 'boundary',
+      source_path: 'src/com/app/TokenDao.java',
+      source_symbol: 'com.app.TokenDao#find()',
+      fan_in: 1,
+      roots_json: { roots: [] },
+      body_json: { symbol: 'com.app.TokenDao#find()', operations: [{ name: 'find', sqlVerbatim: null }] },
+    };
+  }
+
+  it('a story carrying SOME unimplementable contracts renders them as declared gaps with a warning, and stays generated', () => {
+    const s = story(null);
+    (s as { sclContractKeys?: string[] }).sclContractKeys = ['T-GET', 'Q-TOKEN'];
+    const row = runSclSpecCarriage({
+      story: s,
+      baseRow: baseRow(),
+      contracts: [table([]), emptyBoundary('Q-TOKEN')],
+      decisions: [decision()],
+      wireFactsSectionText: null,
+      targetStackSectionText: null,
+    });
+    expect(row.status).toBe('generated_with_warnings');
+    const text = row.generatedSpecText as string;
+    expect(text).toContain('## Declared gaps (contracts with nothing to build from)');
+    expect(text).toContain('- [Q-TOKEN] `com.app.TokenDao#find()` — boundary with no captured behaviour');
+    expect(text).toContain('BLOCKED: contract <key> is a declared gap');
+    const warnings = row.warningsJson as Array<{ code: string; contractKey?: string }>;
+    expect(warnings.some((w) => w.code === 'CONTRACT_UNIMPLEMENTABLE' && w.contractKey === 'Q-TOKEN')).toBe(true);
+    // Section ordering: gaps are declared before the acceptance criteria (and
+    // before the data-access / index sections when those render).
+    expect(text.indexOf('## Declared gaps')).toBeGreaterThan(-1);
+    expect(text.indexOf('## Declared gaps')).toBeLessThan(text.indexOf('## Acceptance criteria'));
+  });
+
+  it('a story whose EVERY contract is unimplementable is refused as insufficient context (never a buildable-looking spec)', () => {
+    const s = story(null);
+    (s as { sclContractKeys?: string[] }).sclContractKeys = ['Q-TOKEN'];
+    const row = runSclSpecCarriage({
+      story: s,
+      baseRow: baseRow(),
+      contracts: [emptyBoundary('Q-TOKEN')],
+      decisions: [decision()],
+      wireFactsSectionText: null,
+      targetStackSectionText: null,
+    });
+    expect(row.status).toBe('insufficient_context');
+    const missing = row.missingInputsJson as Array<{ input: string; missingKeys?: string[] }>;
+    expect(missing[0].input).toBe('scl_contracts_unimplementable');
+    expect(missing[0].missingKeys).toEqual(['Q-TOKEN']);
+  });
+});
