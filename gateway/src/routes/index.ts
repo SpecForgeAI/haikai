@@ -103,6 +103,14 @@ export { architecturesRouter } from './architectures';
 // (port 8092) calls once per scenario round-trip.
 export { apiMigrationValidationRouter } from './apiMigrationValidation';
 
+// Proc behaviour capture proxies (Stored Proc & Function Behaviour Program,
+// Spec 3, 2026-09-09): AMVS session actions + AMS data-plane passthrough
+// under /api/v1/projects/:p/architectures/:a/proc-behaviour + /db-routines.
+export { procBehaviourRouter } from './procBehaviour';
+// Translation workbench (Spec 4, 2026-09-09): target build, translate →
+// apply → reconcile → re-translate loop, waivers, evidence-gated approval.
+export { dbMigrationPackWorkbenchRouter } from './dbMigrationPackWorkbench';
+
 // Migration Discovery Context proxy route (Spec: 2026-05-16 Migration Discovery
 // Context Integration - Task Group 2). Parameter-rich pass-through proxy for the
 // AMS POST /api/projects/{projectId}/migration-discovery-context aggregation

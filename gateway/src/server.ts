@@ -7,7 +7,7 @@
 
 import express from 'express';
 import { getConfig } from './config';
-import { chatRouter, healthRouter, orchestrationsRouter, implementationProjectsRouter, implementConversationsRouter, implementStateRouter, organisationsRouter, shapeSpecRouter, standardsGenerateRouter, projectStandardsGenerateRouter, jiraIssuesRouter, jiraImportRouter, jiraSyncRouter, dashboardSummaryRouter, chatV2Router, architectureExplainerRouter, discoveryRouter, discoveryDecisionTasksRouter, discoveryGapFillRouter, discoveryLogRecipeRouter, discoveryBehaviourCaptureRouter, discoveryOperationalArtifactRouter, discoveryCapabilityNamingRouter, techHintsResolveRouter, discoveryPerformanceScoreRouter, pdfRouter, architecturesRouter, apiMigrationValidationRouter, migrationContextRouter, migrationBookOfWorkRouter, migrationShapeSpecGenerationRouter, migrationShapeSpecCostPreviewRouter, migrationDeliveryDashboardRouter, epicCapturedDecisionsRouter, targetArchitecturesRouter, missingInputResolutionsRouter, architectConversationRouter, discoveryReviewConversationRouter, dbMigrationPackRouter, oasExportRouter, vulnerabilitiesRouter, securityFindingsRouter, vulnerabilityReductionRouter, migrationExecutionRouter } from './routes';
+import { chatRouter, healthRouter, orchestrationsRouter, implementationProjectsRouter, implementConversationsRouter, implementStateRouter, organisationsRouter, shapeSpecRouter, standardsGenerateRouter, projectStandardsGenerateRouter, jiraIssuesRouter, jiraImportRouter, jiraSyncRouter, dashboardSummaryRouter, chatV2Router, architectureExplainerRouter, discoveryRouter, discoveryDecisionTasksRouter, discoveryGapFillRouter, discoveryLogRecipeRouter, discoveryBehaviourCaptureRouter, discoveryOperationalArtifactRouter, discoveryCapabilityNamingRouter, techHintsResolveRouter, discoveryPerformanceScoreRouter, pdfRouter, architecturesRouter, apiMigrationValidationRouter, migrationContextRouter, migrationBookOfWorkRouter, migrationShapeSpecGenerationRouter, migrationShapeSpecCostPreviewRouter, migrationDeliveryDashboardRouter, epicCapturedDecisionsRouter, targetArchitecturesRouter, missingInputResolutionsRouter, architectConversationRouter, discoveryReviewConversationRouter, dbMigrationPackRouter, oasExportRouter, vulnerabilitiesRouter, securityFindingsRouter, vulnerabilityReductionRouter, migrationExecutionRouter, procBehaviourRouter, dbMigrationPackWorkbenchRouter } from './routes';
 // Spec 4 (LLM gap-proposal queue, 2026-08-04): own import line (not the big
 // './routes' list) to keep the diff surface minimal for concurrent edits.
 import { dbGapProposalsRouter } from './routes/dbGapProposals';
@@ -130,6 +130,9 @@ app.use('/api', architecturesRouter);
 // Both surfaces (AMS CRUD proxies + LLM tool-call relay) live behind one
 // router file so the URL safety property is enforced in one place.
 app.use('/api/v1', apiMigrationValidationRouter);
+// Proc behaviour capture (Stored Proc & Function Behaviour Program, Spec 3,
+// 2026-09-09): DB-native sibling of the API behaviour surface.
+app.use('/api/v1', procBehaviourRouter);
 // Migration Discovery Context proxy route (Spec: 2026-05-16 Migration Discovery
 // Context Integration - Task Group 2). Mounted at /api/v1 so the internal path
 // resolves to /api/v1/projects/:projectId/migration-discovery-context. Thin
@@ -147,6 +150,8 @@ app.use('/api/v1', migrationBookOfWorkRouter);
 // pack generation / decisions / drift / download surface, sibling of the
 // migration book-of-work routes.
 app.use('/api/v1', dbMigrationPackRouter);
+// Translation workbench routes (Spec 4, 2026-09-09) share the pack base.
+app.use('/api/v1', dbMigrationPackWorkbenchRouter);
 // DB Gap-Proposal queue (Spec 4, 2026-08-04): LLM-drafted fk/pk metadata
 // proposals for pack structural findings — generate / list / review / manual.
 app.use('/api/v1', dbGapProposalsRouter);

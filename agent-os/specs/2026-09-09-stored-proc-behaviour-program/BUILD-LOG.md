@@ -160,3 +160,65 @@ target-side compensation bracket (Spec 4) owns undo, as target replay does
 today. The SESSION.001 SET list is the ASE login default as jConnect leaves
 it; verify on the work machine against the application's actual driver
 properties and override with PROC_CALL_SESSION_SET if they differ.
+
+#### Spec 3 — Proc behaviour capture (BUILT 2026-09-09)
+
+As built:
+- AMS changeset 230 (subagent-built): `proc_behaviour_capture_sessions`
+  (state machine draft→configured→running→terminal; 409 on illegal),
+  `proc_behaviour_scenarios` (upsert by session+routine+name),
+  `proc_behaviour_captures`, `proc_behaviour_baselines` (ONE pinned per
+  architecture+kind; pin supersedes), `proc_behaviour_baseline_items`
+  (`stale`/`stale_reason` + `POST /baselines/{id}/items/stale` for Spec 5
+  drift), `proc_behaviour_diagnostics`. Controllers under
+  `/api/projects/{p}/architectures/{a}/proc-behaviour/...`; content hash =
+  sha-256 over sorted routine|scenario|envelope lines.
+- AMVS (DB-native, independent of the API session model):
+  `services/procCapture/{types,routineScenarioSeeds,routineCoverageFloor,
+  procToolLoop,procTools,procConfig,procBaseline,procCaptureOrchestrator}.ts`,
+  `services/procBehaviourClient.ts` (AMS client for db-routines +
+  proc-behaviour), `routes/procCaptureSessionActions.ts`
+  (`/api/proc-capture-sessions/:id/{secrets,start,status,cancel,
+  retry-uncovered,exclude-routine,not-possible,save-baseline}`; start guards:
+  configured + secrets + S0 pinned + catalog non-empty; 202 fire-and-forget;
+  own `procRunRegistry`, never the API runManager).
+  Seeds: parameter → column domains mined from `col = @param` comparisons
+  (alias + statement-table resolution) for real-value sampling; plan = happy
+  + one per RAISERROR site + one per non-zero RETURN + zero_rows (when
+  @@rowcount) + reported-only null/default/boundary. Floor = static exit
+  outcomes ∪ seeded families; buckets verified | not_exercised |
+  unverifiable(reason) | excluded. Loop = proc-specific tool loop (research
+  rounds free, wall clock, abort, terminal note) with tools
+  get_routine_context / sample_routine_db_values / run_routine_readonly_sql /
+  record_routine_scenario (sequences supported; last step = the routine) /
+  execute_routine (fires through the ORCHESTRATOR's bracket; attempt budget)
+  / record_routine_note. Every fire = `runCompensationBracket` over
+  writes_closure ∪ trigger_expanded_writes with reads as the defensive
+  union; unbracketed only when nothing resolves; non-compensatable
+  constructs refuse BEFORE firing; compensation inactive → writing routines
+  refused, write-free routines still capture. Double-fire for
+  volatile-function routines → `volatile_cells_json` evidence. Capture fires
+  with the DB credentials the user entered (readonly split observational).
+  End-of-job S0 fingerprint reused; session ends completed /
+  completed_with_findings / failed / cancelled with the coverage summary.
+  Baseline = first accepted capture per fired scenario, keyed by body hash.
+- gateway `routes/procBehaviour.ts`: AMVS action proxies + AMS data-plane
+  passthrough (`/proc-behaviour/*`, `/db-routines*`) under
+  `/api/v1/projects/:p/architectures/:a`; mounted in server.ts.
+- frontend (subagent-built): `api/procBehaviourApi.ts`,
+  `components/ProcBehaviour/` (tab on ApiBaselinesListPage, wizard scope /
+  DB block / tuning, session page with default-collapsed coverage panel +
+  envelope viewer + retry-uncovered/not-possible/exclude + save-as-baseline,
+  baseline page with stale badges); routes in App.tsx.
+
+Verification: AMVS `procCapture.test.ts` 13/13 + `procCaptureSessionActions.test.ts`
+5/5 + tsc clean; gateway `procBehaviourRoutes.test.ts` 4/4 + tsc clean; AMS
+230 `ProcBehaviourServiceTest` 7/7 + JPA context checks; frontend 16/16
+(4 new suites + the page suite).
+
+Notes: pack generation needs only `architecture_id` (no plan/book), and
+the pack view lives on the delivery-plan landing, so the workbench (Spec 4)
+is reachable straight after the target conversation — the design's
+pack-before-plan assumption holds without a change. The proc capture's
+quiet-window gap defaults to 120s (PROC_CAPTURE_QUIET_WINDOW_SECONDS, or
+`capture_tuning_json.quiet_window_seconds`; 0 skips).
