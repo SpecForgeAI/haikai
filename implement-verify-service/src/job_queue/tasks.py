@@ -961,6 +961,22 @@ def _repair_spec(repo_dir, spec_name: str, anthropic_api_key: str, *,
             continue
         summary = (result.get("stdout") or "")[-2000:]
         if result.get("success") and "VERDICT=PASS" in summary:
+            # Trusting VERDICT=PASS from the model is the same defect one layer
+            # down as trusting the exit code (2026-09-09): read the reports
+            # directly. A wholly-skipped class means the verdict verified
+            # nothing for that class; treat the attempt as FAIL and let the
+            # loop retry with that named, rather than pass on a self-report.
+            from src.verification.surefire import summarize_repo
+            surefire = summarize_repo(Path(repo_dir))
+            if surefire is not None and surefire.fully_skipped_classes:
+                summary = (
+                    f"repair attempt {attempt}: VERDICT=PASS reported, but Surefire shows "
+                    f"{len(surefire.fully_skipped_classes)} wholly-skipped test class(es) "
+                    f"({', '.join(surefire.fully_skipped_classes[:6])}) -- skipped is not "
+                    "passed; the suite did not verify those classes"
+                )
+                logger.warning("repair %s: %s", spec_name, summary)
+                continue
             return True, attempt, summary
         # Timeout: the explicit marker, with a stderr sniff as the fallback
         # for older executors that predate it.
@@ -2489,6 +2505,8 @@ def _emit_orchestration_callback(request: OrchestrationRequest, job_id: str, res
         # failure (halt + human), and a resume can start at the failed step.
         "failure_class": getattr(response, "failure_class", None),
         "failed_step": getattr(response, "failed_step", None),
+        # Surefire skip summary (2026-09-09): what was actually verified.
+        "skipped_tests": getattr(response, "skipped_tests", None),
     }
     if deploy:
         payload["target_base_url"] = deploy.get("base_url")
