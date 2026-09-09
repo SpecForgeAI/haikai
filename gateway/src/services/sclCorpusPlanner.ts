@@ -129,6 +129,15 @@ export interface SclCorpusPlanStats {
    * means the name-only classification would have produced a forward reference.
    */
   constantsEvicted?: string[];
+  /**
+   * Contracts with a signature and NOTHING to build from (2026-09-09): no
+   * behaviour rows, no boundary operation carrying verbatim SQL, no shape
+   * fields. A story carrying only such contracts cannot be implemented from
+   * the spec; one carrying some renders them as declared gaps. Reported at
+   * plan time, in the same shape as `forwardReferences`, so the decision is
+   * visible before an implementer discovers it as a NOT CAPTURED throw.
+   */
+  unimplementableContracts?: string[];
 }
 
 export interface SclCorpusPlan {
@@ -747,6 +756,38 @@ export function topologicalContractOrder(
  * never exceed any budget — which is precisely why the shape layers grew
  * unbounded.</p>
  */
+/**
+ * A contract with a signature and NOTHING to build from (2026-09-09).
+ *
+ * Live shape: a data-access contract whose own gloss said "the boundary
+ * symbol, the operation name, the result shape -- that is everything: no
+ * table, no statement, no predicate, no parameter list, no result-set label
+ * and no log fragment appears in any row", plus behaviour tables with
+ * literally empty row lists. Five of the six NOT CAPTURED throws on a whole
+ * branch came from those contracts.
+ *
+ * Per-contract and OPERATION-aware on purpose: the shape and boundary layers
+ * are zero-ROW by design (`countRows: false`), yet a data-access part with
+ * verbatim `@Query` SQL is perfectly implementable -- so the layer row count
+ * is the wrong signal; only a contract with no rows, no SQL-bearing
+ * operation and no fields is unimplementable.
+ */
+export function contractIsUnimplementable(contract: SclContractDto): boolean {
+  const body = bodyOf(contract) as Record<string, unknown>;
+  if (isBoundary(contract)) {
+    const ops = Array.isArray(body.operations) ? body.operations : [];
+    return !ops.some((op) => {
+      const o = (op ?? {}) as Record<string, unknown>;
+      const sql = typeof o.sqlVerbatim === 'string' ? o.sqlVerbatim : typeof o.sql === 'string' ? o.sql : '';
+      return sql.trim().length > 0;
+    });
+  }
+  if (contract.kind === 'shape') {
+    return !(Array.isArray(body.fields) && body.fields.length > 0);
+  }
+  return rowCountOf(contract) === 0;
+}
+
 function contractCostOf(contract: SclContractDto): number {
   // Boundaries cost by their OPERATIONS (2026-09-03, MECH-05): each renders a
   // verbatim SQL block, so a 32-DAO data-access layer at cost 1 each never
@@ -1128,6 +1169,10 @@ export function deriveCorpusPlan(
     constantsEvicted: evictedFromConstants,
     dependencyCycles,
     forwardReferences: foundationForwardReferences(foundationStories, contractDeps),
+    unimplementableContracts: contracts
+      .filter(contractIsUnimplementable)
+      .map(keyOf)
+      .sort(),
   };
   const onController = () => {
     stats.controllerCount += 1;

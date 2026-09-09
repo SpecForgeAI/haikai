@@ -261,6 +261,7 @@ describe('deriveCorpusPlan — endpoint groups', () => {
       constantsEvicted: [],
       dependencyCycles: [],
       forwardReferences: [],
+      unimplementableContracts: [], // every fixture contract has rows, SQL, or fields
     });
   });
 });

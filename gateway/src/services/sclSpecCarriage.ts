@@ -54,6 +54,7 @@ import {
 } from './migrationTargetStackSpecSection';
 import { appendWireFidelitySection } from './migrationBaselineWireFacts';
 import { defaultModernizationRuleset } from './sclModernizationRuleset';
+import { contractIsUnimplementable } from './sclCorpusPlanner';
 
 // ---------------------------------------------------------------------------
 // Story recognition + blob markers
@@ -900,6 +901,36 @@ export function runSclSpecCarriage(args: {
   }
 
   const orderedContracts = orderedKeys.map((k) => byKey.get(k)!);
+
+  // Contract sufficiency (2026-09-09). A contract with a signature and NOTHING
+  // to build from -- no rows, no SQL-bearing operation, no fields -- cannot be
+  // implemented from this spec. Every carried contract unimplementable =>
+  // this story is refused as insufficient context (never a spec that reads as
+  // buildable). Some => they are kept AND stamped as declared gaps, so the
+  // traceability that made the failure diagnosable is not lost by silently
+  // excluding them.
+  const unimplementableKeys = orderedKeys.filter((k) => contractIsUnimplementable(byKey.get(k)!));
+  if (unimplementableKeys.length === orderedKeys.length) {
+    return {
+      ...baseRow,
+      status: 'insufficient_context',
+      missingInputsJson: [
+        {
+          input: 'scl_contracts_unimplementable',
+          missingKeys: unimplementableKeys,
+          reason:
+            `Every SCL contract this story carries (${unimplementableKeys.map((k) => `'${k}'`).join(', ')}) ` +
+            'has a signature and NOTHING to build from: no behaviour rows, no boundary ' +
+            'operation with verbatim SQL, no shape fields. Corpus-derived specs never ' +
+            'invent behaviour, so there is no spec to write. Re-run the code scan with ' +
+            'the missing source in scope, or accept the gap as a known_gap disposition, ' +
+            'then regenerate.',
+        },
+      ],
+      errorMessage: null,
+    };
+  }
+
   const ctx = buildStoryContractContext(story, orderedContracts);
   const state: RenderState = {
     warnings: [],
@@ -907,6 +938,16 @@ export function runSclSpecCarriage(args: {
     carriers,
     referencedKeys: new Set<string>(),
   };
+  for (const key of unimplementableKeys) {
+    state.warnings.push({
+      code: 'CONTRACT_UNIMPLEMENTABLE',
+      contractKey: key,
+      message:
+        `SCL contract ${key} carries a signature and nothing to build from (no rows, ` +
+        `no SQL-bearing operation, no fields). It is rendered as a DECLARED GAP; the ` +
+        `implementer must not invent its behaviour.`,
+    });
+  }
   const boundaryKeys = (story.sclBoundaryKeys ?? []).filter((k) => !orderedKeys.includes(k));
 
   // -- Header + objective ---------------------------------------------------
@@ -1019,6 +1060,28 @@ export function runSclSpecCarriage(args: {
       lines.push('');
       lines.push(...renderShapeBlock(joined.contract));
     }
+  }
+
+  // -- Declared gaps (2026-09-09) ---------------------------------------------
+  if (unimplementableKeys.length > 0) {
+    lines.push('## Declared gaps (contracts with nothing to build from)');
+    lines.push('');
+    lines.push(
+      'The following carried contract(s) have a signature and NOTHING captured to ' +
+        'build from: no behaviour rows, no boundary operation with verbatim SQL, no ' +
+        'shape fields. They are listed here as DECLARED GAPS, not as work. Do NOT ' +
+        'invent their behaviour, do NOT stub them to make a test pass, and do NOT ' +
+        'mark a task for them done: record any task that depends on one as ' +
+        '`- [~] <task> — BLOCKED: contract <key> is a declared gap (no captured ' +
+        'behaviour)`. The gap is resolved upstream (re-scan with the missing source ' +
+        'in scope, or a known_gap disposition), not in this story.'
+    );
+    lines.push('');
+    for (const key of unimplementableKeys) {
+      const c = byKey.get(key)!;
+      lines.push(`- [${key}] \`${asString(bodyOf(c).symbol) ?? c.source_symbol ?? key}\` — ${c.kind ?? 'contract'} with no captured behaviour`);
+    }
+    lines.push('');
   }
 
   // -- Boundaries reached (2026-09-03, Kiro review A-2 / C-2) ---------------

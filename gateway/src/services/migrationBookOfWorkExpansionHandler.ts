@@ -1295,6 +1295,7 @@ async function runEpicPipeline(args: {
             `constants_evicted=${(corpusPlan.stats.constantsEvicted ?? []).length} ` +
             `forward_refs=${(corpusPlan.stats.forwardReferences ?? []).length} ` +
             `dep_cycles=${(corpusPlan.stats.dependencyCycles ?? []).length} ` +
+            `unimplementable=${(corpusPlan.stats.unimplementableContracts ?? []).length} ` +
             `projectId=${projectId} epicId=${epic.id} epicKind=foundations`
         );
         // A forward reference means a foundation story will be asked to build
@@ -1315,6 +1316,18 @@ async function runEpicPipeline(args: {
             epicId: epic.id,
             members: cycle.slice(0, 12),
             memberCount: cycle.length,
+          });
+        }
+        // A contract with a signature and nothing to build from (2026-09-09):
+        // the spec that carries it will render it as a declared gap (or refuse
+        // as insufficient context when every contract it carries is one).
+        // Say so at plan time so the operator can re-scan or accept the gap
+        // before an implementer hits it.
+        for (const key of corpusPlan.stats.unimplementableContracts ?? []) {
+          logger.warn('[diag-gateway] SCL corpus plan UNIMPLEMENTABLE contract (signature only)', {
+            projectId,
+            epicId: epic.id,
+            contractKey: key,
           });
         }
         return [...legacyStories, ...corpusItems];
