@@ -165,6 +165,15 @@ public class DbMigrationPackTranslationEntity {
     @Column(name = "source_body_hash", length = 80)
     private String sourceBodyHash;
 
+    /**
+     * The {@code db_routines} row this translation's body came from (Stored
+     * Proc &amp; Function Behaviour Program, Spec 1, changeset 229). Null for
+     * rows seeded from a finding snippet (pre-catalog runs) and for kinds
+     * the catalog does not cover (views, scheduled jobs, check constraints).
+     */
+    @Column(name = "routine_id")
+    private UUID routineId;
+
     /** Fidelity flag: body truncated at capture (64KB cap). Boxed -- PATCH-safe. */
     @Column(name = "truncated")
     private Boolean truncated;

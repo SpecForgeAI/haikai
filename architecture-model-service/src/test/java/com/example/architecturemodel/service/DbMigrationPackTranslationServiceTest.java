@@ -91,7 +91,7 @@ class DbMigrationPackTranslationServiceTest {
         return new DbMigrationPackTranslationDto(
             null, null, key, objectRef, kind,
             null, null, pipelineState,
-            body, hash, truncated, legacyRedacted,
+            body, hash, truncated, legacyRedacted, null,
             null, null, null, null, null, null, null);
     }
 

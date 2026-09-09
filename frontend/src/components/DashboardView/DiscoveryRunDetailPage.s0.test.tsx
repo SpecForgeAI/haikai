@@ -143,5 +143,65 @@ describe('DiscoveryRunDetailPage — S0 snapshot outcome row', () => {
     // Wait for the detail to load (phase list appears), then assert absence.
     await screen.findByTestId('phase-list');
     expect(screen.queryByTestId('s0-snapshot-row')).toBeNull();
+    expect(screen.queryByTestId('routine-catalog-row')).toBeNull();
+  });
+});
+
+describe('DiscoveryRunDetailPage — routine catalog outcome row (Spec 1, 2026-09-09)', () => {
+  it('renders a green "N profiled" badge when the catalog saved cleanly', async () => {
+    const r = run({
+      database: {
+        tableCount: 24,
+        routineCatalog: { status: 'saved', profiled: 38, unparsed: 0, detail: null },
+      },
+    });
+    mockGetDiscoveryRuns.mockResolvedValue([r]);
+    mockGetDiscoveryRun.mockResolvedValue(r);
+
+    renderPage();
+    const badge = await screen.findByTestId('routine-catalog-status-saved');
+    expect(badge.textContent).toBe('38 profiled');
+    expect(badge.className).toContain('statusCompleted');
+    expect(screen.queryByTestId('routine-catalog-unparsed')).toBeNull();
+  });
+
+  it('renders an amber badge plus the unparsed count when signatures failed to parse', async () => {
+    const r = run({
+      database: {
+        routineCatalog: { status: 'saved', profiled: 38, unparsed: 2, detail: null },
+      },
+    });
+    mockGetDiscoveryRuns.mockResolvedValue([r]);
+    mockGetDiscoveryRun.mockResolvedValue(r);
+
+    renderPage();
+    const badge = await screen.findByTestId('routine-catalog-status-saved');
+    expect(badge.className).toContain('statusRunning');
+    expect(screen.getByTestId('routine-catalog-unparsed').textContent).toContain(
+      '2 signatures unparsed',
+    );
+  });
+
+  it('renders a red FAILED badge with the reason when the save failed', async () => {
+    const r = run({
+      database: {
+        routineCatalog: {
+          status: 'failed',
+          profiled: 38,
+          unparsed: 0,
+          detail: 'AMS returned HTTP 500',
+        },
+      },
+    });
+    mockGetDiscoveryRuns.mockResolvedValue([r]);
+    mockGetDiscoveryRun.mockResolvedValue(r);
+
+    renderPage();
+    const badge = await screen.findByTestId('routine-catalog-status-failed');
+    expect(badge.textContent).toBe('FAILED');
+    expect(badge.className).toContain('statusFailed');
+    expect(screen.getByTestId('routine-catalog-detail').textContent).toContain(
+      'AMS returned HTTP 500',
+    );
   });
 });

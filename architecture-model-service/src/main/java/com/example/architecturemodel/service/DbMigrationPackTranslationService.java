@@ -318,6 +318,9 @@ public class DbMigrationPackTranslationService {
         if (dto.legacyRedacted() != null) {
             entity.setLegacyRedacted(dto.legacyRedacted());
         }
+        if (dto.routineId() != null) {
+            entity.setRoutineId(dto.routineId());
+        }
         if (dto.draftContent() != null) {
             entity.setDraftContent(dto.draftContent());
         }

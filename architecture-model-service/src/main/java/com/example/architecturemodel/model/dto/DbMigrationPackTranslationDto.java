@@ -85,6 +85,9 @@ public record DbMigrationPackTranslationDto(
     @JsonProperty("legacy_redacted")
     Boolean legacyRedacted,
 
+    @JsonProperty("routine_id")
+    UUID routineId,
+
     @JsonProperty("draft_content")
     String draftContent,
 

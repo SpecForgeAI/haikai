@@ -188,8 +188,12 @@ const READ_SQL_PATTERNS: RegExp[] = [
   /\bjoin\s+([A-Za-z0-9_."\[\]$#]+)/gi,
 ];
 
+// Mirror of the scan emitter's PROC_CALL_RE (Spec 1, 2026-09-09): the JDBC
+// return-value escape `{? = call x}` and the Sybase return-status form
+// `exec @rc = proc` were missing here, so the backfill under-reported proc
+// references on exactly the idioms the estate uses.
 const PROC_CALL_RE =
-  /\{\s*call\s+([A-Za-z0-9_."\[\]$#]+)|\bexec(?:ute)?\s+([A-Za-z0-9_."\[\]$#]+)/gi;
+  /\{\s*(?:\?\s*=\s*)?call\s+([A-Za-z0-9_."\[\]$#]+)|\bexec(?:ute)?\s+(?:@[A-Za-z0-9_]+\s*=\s*)?([A-Za-z0-9_."\[\]$#]+)/gi;
 
 /** Stored-proc names referenced by one verbatim SQL string — surfaced in
  *  the boundary stats so proc-mediated writes are screenshot-identifiable

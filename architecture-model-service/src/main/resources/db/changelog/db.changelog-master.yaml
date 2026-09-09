@@ -5308,3 +5308,19 @@ databaseChangeLog:
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: true
+
+  # 229: routine catalog (Stored Proc & Function Behaviour Program, Spec 1,
+  # 2026-09-09). First-class `db_routines` facts (procs / functions /
+  # triggers with FULL unbounded bodies, parsed signatures, static profiles
+  # and closures) written by the DB scan at completion, plus a nullable
+  # `routine_id` link on db_migration_pack_translations so the translation
+  # queue seeds from the entity body instead of the 64KB finding snippet.
+  - changeSet:
+      id: 229-db-routines
+      author: architecture-tool
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/229-db-routines.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true

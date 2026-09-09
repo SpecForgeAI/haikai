@@ -48,6 +48,7 @@ import {
   type DbFindingEngineKey,
 } from '../findings/databasePackFindingScanners/databasePackFindingBuilders';
 import { getDatabasePack } from './databasePackFactory';
+import { buildRoutineCatalog } from './routineCatalog';
 import { withDbPackSoftFail } from './softFail';
 import { purgeForRun, storeForRun } from './secretsStore';
 import type {
@@ -113,6 +114,9 @@ export interface DatabasePackOrchestratorResult {
   /** LIVE stored proc/function/trigger sources (2026-08-23; empty when the
    *  engine pack lacks the capability or the harvest soft-failed). */
   procSources: import('../../scl/sqlProcHarvester').LiveProcSource[];
+  /** Profiled routine catalog with closures (Spec 1, 2026-09-09; empty when
+   *  the engine pack has no profiler or the harvest soft-failed). */
+  routines: import('./routineTypes').RoutineRecord[];
   /** Server charset/sortorder detection (item 3; null when unavailable). */
   serverCharset: {
     charset: string | null;
@@ -233,6 +237,7 @@ export async function runDatabasePackDiscovery(
     warningFindings,
     shortCircuited: false,
     procSources: [],
+    routines: [],
     sequenceIdioms: [],
     serverCharset: null,
     keyProbes: [],
@@ -420,6 +425,46 @@ export async function runDatabasePackDiscovery(
           `objects=${result.procSources.length} ` +
           `elapsed_ms=${Date.now() - procStart}`,
       );
+
+      // ------------------------------------------- Phase 4c' (Spec 1, 2026-09-09)
+      // Routine catalog: every harvested source becomes a first-class
+      // RoutineRecord (parsed signature + static profile + read/write/call
+      // sets) with UNCAPPED closures and trigger expansion. An unparsable
+      // header is a loud warning finding, never a silent skip — the record
+      // is still kept (signature_parsed=false) so the body is on file.
+      if (typeof pack.profileRoutine === 'function' && result.procSources.length > 0) {
+        const profStart = Date.now();
+        const profiler = pack.profileRoutine as NonNullable<typeof pack.profileRoutine>;
+        const profiled = result.procSources.map((src) => profiler(src));
+        result.routines = buildRoutineCatalog(profiled);
+        const unparsed = result.routines.filter((r) => !r.signature_parsed);
+        for (const r of unparsed) {
+          onWarning({
+            findingType: 'routine_signature_unparsed',
+            category: 'proc_catalog',
+            severity: 'medium',
+            title: `Routine signature not parsed: ${r.schema_name}.${r.routine_name}`,
+            summary:
+              `The ${r.routine_kind} header could not be parsed deterministically ` +
+              `(${r.signature_error ?? 'unknown reason'}). Its body is on file, but ` +
+              `behaviour capture cannot bind parameters until the signature is parsed.`,
+            source: 'routine_profiler',
+            detailJson: {
+              engineKey: pack.engineKey,
+              schemaName: r.schema_name,
+              routineName: r.routine_name,
+              routineKind: r.routine_kind,
+              signatureError: r.signature_error,
+              headerExcerpt: r.full_body.slice(0, 400),
+            },
+          });
+        }
+        console.log(
+          `[diag-pack] db_engine=${pack.engineKey} stage=routine_profile ` +
+            `profiled=${result.routines.length} unparsed=${unparsed.length} ` +
+            `elapsed_ms=${Date.now() - profStart}`,
+        );
+      }
 
       // -------------------------------------------------- Phase 4c (item 2)
       // Sequence-generator idiom detection + live row probe: the legacy

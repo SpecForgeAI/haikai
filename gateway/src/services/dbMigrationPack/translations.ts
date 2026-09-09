@@ -129,6 +129,21 @@ export interface TranslationUpsertRow {
   pipeline_state?: TranslationPipelineState;
   review_status?: TranslationReviewStatus;
   reviewer_notes?: string;
+  /** Spec 1 (2026-09-09): the `db_routines` row the body came from, when one exists. */
+  routine_id?: string | null;
+}
+
+/**
+ * A `db_routines` row as the AMS routine catalog serves it (Spec 1,
+ * 2026-09-09). Only the fields the seed resolver needs: the FULL body is the
+ * source of record (never truncated, never redacted), keyed by kind + name.
+ */
+export interface RoutineBodySource {
+  id: string;
+  schema_name: string;
+  routine_name: string;
+  routine_kind: 'procedure' | 'function' | 'trigger';
+  full_body: string;
 }
 
 /** A `requires_translation_spec_2` manifest entry (Spec-1 shape). */
@@ -223,6 +238,34 @@ export interface SeedSource {
   legacy_redacted: boolean;
   /** TRUE when no body could be resolved OR the body is truncated — terminal. */
   terminal_needs_manual: boolean;
+  /** The routine-catalog row the body came from (Spec 1); null = finding body. */
+  routine_id?: string | null;
+}
+
+/** Routine kinds a translation kind can be sourced from the routine catalog. */
+const ROUTINE_KINDS_BY_TRANSLATION_KIND: Partial<Record<TranslationKind, Array<RoutineBodySource['routine_kind']>>> = {
+  stored_procedure: ['procedure', 'function'],
+  trigger: ['trigger'],
+};
+
+/** Bare lower-case tail of an object ref (`dbo.upd_x` -> `upd_x`). */
+function objectRefTail(ref: string): string {
+  const cleaned = ref.replace(/[[\]"]/g, '').trim();
+  return (cleaned.split('.').pop() ?? cleaned).toLowerCase();
+}
+
+/**
+ * Index routine-catalog rows by `<kind>:<bare name>` for the seed resolver.
+ * Procedures and functions share the `stored_procedure` translation kind.
+ */
+export function indexRoutineBodies(routines: RoutineBodySource[]): Map<string, RoutineBodySource> {
+  const index = new Map<string, RoutineBodySource>();
+  for (const r of routines) {
+    if (typeof r.full_body !== 'string' || r.full_body.length === 0) continue;
+    const key = `${r.routine_kind}:${r.routine_name.toLowerCase()}`;
+    if (!index.has(key)) index.set(key, r);
+  }
+  return index;
 }
 
 const FINDING_TYPE_BY_KIND: Record<TranslationKind, string> = {
@@ -244,13 +287,38 @@ const FINDING_TYPE_BY_KIND: Record<TranslationKind, string> = {
  */
 export function resolveSeedSources(
   entries: RequiresTranslationEntry[],
-  findings: RawDiscoveryFinding[]
+  findings: RawDiscoveryFinding[],
+  routines: RoutineBodySource[] = []
 ): SeedSource[] {
   const findingsById = new Map(findings.map((f) => [f.id, f]));
+  const routineIndex = indexRoutineBodies(routines);
   const seeds: SeedSource[] = [];
   for (const entry of entries) {
     if (!(TRANSLATION_KINDS as readonly string[]).includes(entry.kind)) continue;
     const kind = entry.kind as TranslationKind;
+    // ROUTINE CATALOG body (Spec 1, 2026-09-09): when the DB scan profiled
+    // this object, its FULL body is the source of record — never truncated,
+    // never legacy-redacted — and the row is linked by routine_id. The
+    // finding-snippet path below stays as the fallback for pre-catalog runs.
+    const routineKinds = ROUTINE_KINDS_BY_TRANSLATION_KIND[kind] ?? [];
+    const tail = objectRefTail(entry.object_ref);
+    const routine = routineKinds
+      .map((rk) => routineIndex.get(`${rk}:${tail}`))
+      .find((r): r is RoutineBodySource => r !== undefined);
+    if (routine) {
+      seeds.push({
+        translation_key: translationKey(kind, entry.object_ref),
+        kind,
+        object_ref: entry.object_ref,
+        source_body: routine.full_body,
+        source_body_hash: computeSourceBodyHash(routine.full_body),
+        truncated: false,
+        legacy_redacted: false,
+        terminal_needs_manual: false,
+        routine_id: routine.id,
+      });
+      continue;
+    }
     // DIRECT source body (2026-08-07): the entry carries its own body (check
     // constraints — the expression lives in the pack IR, not a finding).
     // Full fidelity by construction.
@@ -374,6 +442,7 @@ export function buildTranslationUpsertBatch(
       truncated: seed.truncated,
       legacy_redacted: seed.legacy_redacted,
     };
+    if (seed.routine_id) row.routine_id = seed.routine_id;
     const prior = existingByKey.get(seed.translation_key);
     if (!prior) {
       row.pipeline_state = seed.terminal_needs_manual ? 'needs_manual' : 'pending';
@@ -482,9 +551,36 @@ export const defaultFetchPackRow: FetchPackRowFn = (projectId, packId) =>
 // syncPackTranslations — the seeding + re-link/demote pass (3.2)
 // ---------------------------------------------------------------------------
 
+export type FetchRoutinesFn = (
+  projectId: string,
+  architectureId: string
+) => Promise<RoutineBodySource[]>;
+
+/**
+ * Routine catalog read (Spec 1, 2026-09-09): the AMS `db_routines` list for
+ * the architecture. FAIL-SOFT: a missing catalog (pre-Spec-1 AMS, no DB scan
+ * yet) yields [] and the finding-snippet path seeds as before — loudly logged.
+ */
+export const defaultFetchRoutines: FetchRoutinesFn = async (projectId, architectureId) => {
+  try {
+    return await amsRequest<RoutineBodySource[]>(
+      `${getConfig().architectureModelServiceBaseUrl}/api/projects/${encodeURIComponent(projectId)}` +
+        `/architectures/${encodeURIComponent(architectureId)}/db-routines`,
+      { headers: { Accept: 'application/json' } }
+    );
+  } catch (error) {
+    logger.warn(
+      `[diag-gateway] db_translation stage=routine-catalog-unavailable projectId=${projectId} ` +
+        `architectureId=${architectureId} reason=${error instanceof Error ? error.message : String(error)}`
+    );
+    return [];
+  }
+};
+
 export interface TranslationSyncDeps {
   fetchTranslations?: FetchTranslationsFn;
   upsertTranslations?: UpsertTranslationsFn;
+  fetchRoutines?: FetchRoutinesFn;
 }
 
 export interface TranslationSyncResult {
@@ -504,18 +600,29 @@ export async function syncPackTranslations(
     packId: string;
     entries: RequiresTranslationEntry[];
     findings: RawDiscoveryFinding[];
+    /** Spec 1: when supplied, the routine catalog is consulted for full bodies. */
+    architectureId?: string | null;
   },
   deps: TranslationSyncDeps = {}
 ): Promise<TranslationSyncResult> {
   const fetchTranslations = deps.fetchTranslations ?? defaultFetchTranslations;
   const upsertTranslations = deps.upsertTranslations ?? defaultUpsertTranslations;
+  const fetchRoutines = deps.fetchRoutines ?? defaultFetchRoutines;
 
   logger.info(
     `[diag-gateway] db_translation stage=seed projectId=${args.projectId} packId=${args.packId} ` +
       `entries=${args.entries.length}`
   );
   const existing = await fetchTranslations(args.projectId, args.packId);
-  const seeds = resolveSeedSources(args.entries, args.findings);
+  const routines = args.architectureId ? await fetchRoutines(args.projectId, args.architectureId) : [];
+  const seeds = resolveSeedSources(args.entries, args.findings, routines);
+  const fromCatalog = seeds.filter((s) => s.routine_id).length;
+  if (routines.length > 0 || fromCatalog > 0) {
+    logger.info(
+      `[diag-gateway] db_translation stage=seed-routine-catalog packId=${args.packId} ` +
+        `routines=${routines.length} seeded_from_catalog=${fromCatalog}`
+    );
+  }
   const batch = buildTranslationUpsertBatch(seeds, existing);
   const rows = await upsertTranslations(args.projectId, args.packId, {
     translations: batch.translations,

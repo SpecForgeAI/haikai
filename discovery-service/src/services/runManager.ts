@@ -3713,6 +3713,43 @@ export async function startDatabaseRun(
       }
     }
 
+    // ---- Routine catalog save (Stored Proc & Function Behaviour Program,
+    // Spec 1, 2026-09-09): the profiled routines are FACTS (not candidates)
+    // and land in AMS `db_routines` at scan completion — one user action,
+    // like the S0 pin. FAIL-SOFT + LOUD: a save failure never fails the
+    // scan; the outcome rides the run's steps payload.
+    let routineCatalog: {
+      status: 'saved' | 'failed' | 'skipped';
+      profiled: number;
+      unparsed: number;
+      detail: string | null;
+    } = { status: 'skipped', profiled: 0, unparsed: 0, detail: null };
+    if (status === 'COMPLETED' && (result.routines ?? []).length > 0) {
+      const rcStart = Date.now();
+      const unparsed = result.routines.filter((r) => !r.signature_parsed).length;
+      try {
+        await archModelClient.bulkUpsertDbRoutines(projectId, architectureId, runId, result.routines);
+        routineCatalog = { status: 'saved', profiled: result.routines.length, unparsed, detail: null };
+      } catch (rcError: unknown) {
+        const message = rcError instanceof Error ? rcError.message : String(rcError);
+        routineCatalog = {
+          status: 'failed',
+          profiled: result.routines.length,
+          unparsed,
+          detail: message.slice(0, 300),
+        };
+        console.warn(
+          `[diag-runs] db_run=${(runId || '').slice(0, 8)} routine_catalog_save_failed ` +
+            `detail=${message.slice(0, 200)}`,
+        );
+      }
+      console.log(
+        `[RunManager:database] Routine catalog ${routineCatalog.status} ` +
+          `profiled=${routineCatalog.profiled} unparsed=${routineCatalog.unparsed} ` +
+          `in ${Date.now() - rcStart}ms`,
+      );
+    }
+
     const stepsPayload: Record<string, unknown> = {
       database: {
         status: status === 'COMPLETED' ? 'completed' : 'failed',
@@ -3730,6 +3767,9 @@ export async function startDatabaseRun(
         skippedTableCount: result.profile.skippedTables.length,
         // CSD auto-S0 (2026-08-19): taken | failed | skipped (+ id/reason).
         s0Snapshot,
+        // Routine catalog (Spec 1, 2026-09-09): saved | failed | skipped
+        // (+ profiled / unparsed counts, reason).
+        routineCatalog,
         // Live stored-object harvest (2026-08-23): raw sources ride the run
         // so the CODE scan can merge repo-vs-live (live wins, drift loud).
         procSourceCount: (result.procSources ?? []).length,

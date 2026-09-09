@@ -128,6 +128,7 @@ public final class DbMigrationPackMapper {
             entity.getSourceBodyHash(),
             entity.getTruncated(),
             entity.getLegacyRedacted(),
+            entity.getRoutineId(),
             entity.getDraftContent(),
             entity.getJudgeVerdictJson(),
             entity.getReviewStatus(),
