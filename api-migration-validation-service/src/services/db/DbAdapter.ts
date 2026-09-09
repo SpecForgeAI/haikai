@@ -149,10 +149,33 @@ export interface DbAdapter {
   }): Promise<DbReadResult>;
 
   /**
+   * OPTIONAL capability (Stored Proc & Function Behaviour Program, Spec 2,
+   * 2026-09-09): invoke ONE stored procedure / function and return the
+   * engine-neutral envelope (outcome, return status, OUTPUT params, every
+   * result set, messages, projected error, session). This is the ONLY
+   * non-SELECT execution path on the adapter and it never takes SQL text —
+   * the engine pack composes the call from structured names + typed params.
+   * Source engines run the routine as-is; target engines follow the
+   * request's `descriptor` (the pack's calling convention).
+   */
+  callRoutine?(
+    request: import('./routineEnvelope').RoutineInvocationRequest,
+  ): Promise<import('./routineEnvelope').RoutineInvocationEnvelope>;
+
+  /**
    * Release pooled resources. Idempotent.
    */
   dispose(): Promise<void>;
 }
+
+export type {
+  RoutineDescriptor,
+  RoutineInvocationEnvelope,
+  RoutineInvocationRequest,
+  RoutineParamValue,
+  RoutineResultSet,
+  RoutineShape,
+} from './routineEnvelope';
 
 /**
  * Adapter-seam contract (2026-08-07): NO adapter guarantees more than this

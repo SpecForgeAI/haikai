@@ -9,6 +9,8 @@ import {
 } from './DbAdapter';
 import { assertReadonlySelect, ensureLimit } from './sqlGuard';
 import { keysetPredicate } from './keyset';
+import { invokePostgresRoutine } from './postgresRoutineInvoker';
+import type { RoutineInvocationEnvelope, RoutineInvocationRequest } from './routineEnvelope';
 
 /**
  * `PostgresAdapter` -- v1 implementation of `DbAdapter` using the `pg`
@@ -52,8 +54,10 @@ export const rawDatetimeTypes = {
 
 export class PostgresAdapter implements DbAdapter {
   private readonly pool: Pool;
+  private readonly loginName: string;
 
   constructor(config: DbConnectionConfig, opts?: { maxPoolSize?: number }) {
+    this.loginName = config.username;
     const poolConfig: PoolConfig = {
       host: config.host,
       port: config.port,
@@ -338,9 +342,52 @@ export class PostgresAdapter implements DbAdapter {
     };
   }
 
+  /**
+   * Invoke one TRANSLATED routine per its calling-convention descriptor
+   * (Spec 2, 2026-09-09). Runs on a dedicated client from THIS pool so the
+   * raw-datetime parsers and the UTC session pin apply to envelope cells
+   * exactly as they do to table cells (the ±1h class must not reopen).
+   */
+  async callRoutine(request: RoutineInvocationRequest): Promise<RoutineInvocationEnvelope> {
+    const client: PoolClient = await this.pool.connect();
+    try {
+      return await invokePostgresRoutine(client, request, {
+        login: this.loginName,
+        typeName: (oid) => (oid === undefined ? '' : oidTypeName(oid)),
+      });
+    } finally {
+      client.release();
+    }
+  }
+
   async dispose(): Promise<void> {
     await this.pool.end();
   }
+}
+
+/** Common Postgres type OIDs -> catalog type names (envelope column types). */
+const OID_TYPE_NAMES: Record<number, string> = {
+  16: 'bool',
+  17: 'bytea',
+  20: 'int8',
+  21: 'int2',
+  23: 'int4',
+  25: 'text',
+  700: 'float4',
+  701: 'float8',
+  1042: 'bpchar',
+  1043: 'varchar',
+  1082: 'date',
+  1083: 'time',
+  1114: 'timestamp',
+  1184: 'timestamptz',
+  1700: 'numeric',
+  2950: 'uuid',
+  1790: 'refcursor',
+};
+
+function oidTypeName(oid: number): string {
+  return OID_TYPE_NAMES[oid] ?? String(oid);
 }
 
 /**

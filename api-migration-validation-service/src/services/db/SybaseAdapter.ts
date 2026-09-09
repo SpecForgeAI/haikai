@@ -11,6 +11,11 @@ import { assertReadonlySelect } from './sqlGuard';
 import { keysetPredicate } from './keyset';
 import { SYBASE_SIDECAR_URL } from '../../config';
 import { longFetchTimeoutMs, longRunningFetch } from '../longRunningFetch';
+import {
+  MAX_ROUTINE_RESULT_SET_ROWS,
+  type RoutineInvocationEnvelope,
+  type RoutineInvocationRequest,
+} from './routineEnvelope';
 
 /**
  * `SybaseAdapter` -- Node-side adapter that proxies through the
@@ -51,6 +56,34 @@ import { longFetchTimeoutMs, longRunningFetch } from '../longRunningFetch';
  *       this adapter instance.</li>
  * </ul>
  */
+/** The sidecar `/call` response (snake_case keys, Spec 2). */
+interface SidecarCallResponse {
+  ok: boolean;
+  error?: string | null;
+  outcome?: string;
+  return_status?: number | null;
+  output_params?: Record<string, unknown>;
+  result_sets?: Array<{
+    ordinal?: number;
+    columns?: Array<{ name: string; type?: string }>;
+    rows?: unknown[][];
+    row_count?: number;
+    truncated?: boolean;
+  }>;
+  update_counts?: number[];
+  messages?: Array<{ kind?: string; number?: number | null; severity?: number | null; state?: number | null; text?: string }>;
+  error_detail?: {
+    number?: number | null;
+    sqlstate?: string | null;
+    severity?: number | null;
+    state?: number | null;
+    message?: string;
+  } | null;
+  timing_ms?: number;
+  session?: { login?: string; set_options?: string[] };
+  driver_used?: string;
+}
+
 export class SybaseAdapter implements DbAdapter {
   private readonly host: string;
   private readonly port: number;
@@ -333,6 +366,96 @@ export class SybaseAdapter implements DbAdapter {
 
   async dispose(): Promise<void> {
     // Stateless wrapper over HTTP -- no pool, no per-instance resources.
+  }
+
+  /**
+   * Invoke one routine through the sidecar's `/call` (Spec 2, 2026-09-09).
+   * No SQL text crosses the wire: structured names + typed params only; the
+   * sidecar composes the JDBC call, walks every result set, drains
+   * warnings and projects the engine error. Transport/guard failures throw;
+   * a ROUTINE failure is a normal envelope with `outcome: 'error'`.
+   */
+  async callRoutine(request: RoutineInvocationRequest): Promise<RoutineInvocationEnvelope> {
+    const resp = await this.postJson<SidecarCallResponse>('/call', {
+      ...this.commonCredsBody(),
+      schemaName: request.schema_name,
+      routineName: request.routine_name,
+      routineKind: request.routine_kind,
+      params: [
+        // Functions: the sidecar binds the RESULT slot from an ordinal-0
+        // descriptor carrying the source RETURNS type (else it falls back to
+        // a string slot); the value lands in output_params.return_value.
+        ...(request.routine_kind === 'function' && request.returns_type
+          ? [
+              {
+                name: 'return_value',
+                ordinal: 0,
+                sybaseType: request.returns_type,
+                direction: 'out',
+                value: null,
+                isNull: true,
+              },
+            ]
+          : []),
+        ...request.params.map((p) => ({
+          name: p.name,
+          ordinal: p.ordinal,
+          sybaseType: p.source_type,
+          direction: p.direction,
+          value: p.value === null || p.value === undefined ? null : String(p.value),
+          isNull: p.value === null || p.value === undefined,
+        })),
+      ],
+      returnStatus: request.return_status,
+      sessionSet: request.session_set,
+      maxRowsPerResultSet: Math.max(
+        1,
+        Math.min(MAX_ROUTINE_RESULT_SET_ROWS, request.limits.max_rows_per_result_set),
+      ),
+      maxResultSets: Math.max(1, request.limits.max_result_sets),
+      queryTimeoutSeconds: Math.max(
+        1,
+        Math.min(Math.floor(longFetchTimeoutMs() / 1000), request.limits.timeout_seconds),
+      ),
+    });
+    if (!resp.ok) {
+      throw new Error(`Sybase sidecar call failed: ${resp.error ?? 'unknown error'}`);
+    }
+    return {
+      outcome: resp.outcome === 'error' ? 'error' : 'success',
+      return_status: typeof resp.return_status === 'number' ? resp.return_status : null,
+      output_params: resp.output_params ?? {},
+      result_sets: (resp.result_sets ?? []).map((rs, i) => ({
+        ordinal: typeof rs.ordinal === 'number' ? rs.ordinal : i + 1,
+        columns: (rs.columns ?? []).map((c) => ({ name: c.name, type: c.type ?? '' })),
+        rows: rs.rows ?? [],
+        row_count: typeof rs.row_count === 'number' ? rs.row_count : (rs.rows ?? []).length,
+        truncated: rs.truncated === true,
+      })),
+      update_counts: resp.update_counts ?? [],
+      messages: (resp.messages ?? []).map((m) => ({
+        kind: m.kind === 'print' || m.kind === 'raiserror' ? m.kind : 'info',
+        number: typeof m.number === 'number' ? m.number : null,
+        severity: typeof m.severity === 'number' ? m.severity : null,
+        state: typeof m.state === 'number' ? m.state : null,
+        text: m.text ?? '',
+      })),
+      error: resp.error_detail
+        ? {
+            number: typeof resp.error_detail.number === 'number' ? resp.error_detail.number : null,
+            sqlstate: resp.error_detail.sqlstate ?? null,
+            severity: typeof resp.error_detail.severity === 'number' ? resp.error_detail.severity : null,
+            state: typeof resp.error_detail.state === 'number' ? resp.error_detail.state : null,
+            message: resp.error_detail.message ?? '',
+          }
+        : null,
+      timing_ms: typeof resp.timing_ms === 'number' ? resp.timing_ms : 0,
+      session: {
+        login: resp.session?.login ?? this.username,
+        set_options: resp.session?.set_options ?? request.session_set,
+      },
+      engine: 'sidecar',
+    };
   }
 
   // -------------------------------------------------------------------------

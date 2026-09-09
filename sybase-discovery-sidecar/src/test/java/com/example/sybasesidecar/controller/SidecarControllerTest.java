@@ -4,6 +4,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.example.sybasesidecar.service.SybaseCallService;
 import com.example.sybasesidecar.service.SybaseMutationService;
 import com.example.sybasesidecar.service.SybaseQueryService;
 import org.junit.jupiter.api.Test;
@@ -27,6 +28,9 @@ class SidecarControllerTest {
     @Autowired
     private SybaseMutationService mutationService;
 
+    @Autowired
+    private SybaseCallService callService;
+
     /**
      * The {@code /query} endpoint returns HTTP 400 for a guard-rejected
      * SQL string. Demonstrates the controller surfaces guard rejections
@@ -36,7 +40,7 @@ class SidecarControllerTest {
     @Test
     void queryReturns400OnGuardRejection() throws Exception {
         final SidecarController controller =
-                new SidecarController(this.queryService, this.mutationService);
+                new SidecarController(this.queryService, this.mutationService, this.callService);
         final MockMvc mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
         final String body = "{"
                 + "\"host\":\"h\","
@@ -62,7 +66,7 @@ class SidecarControllerTest {
     @Test
     void mutateReturns400OnGuardRejection() throws Exception {
         final SidecarController controller =
-                new SidecarController(this.queryService, this.mutationService);
+                new SidecarController(this.queryService, this.mutationService, this.callService);
         final MockMvc mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
         final String body = "{"
                 + "\"host\":\"h\","
@@ -89,7 +93,7 @@ class SidecarControllerTest {
     @Test
     void testConnectionReturnsErrorShapeForBadHost() throws Exception {
         final SidecarController controller =
-                new SidecarController(this.queryService, this.mutationService);
+                new SidecarController(this.queryService, this.mutationService, this.callService);
         final MockMvc mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
         final String body = "{"
                 + "\"host\":\"127.0.0.1\","
@@ -103,5 +107,61 @@ class SidecarControllerTest {
                         .content(body))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.ok").value(false));
+    }
+
+    /**
+     * Predicate EXEC.CALL.01 -- {@code /call} guard rejections are LOUD. A
+     * routine name that is not a bare identifier is HTTP 400 BEFORE any JDBC
+     * work, with the structured envelope shape (snake_case keys) the AMVS
+     * adapter parses.
+     */
+    @Test
+    void callReturns400OnGuardRejection() throws Exception {
+        final SidecarController controller = new SidecarController(
+                this.queryService, this.mutationService, this.callService);
+        final MockMvc mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
+        final String body = "{"
+                + "\"host\":\"h\","
+                + "\"port\":5000,"
+                + "\"database\":\"d\","
+                + "\"username\":\"u\","
+                + "\"password\":\"p\","
+                + "\"routineName\":\"upd_ledger_roll; drop table t\""
+                + "}";
+        mockMvc.perform(post("/call")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.ok").value(false))
+                .andExpect(jsonPath("$.error").exists())
+                .andExpect(jsonPath("$.outcome").value("error"))
+                .andExpect(jsonPath("$.result_sets").isEmpty())
+                .andExpect(jsonPath("$.update_counts").isEmpty())
+                .andExpect(jsonPath("$.return_status").doesNotExist());
+    }
+
+    /**
+     * A blocked system procedure is refused on the same 400 path -- the
+     * invocation surface must not become a back door to {@code sp_configure}.
+     */
+    @Test
+    void callReturns400OnSystemProcedure() throws Exception {
+        final SidecarController controller = new SidecarController(
+                this.queryService, this.mutationService, this.callService);
+        final MockMvc mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
+        final String body = "{"
+                + "\"host\":\"h\","
+                + "\"port\":5000,"
+                + "\"database\":\"d\","
+                + "\"username\":\"u\","
+                + "\"password\":\"p\","
+                + "\"routineName\":\"sp_configure\""
+                + "}";
+        mockMvc.perform(post("/call")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.ok").value(false))
+                .andExpect(jsonPath("$.error").exists());
     }
 }

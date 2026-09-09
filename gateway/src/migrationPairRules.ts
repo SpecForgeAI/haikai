@@ -43,10 +43,25 @@ export interface MigrationPairRule {
   id: string;
   divergence_class: string;
   title: string;
-  applies_to?: { column_types?: string[] };
+  /**
+   * Selectors. `column_types` (v1) keys table/cell rules; v2 (Stored Proc &
+   * Function Behaviour Program, Spec 2, 2026-09-09) adds `object_kinds`,
+   * `constructs` and `dimensions` for routine-envelope rules.
+   */
+  applies_to?: {
+    column_types?: string[];
+    object_kinds?: string[];
+    constructs?: string[];
+    dimensions?: string[];
+  };
   /** null/absent = guidance-only rule (no comparator behaviour). */
   comparison?: PairComparison | null;
   rewrite_guidance?: string;
+  /** v2 data payloads (calling convention, error/session conventions, type map, call-site matrix). */
+  convention?: Record<string, unknown>;
+  type_map?: Record<string, string>;
+  matrix?: Record<string, Record<string, string>>;
+  session_profile?: { driver?: string; set?: string[] };
   scenario_seed?: string;
   severity?: string;
   /** Default true. Estate-conditional rules ship disabled. */
@@ -271,6 +286,16 @@ const KNOWN_STRATEGIES = new Set([
   'numeric-epsilon',
   'charset-normalize',
   'collation-case',
+  // v2 (Spec 2, 2026-09-09): routine-envelope strategies — recognised here
+  // so a v2 ruleset never reads as "unknown"; their behaviour lives in the
+  // validation service's comparator.
+  'numeric-canonical',
+  'bytes-hex',
+  'timestamp-window',
+  'masked',
+  'multiset',
+  'error-source-number',
+  'advisory',
 ]);
 
 /**

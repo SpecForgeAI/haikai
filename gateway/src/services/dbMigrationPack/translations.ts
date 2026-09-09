@@ -38,6 +38,14 @@ import { logger } from '../logger';
 import type { LlmCallerFn } from '../migrationBookOfWorkHandler';
 import { LlmConcurrencyPool, getMigrationPlanLlmPool } from '../llmConcurrencyPool';
 import type { RawDiscoveryFinding } from './inputs';
+import { loadPairRuleset, type MigrationPairRuleset } from '../../migrationPairRules';
+import {
+  deriveRoutineDescriptor,
+  renderRoutineContract,
+  type RoutineCatalogRow,
+  type RoutineDescriptor,
+} from './routineInvocationDescriptor';
+import { validateDraftAgainstDescriptor } from './descriptorValidator';
 import {
   JudgeVerdict,
   TranslationDraftResponse,
@@ -94,6 +102,8 @@ export interface TranslationRow {
   created_at?: string | null;
   translated_at?: string | null;
   reviewed_at?: string | null;
+  /** Spec 1 (2026-09-09): the routine-catalog row the body came from, when one exists. */
+  routine_id?: string | null;
 }
 
 /** Sparse PATCH body — omitted fields are untouched AMS-side. */
@@ -866,8 +876,10 @@ export function buildSchemaContext(
 
 const KIND_INSTRUCTIONS: Record<TranslationKind, string> = {
   stored_procedure:
-    'Translate the Sybase ASE T-SQL stored procedure into ONE PostgreSQL PL/pgSQL function ' +
-    '(CREATE OR REPLACE FUNCTION ... LANGUAGE plpgsql).',
+    'Translate the Sybase ASE T-SQL stored procedure (or function) into ONE PostgreSQL PL/pgSQL function ' +
+    '(CREATE OR REPLACE FUNCTION ... LANGUAGE plpgsql). When a "Calling-convention contract" section ' +
+    'follows, the function header (name, argument names/order/types, OUT arguments, RETURNS clause) ' +
+    'MUST match it exactly — it is the contract the application and the reconciliation harness call.',
   trigger:
     'Translate the Sybase ASE T-SQL trigger into a PostgreSQL trigger function ' +
     '(CREATE OR REPLACE FUNCTION ... RETURNS trigger LANGUAGE plpgsql) PLUS the matching ' +
@@ -896,6 +908,15 @@ export function buildTranslationPrompt(args: {
   objectRef: string;
   prePass: PrePassResult;
   schemaContext: string;
+  /**
+   * Spec 2 (2026-09-09): the deterministic calling-convention contract +
+   * static profile summary for routines. STATIC inputs only — captured
+   * scenarios never enter this prompt (evidence enters through Spec 4's
+   * ladder, after a test fails).
+   */
+  contract?: string | null;
+  /** Spec 2: header mismatches from a previous draft (one automatic re-prompt). */
+  contractViolations?: string[] | null;
 }): { systemPrompt: string; userPrompt: string } {
   const systemPrompt = [
     'You are a database migration engineer translating Sybase ASE T-SQL objects into PostgreSQL.',
@@ -911,6 +932,16 @@ export function buildTranslationPrompt(args: {
   const lines: string[] = [];
   lines.push(`Object: ${args.objectRef} (kind: ${args.kind})`);
   lines.push(KIND_INSTRUCTIONS[args.kind]);
+  if (args.contract && args.contract.trim().length > 0) {
+    lines.push('');
+    lines.push('Calling-convention contract (deterministic — the header MUST match):');
+    lines.push(args.contract.trim());
+  }
+  if (args.contractViolations && args.contractViolations.length > 0) {
+    lines.push('');
+    lines.push('Your previous draft violated the contract — fix ONLY these, keep everything else:');
+    for (const v of args.contractViolations) lines.push(`- ${v}`);
+  }
   lines.push('');
   lines.push('Schema context:');
   lines.push(args.schemaContext);
@@ -1180,7 +1211,37 @@ export interface TranslationPipelineDeps {
   callLlm?: LlmCallerFn;
   /** Defaults to the ONE shared migration-plan pool — never a new pool. */
   llmPool?: LlmConcurrencyPool;
+  /** Spec 2 (2026-09-09): the routine catalog rows for the pack's architecture (fail-soft). */
+  fetchRoutineCatalog?: FetchRoutineCatalogFn;
+  /** Spec 2: the pair ruleset the descriptor derivation cites (null = no contract). */
+  loadRuleset?: () => MigrationPairRuleset | null;
 }
+
+export type FetchRoutineCatalogFn = (
+  projectId: string,
+  architectureId: string
+) => Promise<RoutineCatalogRow[]>;
+
+/**
+ * Routine catalog read for the translation pipeline (Spec 2). FAIL-SOFT:
+ * without a catalog every routine translates without a contract, exactly as
+ * before — loudly logged, never silent.
+ */
+export const defaultFetchRoutineCatalog: FetchRoutineCatalogFn = async (projectId, architectureId) => {
+  try {
+    return await amsRequest<RoutineCatalogRow[]>(
+      `${getConfig().architectureModelServiceBaseUrl}/api/projects/${encodeURIComponent(projectId)}` +
+        `/architectures/${encodeURIComponent(architectureId)}/db-routines`,
+      { headers: { Accept: 'application/json' } }
+    );
+  } catch (error) {
+    logger.warn(
+      `[diag-gateway] db_translation stage=routine-catalog-unavailable projectId=${projectId} ` +
+        `architectureId=${architectureId} reason=${error instanceof Error ? error.message : String(error)}`
+    );
+    return [];
+  }
+};
 
 export interface RunTranslationPipelineArgs {
   projectId: string;
@@ -1254,10 +1315,29 @@ export async function runTranslationPipeline(
   const patchTranslation = deps.patchTranslation ?? defaultPatchTranslation;
   const callLlm = deps.callLlm ?? defaultCallLlm;
   const llmPool = deps.llmPool ?? getMigrationPlanLlmPool();
+  const fetchRoutineCatalog = deps.fetchRoutineCatalog ?? defaultFetchRoutineCatalog;
+  const loadRuleset = deps.loadRuleset ?? loadPairRuleset;
   const { projectId, packId } = args;
 
   const pack = await fetchPack(projectId, packId);
   const manifest = (pack.manifest_json ?? null) as Record<string, unknown> | null;
+  // Spec 2 (2026-09-09): the calling-convention contract per routine —
+  // derived from the routine catalog + pair ruleset, cited on the prompt.
+  const packArchitectureId =
+    typeof pack.architecture_id === 'string' && pack.architecture_id.length > 0
+      ? pack.architecture_id
+      : null;
+  const ruleset = loadRuleset();
+  const routineCatalog = packArchitectureId ? await fetchRoutineCatalog(projectId, packArchitectureId) : [];
+  const routinesById = new Map(routineCatalog.map((r) => [r.id, r]));
+  const contractFor = (row: TranslationRow): RoutineContract | null => {
+    if (!ruleset || !row.routine_id) return null;
+    const routine = routinesById.get(row.routine_id);
+    if (!routine) return null;
+    if (routine.routine_kind !== 'procedure' && routine.routine_kind !== 'function') return null;
+    const descriptor = deriveRoutineDescriptor(routine, ruleset);
+    return { descriptor, text: renderRoutineContract(routine, descriptor) };
+  };
   const entries = (manifest?.['requires_translation_spec_2'] ??
     []) as RequiresTranslationEntry[];
   const rows = await fetchTranslations(projectId, packId);
@@ -1282,7 +1362,16 @@ export async function runTranslationPipeline(
 
   const outcomes = await Promise.all(
     targets.map((row) =>
-      translateOneObject({ projectId, packId, row, manifest, patchTranslation, callLlm, llmPool })
+      translateOneObject({
+        projectId,
+        packId,
+        row,
+        manifest,
+        patchTranslation,
+        callLlm,
+        llmPool,
+        contract: contractFor(row),
+      })
     )
   );
 
@@ -1305,6 +1394,13 @@ export async function runTranslationPipeline(
   return { outcomes, coverage, rows: finalRows };
 }
 
+/** The per-routine contract handed to the translator (Spec 2). */
+export interface RoutineContract {
+  descriptor: RoutineDescriptor;
+  /** Prompt-ready rendering (descriptor + signature + static profile summary). */
+  text: string;
+}
+
 async function translateOneObject(args: {
   projectId: string;
   packId: string;
@@ -1313,6 +1409,8 @@ async function translateOneObject(args: {
   patchTranslation: PatchTranslationFn;
   callLlm: LlmCallerFn;
   llmPool: LlmConcurrencyPool;
+  /** Spec 2: null when the routine has no catalog row (pre-catalog behaviour). */
+  contract?: RoutineContract | null;
 }): Promise<TranslationOutcome> {
   const { projectId, packId, row } = args;
   const previousState = row.pipeline_state;
@@ -1336,13 +1434,15 @@ async function translateOneObject(args: {
     logger.info(
       `[diag-gateway] db_translation stage=translate packId=${packId} key=${row.translation_key}`
     );
+    const contract = args.contract ?? null;
     const translatePrompt = buildTranslationPrompt({
       kind: row.kind,
       objectRef: row.object_ref,
       prePass,
       schemaContext,
+      contract: contract?.text ?? null,
     });
-    const draft: TranslationDraftResponse = await callWithRetry({
+    let draft: TranslationDraftResponse = await callWithRetry({
       label: `translate ${row.translation_key}`,
       projectId,
       systemPrompt: translatePrompt.systemPrompt,
@@ -1351,6 +1451,40 @@ async function translateOneObject(args: {
       llmPool: args.llmPool,
       validate: validateTranslationResponse,
     });
+
+    // Spec 2 (2026-09-09): the draft header must match the descriptor. One
+    // automatic re-prompt naming the violations; a second mismatch fails the
+    // object loudly as `abi_mismatch` (retryable, never a silent drift).
+    if (contract) {
+      let check = validateDraftAgainstDescriptor(draft.draftSql, contract.descriptor);
+      if (!check.ok) {
+        logger.info(
+          `[diag-gateway] db_translation stage=abi-reprompt packId=${packId} key=${row.translation_key} ` +
+            `violations=${check.violations.length}`
+        );
+        const rePrompt = buildTranslationPrompt({
+          kind: row.kind,
+          objectRef: row.object_ref,
+          prePass,
+          schemaContext,
+          contract: contract.text,
+          contractViolations: check.violations,
+        });
+        draft = await callWithRetry({
+          label: `translate(abi) ${row.translation_key}`,
+          projectId,
+          systemPrompt: rePrompt.systemPrompt,
+          userPrompt: rePrompt.userPrompt,
+          callLlm: args.callLlm,
+          llmPool: args.llmPool,
+          validate: validateTranslationResponse,
+        });
+        check = validateDraftAgainstDescriptor(draft.draftSql, contract.descriptor);
+        if (!check.ok) {
+          throw new Error(`abi_mismatch: ${check.violations.join('; ')}`);
+        }
+      }
+    }
 
     logger.info(
       `[diag-gateway] db_translation stage=judge packId=${packId} key=${row.translation_key}`
@@ -1385,6 +1519,19 @@ async function translateOneObject(args: {
         confidence: verdict.confidence,
         flags: verdict.flags,
         ...(draft.notes.length > 0 ? { translator_notes: draft.notes } : {}),
+        // Spec 2: the contract the draft was held to (shape + confidence +
+        // cited rules) rides the verdict so the reviewer and the replayer
+        // see the same convention.
+        ...(contract
+          ? {
+              invocation_descriptor: {
+                shape: contract.descriptor.shape,
+                pg_function: `${contract.descriptor.pg_schema}.${contract.descriptor.pg_function}`,
+                confidence: contract.descriptor.confidence,
+                rules_cited: contract.descriptor.rules_cited,
+              },
+            }
+          : {}),
       },
       review_status: 'unreviewed',
     });

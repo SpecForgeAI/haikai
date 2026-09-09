@@ -43,7 +43,20 @@ export interface MigrationPairRule {
   id: string;
   divergence_class: string;
   title: string;
-  applies_to?: { column_types?: string[] };
+  /**
+   * Selectors. `column_types` (v1) keys table/cell rules; v2 (Stored Proc &
+   * Function Behaviour Program, Spec 2, 2026-09-09) adds `object_kinds`
+   * (procedure | function | trigger), `constructs` (profile construct tags
+   * such as getdate / transaction_control) and `dimensions` (the envelope
+   * dimension a rule governs: outcome | messages | result_sets |
+   * result_set_columns | result_set_cells | output_params).
+   */
+  applies_to?: {
+    column_types?: string[];
+    object_kinds?: string[];
+    constructs?: string[];
+    dimensions?: string[];
+  };
   /** null/absent = guidance-only rule (no comparator behaviour). */
   comparison?: PairComparison | null;
   rewrite_guidance?: string;
@@ -51,6 +64,11 @@ export interface MigrationPairRule {
   severity?: string;
   /** Default true. Estate-conditional rules ship disabled. */
   enabled_by_default?: boolean;
+  /** v2 data payloads (calling convention, error/session conventions, type map, call-site matrix). */
+  convention?: Record<string, unknown>;
+  type_map?: Record<string, string>;
+  matrix?: Record<string, Record<string, string>>;
+  session_profile?: { driver?: string; set?: string[] };
 }
 
 export interface PairConstructRef {
@@ -177,6 +195,53 @@ export function rulesForColumnType(
     if (!types || types.length === 0) return false;
     return types.some((t) => t.trim().toLowerCase() === wanted);
   });
+}
+
+/** One rule by id (active or not) — the citation lookup. */
+export function ruleById(ruleset: MigrationPairRuleset, id: string): MigrationPairRule | null {
+  return ruleset.rules.find((r) => r.id === id) ?? null;
+}
+
+/**
+ * Active rules governing one envelope DIMENSION for one object kind (v2,
+ * Spec 2). Rules with `constructs` apply only when the routine profile
+ * carries at least one of them — clock / random volatility is BY RULE and
+ * BY EVIDENCE, never a blanket mask.
+ */
+export function rulesForDimension(
+  ruleset: MigrationPairRuleset,
+  dimension: string,
+  objectKind: string,
+  constructsPresent: string[] = [],
+): MigrationPairRule[] {
+  const kind = objectKind.trim().toLowerCase();
+  const present = new Set(constructsPresent.map((c) => c.trim().toLowerCase()));
+  return activeRules(ruleset).filter((r) => {
+    const dims = r.applies_to?.dimensions;
+    if (!dims || !dims.includes(dimension)) return false;
+    const kinds = r.applies_to?.object_kinds;
+    if (kinds && kinds.length > 0 && !kinds.some((k) => k.toLowerCase() === kind)) return false;
+    const constructs = r.applies_to?.constructs;
+    if (constructs && constructs.length > 0 && !constructs.some((c) => present.has(c.toLowerCase()))) {
+      return false;
+    }
+    return true;
+  });
+}
+
+/**
+ * Map an engine-reported cell type (driver / catalog token) onto the ruleset
+ * column-type vocabulary via SYBPG.PROC.RS.TYPE.001's `type_map`; unknown
+ * tokens map to themselves (strict comparison then applies).
+ */
+export function canonicalColumnType(ruleset: MigrationPairRuleset, reportedType: string): string {
+  const token = reportedType.trim().toLowerCase().replace(/\(.*$/, '');
+  for (const r of activeRules(ruleset)) {
+    if (!r.type_map) continue;
+    const hit = r.type_map[token];
+    if (typeof hit === 'string' && hit.length > 0) return hit;
+  }
+  return token;
 }
 
 // ---------------------------------------------------------------------------
@@ -328,7 +393,21 @@ const KNOWN_STRATEGIES = new Set([
   // 2026-08-07 (gold standard C5): exact-decimal + binary canonical forms.
   'numeric-canonical',
   'bytes-hex',
+  // 2026-09-09 (Stored Proc & Function Behaviour Program, Spec 2): routine
+  // envelope strategies. `timestamp-window` and `masked` are pairwise
+  // tolerances (clock / random volatility BY RULE); `multiset`,
+  // `error-source-number` and `advisory` are DRIVER-level strategies the
+  // proc comparator applies to whole dimensions — cell canonicalisation
+  // passes them through unchanged (never "unknown").
+  'timestamp-window',
+  'masked',
+  'multiset',
+  'error-source-number',
+  'advisory',
 ]);
+
+/** Strategies whose semantics live in a dimension driver, not per cell. */
+const DRIVER_LEVEL_STRATEGIES = new Set(['multiset', 'error-source-number', 'advisory']);
 
 /**
  * Compare two values under a set of pair rules: canonicalizers apply in rule
@@ -346,12 +425,27 @@ export function compareWithRules(
   const appliedRuleIds: string[] = [];
   const unknownStrategies: string[] = [];
   let epsilon: { relative: number; absolute: number; ruleId: string } | null = null;
+  let windowMs: { ms: number; ruleId: string } | null = null;
+  let masked: string | null = null;
 
   for (const rule of rules) {
     if (!rule.comparison) continue;
     const { strategy } = rule.comparison;
     if (!KNOWN_STRATEGIES.has(strategy)) {
       unknownStrategies.push(strategy);
+      continue;
+    }
+    if (DRIVER_LEVEL_STRATEGIES.has(strategy)) continue;
+    if (strategy === 'timestamp-window') {
+      // Clock volatility BY RULE (2026-09-09): both sides must be parseable
+      // instants within the window; the window is never a blanket mask.
+      windowMs = { ms: num(rule.comparison.params, 'window_ms') ?? 86_400_000, ruleId: rule.id };
+      appliedRuleIds.push(rule.id);
+      continue;
+    }
+    if (strategy === 'masked') {
+      masked = rule.id;
+      appliedRuleIds.push(rule.id);
       continue;
     }
     if (strategy === 'numeric-epsilon') {
@@ -375,6 +469,13 @@ export function compareWithRules(
     equal = true;
   } else if (ca === null || cb === null) {
     equal = false;
+  } else if (masked) {
+    // Presence-only equality (random / generated values): both non-null.
+    equal = true;
+  } else if (windowMs) {
+    const ta = toEpochMs(ca);
+    const tb = toEpochMs(cb);
+    equal = ta !== null && tb !== null && Math.abs(ta - tb) <= windowMs.ms;
   } else if (
     epsilon &&
     typeof ca === 'number' &&

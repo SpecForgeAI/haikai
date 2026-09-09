@@ -1,5 +1,7 @@
 package com.example.sybasesidecar.controller;
 
+import com.example.sybasesidecar.model.CallRequest;
+import com.example.sybasesidecar.model.CallResponse;
 import com.example.sybasesidecar.model.IntrospectionRequest;
 import com.example.sybasesidecar.model.IntrospectionResponse;
 import com.example.sybasesidecar.model.MutationRequest;
@@ -8,8 +10,10 @@ import com.example.sybasesidecar.model.QueryRequest;
 import com.example.sybasesidecar.model.QueryResponse;
 import com.example.sybasesidecar.model.TestConnectionRequest;
 import com.example.sybasesidecar.model.TestConnectionResponse;
+import com.example.sybasesidecar.service.CallSqlGuard;
 import com.example.sybasesidecar.service.MutationSqlGuard;
 import com.example.sybasesidecar.service.SidecarSqlGuard;
+import com.example.sybasesidecar.service.SybaseCallService;
 import com.example.sybasesidecar.service.SybaseMutationService;
 import com.example.sybasesidecar.service.SybaseQueryService;
 import jakarta.validation.Valid;
@@ -43,13 +47,16 @@ public class SidecarController {
 
     private final SybaseQueryService queryService;
     private final SybaseMutationService mutationService;
+    private final SybaseCallService callService;
 
     public SidecarController(
             final SybaseQueryService queryService,
-            final SybaseMutationService mutationService
+            final SybaseMutationService mutationService,
+            final SybaseCallService callService
     ) {
         this.queryService = queryService;
         this.mutationService = mutationService;
+        this.callService = callService;
     }
 
     /**
@@ -234,6 +241,63 @@ public class SidecarController {
         LOG.info("[diag-sidecar] op=mutate status=200 result={} statements={} elapsed_ms={}",
                 body.ok() ? "ok" : "fail",
                 req.getStatements().size(),
+                System.currentTimeMillis() - start);
+        return ResponseEntity.ok(body);
+    }
+
+    /**
+     * Invoke ONE stored procedure or function and return the full
+     * behaviour envelope (Stored-Proc Behaviour Program, Spec 2).
+     *
+     * <p>The request carries NO SQL text: {@link CallSqlGuard} proves the
+     * routine identifier is 1-3 bare identifier parts, blocks non-allowlisted
+     * {@code sp_*}/{@code xp_*}, caps the parameter list and matches every
+     * session SET line against a fixed allowlist -- then
+     * {@link SybaseCallService} composes the call escape itself. A guard
+     * rejection is HTTP 400 BEFORE any JDBC work (a contract violation, not a
+     * retryable runtime failure), exactly like {@code /query} and
+     * {@code /mutate}.</p>
+     *
+     * <p>A routine that RAN and raised still returns HTTP 200 with
+     * {@code ok=true, outcome=error} and a populated {@code error_detail}:
+     * that error is the observed behaviour the capture exists to record.</p>
+     *
+     * <p>Never logs the routine name, its parameters, or any value.</p>
+     */
+    @PostMapping("/call")
+    public ResponseEntity<CallResponse> call(@Valid @RequestBody final CallRequest req) {
+        final long start = System.currentTimeMillis();
+        LOG.info("[diag-sidecar] op=call status=accepted host_set={} driver_choice={} "
+                        + "kind={} params={} session_sets={}",
+                req.getHost() != null && !req.getHost().isEmpty(),
+                req.getDriver(),
+                req.isFunction() ? "function" : "procedure",
+                req.resolveParams().size(),
+                req.resolveSessionSet().size());
+        try {
+            CallSqlGuard.assertCall(req);
+        } catch (final SidecarSqlGuard.SqlGuardException e) {
+            LOG.warn("Sidecar call category=call_guard_reject reason={}", e.getReason());
+            LOG.warn("[diag-sidecar] op=call status=400 reason={} elapsed_ms={}",
+                    e.getReason(), System.currentTimeMillis() - start);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
+                    CallResponse.failure("Call guard rejected: " + e.getMessage(), null));
+        }
+
+        // Clamps: rows [1, 10000] default 1000; result sets [1, 50] default 10;
+        // timeout [1, 86400] default 30 -- the LONG ceiling, not /query's 300s.
+        final CallResponse body = this.callService.call(
+                req,
+                req.resolveQueryTimeoutSeconds(),
+                req.resolveMaxRowsPerResultSet(),
+                req.resolveMaxResultSets());
+        LOG.info("[diag-sidecar] op=call status=200 result={} outcome={} result_sets={} "
+                        + "update_counts={} messages={} elapsed_ms={}",
+                body.ok() ? "ok" : "fail",
+                body.outcome(),
+                body.resultSets() == null ? 0 : body.resultSets().size(),
+                body.updateCounts() == null ? 0 : body.updateCounts().size(),
+                body.messages() == null ? 0 : body.messages().size(),
                 System.currentTimeMillis() - start);
         return ResponseEntity.ok(body);
     }
