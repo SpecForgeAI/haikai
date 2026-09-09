@@ -155,9 +155,12 @@ describe('buildSclInitialCommit', () => {
       files: Array<{ path: string; sha256: string }>;
       stats: { rowTests: number; goldenPaths: number; fixtureBuilders: number };
     };
-    // The manifest accounts for every suite file (all files except itself).
+    // The manifest accounts for every suite file (all files except itself and
+    // the root .gitattributes, which is normalisation, not a shipped test).
+    const gitattributes = result.files.find((f) => f.path === '.gitattributes');
+    expect(gitattributes?.content).toBe('* text=auto eol=lf\n');
     const suitePaths = result.files
-      .filter((f) => f.path !== SCL_SUITE_MANIFEST_PATH)
+      .filter((f) => f.path !== SCL_SUITE_MANIFEST_PATH && f.path !== '.gitattributes')
       .map((f) => f.path)
       .sort();
     expect(manifest.files.map((f) => f.path).sort()).toEqual(suitePaths);
