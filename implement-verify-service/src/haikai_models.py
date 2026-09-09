@@ -315,6 +315,14 @@ class StepResult(BaseModel):
                     "'transient_upstream' (backend blip — retried/retryable) "
                     "or 'real' (the work itself failed). Robustness R1."
     )
+    skipped_tests: Optional[dict] = Field(
+        default=None,
+        description="Surefire/Failsafe skip summary for the implement step "
+                    "(2026-09-09): total, skipped, failures, errors, "
+                    "report_files, fully_skipped_classes. A wholly-skipped "
+                    "class that no reasoned BLOCKED task declares fails the "
+                    "step: skipped is not passed."
+    )
     attempts: Optional[int] = Field(
         default=None,
         description="How many tries this step consumed (1 = no retry needed)."
@@ -376,6 +384,12 @@ class OrchestrationResponse(BaseModel):
         default=None,
         description="The step number of the first fatal failure (enables "
                     "resume-at-step on retry)."
+    )
+    skipped_tests: Optional[dict] = Field(
+        default=None,
+        description="The implement step's Surefire skip summary (2026-09-09), "
+                    "carried onto the build-results callback so the run item "
+                    "shows what was actually verified."
     )
 
 

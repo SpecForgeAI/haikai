@@ -441,6 +441,11 @@ class HaikaiOrchestrator:
                 orchestration_log=orchestration_log,
                 failure_class=first_fatal.failure_class if first_fatal else None,
                 failed_step=first_fatal.step if first_fatal else None,
+                skipped_tests=next(
+                    (r.skipped_tests for r in reversed(all_results)
+                     if getattr(r, "skipped_tests", None) is not None),
+                    None,
+                ),
             )
 
         except Exception as e:
@@ -658,6 +663,7 @@ class HaikaiOrchestrator:
         # failing the step over a missing report conflates "didn't write a
         # report" with "didn't implement".
         blocked_notes: List[str] = []
+        skipped_summary: Optional[Dict[str, Any]] = None
         if success and step == 3:
             spec_dir = self.project_dir / "haikai" / "specs" / spec_name
             tasks_md = spec_dir / "tasks.md"
@@ -706,6 +712,52 @@ class HaikaiOrchestrator:
                 )
                 logger.error(msg)
                 errors.append(msg)
+            # SKIPPED IS NOT PASSED (2026-09-09). A Surefire run whose
+            # Testcontainers classes were 100% skipped (no Docker daemon) exits 0
+            # and prints BUILD SUCCESS, so exit-code gates read it as green.
+            # Judge per CLASS from the report XML: a class with tests > 0 and
+            # skipped == tests contributed no verification at all. Such a class
+            # passes only when the spec's tasks.md declares it out of scope with
+            # a reasoned `[~] ... BLOCKED: ...` naming the class -- the same
+            # idiom, the same reason threshold. No reports at all = nothing to
+            # judge here (not a JVM repo, or the suite never ran; other gates own
+            # that).
+            skipped_summary = None
+            if success:
+                from .verification.surefire import (
+                    summarize_repo,
+                    undeclared_fully_skipped_classes,
+                )
+                surefire = summarize_repo(self.project_dir)
+                if surefire is not None:
+                    skipped_summary = surefire.as_dict()
+                    undeclared = undeclared_fully_skipped_classes(surefire, blocked_notes)
+                    skipped_summary["undeclared_fully_skipped_classes"] = undeclared
+                    if undeclared:
+                        success = False
+                        msg = (
+                            f"Step {step} ({command}) reports a green build, but "
+                            f"{len(undeclared)} test class(es) were WHOLLY SKIPPED and "
+                            "contributed no verification: "
+                            + ", ".join(undeclared[:8])
+                            + (" (+more)" if len(undeclared) > 8 else "")
+                            + f". Surefire: {surefire.total} tests, {surefire.skipped} "
+                            f"skipped across {surefire.report_files} report(s). Skipped "
+                            "is not passed. If a class genuinely cannot run in this "
+                            "environment, declare it in tasks.md as "
+                            "`- [~] <task> — BLOCKED: <class> needs <runtime>, absent "
+                            "here` (naming the class); otherwise make it run."
+                        )
+                        logger.error(msg)
+                        errors.append(msg)
+                        self._preserve_failed_tasks_md(step, command, spec_name, tasks_md)
+                    elif surefire.fully_skipped_classes:
+                        logger.warning(
+                            "Step 3 (%s): %d wholly-skipped test class(es) declared "
+                            "BLOCKED in tasks.md (accepted): %s",
+                            command, len(surefire.fully_skipped_classes),
+                            ", ".join(surefire.fully_skipped_classes[:8]),
+                        )
             if success and blocked_ok > 0:
                 # Reasoned blocks PASS — loudly. They name what this environment
                 # could not evidence and who owns it (deploy-time runners, a
@@ -754,6 +806,10 @@ class HaikaiOrchestrator:
             # so an environment-impossible criterion is auditable after the
             # worktree is cleaned up, instead of living only in a WARNING line.
             "blocked_tasks": blocked_notes,
+            # Surefire skip summary (2026-09-09): persisted for the same reason
+            # as blocked_tasks -- the worktree is reclaimed and this is the only
+            # durable trace of what was actually verified.
+            "skipped_tests": skipped_summary,
         }
 
         # Create step log file
@@ -787,6 +843,7 @@ class HaikaiOrchestrator:
             log_file=log_file,
             error_message="\n".join(errors) if errors else None,
             failure_class=failure_class,
+            skipped_tests=skipped_summary,
         )
 
     def _determine_output_paths(self, step: int, spec_name: str) -> List[str]:
