@@ -83,6 +83,20 @@ import { LoadedBookOfWorkItem } from './migrationShapeSpecGenerationHandler';
 export const SEED_BUILD_FILES_STORY_KIND = 'seed_build_files';
 
 /**
+ * Repo-root `.gitattributes` seeded with the very first commit (2026-09-09).
+ *
+ * Live evidence from a run's git-commit-preparation step: the committed blobs
+ * were LF, the working copies were CRLF, and with no `.gitattributes` a
+ * `git add -A` / `git commit -a` would have staged 505 spurious whole-file
+ * rewrites. The four commits that landed dodged it -- 28 deletions across 94
+ * files, so the staging was surgical -- but that was the agent NOTICING, not
+ * the tooling preventing. Normalising at the root, in the scaffold seed, lands
+ * the rule before any generated source exists to be misnormalised.
+ */
+export const SEED_GITATTRIBUTES_PATH = '.gitattributes';
+export const SEED_GITATTRIBUTES_CONTENT = '* text=auto eol=lf\n';
+
+/**
  * True when the story is the dedicated seed-build-files story. Recognised by
  * EITHER its `kind` marker (the original create-time seed story) OR a
  * `seed_build_files` TAG (Spec 6's scaffold story, whose `kind` is `operational`
@@ -399,7 +413,26 @@ export function buildSeedBuildFilesEnrichment(
     '',
   ];
 
-  const text = [...preamble, blocks.join('\n\n')].join('\n');
+  // Line-ending normalisation rides the SAME first commit as the build files
+  // (see SEED_GITATTRIBUTES_PATH). Rendered as one more exact-write block at
+  // the repository ROOT; never routed through the per-module destination
+  // resolver (it is not a module file) and never counted as a carried
+  // manifest (the manifest count stays what the operator confirmed).
+  const gitattributesBlock = [
+    `### EXACT WRITE: \`${SEED_GITATTRIBUTES_PATH}\` (repository root)`,
+    '',
+    `Write this file at EXACTLY \`${SEED_GITATTRIBUTES_PATH}\` relative to the repository ` +
+      `root, in this same first commit. It normalises line endings for every text file ` +
+      `the migration will generate: committed blobs are LF regardless of the ` +
+      `checkout's native endings, so a later \`git add -A\` on a CRLF working copy ` +
+      `never stages spurious whole-file rewrites. Do not add per-extension overrides.`,
+    '',
+    '```',
+    SEED_GITATTRIBUTES_CONTENT.trimEnd(),
+    '```',
+  ].join('\n');
+
+  const text = [...preamble, [...blocks, gitattributesBlock].join('\n\n')].join('\n');
 
   logger.info(
     `[diag-gateway] confirmed_manifest_to_codebase seed_build_files_carried ` +

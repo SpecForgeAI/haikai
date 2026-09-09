@@ -34,7 +34,11 @@
  *    never broken by the integrity layer).
  */
 
-import { logger } from './logger';
+import { logger } from './logger';
+import {
+  SEED_GITATTRIBUTES_CONTENT,
+  SEED_GITATTRIBUTES_PATH,
+} from './migrationSeedBuildFilesEnrichment';
 import {
   SclContractDto,
   fetchLatestSclContracts,
@@ -266,6 +270,13 @@ export async function buildSclInitialCommit(args: {
     `${JSON.stringify({ ...suite.manifest, stats: suite.stats }, null, 2)}\n`;
   return {
     files: [
+      // Belt-and-braces line-ending normalisation (2026-09-09): the scaffold
+      // seed lands `.gitattributes` in the first commit of a fresh repo; the
+      // SCL initial commit is the other tool-committed file set, so a repo
+      // that reached it without the seed still gets the rule. Byte-identical
+      // content, so a re-write is a no-op. NOT in the suite manifest: it is
+      // not a shipped test and the no-modification guard does not own it.
+      { path: SEED_GITATTRIBUTES_PATH, content: SEED_GITATTRIBUTES_CONTENT },
       ...suite.files.map((f) => ({ path: f.path, content: f.content })),
       { path: SCL_SUITE_MANIFEST_PATH, content: manifestJson },
     ],

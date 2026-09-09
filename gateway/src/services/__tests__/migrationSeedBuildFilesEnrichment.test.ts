@@ -130,6 +130,16 @@ describe('seed-build-files enrichment (Spec 5, Groups 3 + 4)', () => {
     expect(text).toMatch(/ADD the minimal\s*entry/);
   });
 
+  it('(f) seeds a root .gitattributes (LF normalisation) as one more exact-write block in the first commit (2026-09-09)', () => {
+    const { text, carriedCount } = buildSeedBuildFilesEnrichment(bundle([pomManifest()]));
+    expect(text).toContain('### EXACT WRITE: `.gitattributes` (repository root)');
+    expect(text).toContain('* text=auto eol=lf');
+    expect(text).toContain('never stages spurious whole-file rewrites');
+    // It follows the manifest blocks and is NOT counted as a carried manifest.
+    expect(text!.indexOf('pom.xml')).toBeLessThan(text!.indexOf('.gitattributes'));
+    expect(carriedCount).toBe(1);
+  });
+
   it('(d) preserves a version-unknown marker VERBATIM (no invented version)', () => {
     const out = buildSeedBuildFilesEnrichment(bundle([pkgManifest()]));
     const text = out.text as string;
