@@ -442,6 +442,24 @@ function bySymbol(a: SclContractDto, b: SclContractDto): number {
   return symbolOf(a).localeCompare(symbolOf(b)) || keyOf(a).localeCompare(keyOf(b));
 }
 
+/** `com.app.orders.OrderService#find()` -> `com.app.orders`. */
+function packageOf(contract: SclContractDto): string {
+  const cls = classOfSymbol(symbolOf(contract));
+  const dot = cls.lastIndexOf('.');
+  return dot > 0 ? cls.slice(0, dot) : '';
+}
+
+/**
+ * Package first, then symbol (2026-09-10). Used ONLY as the tie-break among
+ * contracts that are ready at the same time in the topological walk, so a
+ * story part is a coherent package-shaped slice rather than an arbitrary
+ * alphabetical one -- a soft boundary, never a partition: small packages pack
+ * together up to the budget and only the large ones split.
+ */
+function byPackageThenSymbol(a: SclContractDto, b: SclContractDto): number {
+  return packageOf(a).localeCompare(packageOf(b)) || bySymbol(a, b);
+}
+
 function boundedSymbols(contracts: SclContractDto[], max = 10): string {
   // Sorted for input-order independence (descriptions are deterministic too).
   const symbols = [...contracts].sort(bySymbol).map(symbolOf);
@@ -705,7 +723,8 @@ export function topologicalContractOrder(
   onCycle?: (members: string[]) => void
 ): SclContractDto[] {
   const inScope = new Map<string, SclContractDto>();
-  for (const c of [...contracts].sort(bySymbol)) inScope.set(keyOf(c), c);
+  // Insertion order = ready-key preference: (package, symbol), 2026-09-10.
+  for (const c of [...contracts].sort(byPackageThenSymbol)) inScope.set(keyOf(c), c);
 
   const pending = new Map<string, Set<string>>();
   for (const key of inScope.keys()) {
@@ -718,7 +737,8 @@ export function topologicalContractOrder(
   let cycleReported = false;
   while (emitted.size < inScope.size) {
     // Ready = every dependency already emitted. Insertion order of `inScope` is
-    // symbol order, so `find` yields the alphabetically-first ready contract.
+    // (package, symbol) order, so `find` yields the first ready contract of the
+    // earliest package -- dependency order still wins over package order.
     const readyKey = [...inScope.keys()].find(
       (k) => !emitted.has(k) && [...pending.get(k)!].every((d) => emitted.has(d))
     );

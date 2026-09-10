@@ -240,3 +240,24 @@ describe('contract sufficiency (2026-09-09)', () => {
     expect(plan.stats.unimplementableContracts).not.toContain('Q-SQL');
   });
 });
+
+describe('package as the ordering key within a topological level (2026-09-10)', () => {
+  it('edgeless contracts order package-first, then symbol', () => {
+    const contracts = [
+      shape({ key: 'S-ZA', symbol: 'com.app.z.Aaa' }),
+      shape({ key: 'S-AZ', symbol: 'com.app.a.Zzz' }),
+      shape({ key: 'S-AB', symbol: 'com.app.a.Bbb' }),
+    ];
+    const ordered = topologicalContractOrder(contracts, buildContractDependencies(contracts));
+    expect(ordered.map((c) => c.contract_key)).toEqual(['S-AB', 'S-AZ', 'S-ZA']);
+  });
+
+  it('a cross-package dependency still forces the referenced contract first (never a forward reference)', () => {
+    const contracts = [
+      shape({ key: 'S-AB', symbol: 'com.app.a.Bbb', references: ['S-ZA'] }),
+      shape({ key: 'S-ZA', symbol: 'com.app.z.Aaa' }),
+    ];
+    const ordered = topologicalContractOrder(contracts, buildContractDependencies(contracts));
+    expect(ordered.map((c) => c.contract_key)).toEqual(['S-ZA', 'S-AB']);
+  });
+});
