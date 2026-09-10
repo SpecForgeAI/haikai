@@ -2125,6 +2125,44 @@ function corpusTags(stream: string, planned: SclPlannedStory): string[] {
  * cross-cutting foundations feature, under the SAME epic) + one story per
  * non-empty foundation layer, in layer order. PURE over its inputs.
  */
+/**
+ * Content-derived story ids for corpus stories (2026-09-10).
+ *
+ * Corpus story ids used to be POSITIONAL (`<feature>-s-<N>`). Two things that
+ * are individually correct made that unsafe together: the planner may
+ * legitimately reorder stories (the 2026-09-07 dependency-order fix moved
+ * utilities and data-access ahead of the cross-cutting fragments), and a
+ * post-save re-expansion carries each story's work-item identity over BY ID.
+ * After the reorder, positional id s-5 stopped meaning "fragments part 1" and
+ * started meaning "utility functions", identity carry-over faithfully kept the
+ * old work item attached to it, and every spec regenerated from the blob was
+ * right for its story while the backlog titles said otherwise -- read on the
+ * work machine as "43 of 49 specs attached to the wrong stories".
+ *
+ * Identity now follows WHAT the story is: the foundation layer (and part), or
+ * the controller feature (and part). A reorder moves stories without moving
+ * their identities; a layer that splits into more parts keeps its existing
+ * parts' ids. Ids are deterministic across re-expansions by construction.
+ */
+export function corpusStoryId(featureId: string, planned: { layer: string; title: string }): string {
+  const layerSlug = planned.layer.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'story';
+  const partMatch = /\(part (\d+)\)\s*$/.exec(planned.title);
+  const part = partMatch ? Number(partMatch[1]) : 1;
+  return `${featureId}-s-${layerSlug}-p${part}`;
+}
+
+/** Defensive: never let two stories in one batch share an id (cannot happen by construction; loud if it does). */
+function uniqueCorpusStoryId(id: string, seen: Set<string>, fallbackIndex: number): string {
+  if (!seen.has(id)) {
+    seen.add(id);
+    return id;
+  }
+  const suffixed = `${id}-${fallbackIndex}`;
+  logger.warn('[diag-gateway] migration_bow_expansion corpus_story_id_collision', { id, suffixed });
+  seen.add(suffixed);
+  return suffixed;
+}
+
 export function buildCorpusFoundationItems(args: {
   epic: MigrationBookOfWorkItem;
   stream: string;
@@ -2158,10 +2196,11 @@ export function buildCorpusFoundationItems(args: {
     })
   );
 
+  const seenIds = new Set<string>();
   plan.foundationStories.forEach((planned, i) => {
     items.push(
       corpusItem({
-        id: `${featureId}-s-${i + 1}`,
+        id: uniqueCorpusStoryId(corpusStoryId(featureId, planned), seenIds, i + 1),
         type: 'story',
         parentId: featureId,
         title: planned.title,
@@ -2249,6 +2288,7 @@ export function buildCorpusEndpointGroupItems(args: {
         : controller;
       const controllerSlug = controller.replace(/[^A-Za-z0-9]+/g, '-');
       const featureId = `${epic.id}-corpus-${kind}-${controllerSlug}`;
+      const seenIds = new Set<string>();
       const totalRows = stories.reduce((sum, s) => sum + s.rowCount, 0);
       items.push(
         corpusItem({
@@ -2323,7 +2363,9 @@ export function buildCorpusEndpointGroupItems(args: {
                 ' committed endpoint uniquely; scoped by SCL contract key only.';
         items.push(
           corpusItem({
-            id: `${featureId}-s-${i + 1}`,
+            // Endpoint-group stories: the feature id already carries the
+            // controller; the story id carries the part (2026-09-10).
+            id: uniqueCorpusStoryId(corpusStoryId(featureId, { layer: 'endpoints', title: planned.title }), seenIds, i + 1),
             type: 'story',
             parentId: featureId,
             title: planned.title,
