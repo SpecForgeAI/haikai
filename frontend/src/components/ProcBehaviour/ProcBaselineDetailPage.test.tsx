@@ -157,6 +157,59 @@ describe('ProcBaselineDetailPage', () => {
     expect(screen.getAllByTestId('proc-baseline-envelope-bi-1-result-row')).toHaveLength(1);
   });
 
+  // ----------------------------------------------------------------------
+  // Spec 5 (2026-09-09) — source drift is a SIGNAL, never a lock
+  // ----------------------------------------------------------------------
+
+  it('renders the drift banner counting ROUTINES (not items) and disables nothing', async () => {
+    // Two stale items on ONE routine + one stale item on a second routine =
+    // 2 routines drifted, not 3 items.
+    mockListItems.mockResolvedValue([
+      ...ITEMS,
+      mapBaselineItem({
+        id: 'bi-3',
+        routine_id: 'r-proc',
+        routine_body_hash: 'h0',
+        scenario_name: 'raises on a missing ledger',
+        scenario_type: 'error_path',
+        exit_outcome: 'error:20002',
+        inputs_json: [],
+        expected_envelope_json: { outcome: 'error' },
+        stale: true,
+        stale_reason: 'body_changed',
+      }),
+      mapBaselineItem({
+        id: 'bi-4',
+        routine_id: 'r-fn',
+        routine_body_hash: 'h9',
+        scenario_name: 'derives the period key',
+        scenario_type: 'happy_path',
+        exit_outcome: 'success',
+        inputs_json: [],
+        expected_envelope_json: { outcome: 'success' },
+        stale: true,
+        stale_reason: 'body_changed',
+      }),
+    ]);
+    mockGetBaseline.mockResolvedValue(mapBaseline(baselineWire('draft')));
+    renderPage();
+
+    const banner = await screen.findByTestId('proc-baseline-drift-banner');
+    expect(banner.textContent).toContain('2 routine(s) changed since capture');
+    expect(banner.textContent).toContain('re-capture (scoped) and re-run the translation loop');
+
+    // Signal only: the Pin button (the one action on this page) stays live.
+    expect((screen.getByTestId('proc-baseline-pin') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('renders no drift banner when nothing has drifted', async () => {
+    mockListItems.mockResolvedValue([ITEMS[0]]); // the one non-stale item
+    renderPage();
+
+    await screen.findByTestId('proc-baseline-items');
+    expect(screen.queryByTestId('proc-baseline-drift-banner')).toBeNull();
+  });
+
   it('offers Pin for a draft baseline and posts it', async () => {
     const user = userEvent.setup();
     mockGetBaseline.mockResolvedValue(mapBaseline(baselineWire('draft')));

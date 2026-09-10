@@ -49,11 +49,23 @@ function populatedSummary(): MigrationProgressSummaryDto {
       { key: 'reconciliation', label: 'Reconciliation', status: 'in_progress', facts: ['in progress'] },
     ],
     db: {
-      current: { tables: 120, rows: 4213882, views: 14, procs: 38 },
-      target: { tables: 120, rows: 4198441, views: 12, procs: 31 },
+      current: { tables: 120, rows: 4213882, views: 14, procs: 38, routines: 40 },
+      target: { tables: 120, rows: 4198441, views: 12, procs: 31, routines: 33 },
       buckets: { failedToLoad: 2, rowCountMismatch: 3, dataMismatch: 1, fullyReconciled: 114 },
       viewsMigrated: 12,
       procsMigrated: 31,
+      // Spec 5 (2026-09-09): reconciled is the bar. 6 buckets partition 38.
+      procsMigratedReconciled: { reconciled: 33, total: 38, pct: 86.8 },
+      procBuckets: {
+        notCaptured: 1,
+        divergent: 2,
+        unverified: 1,
+        notMigrated: 1,
+        reconciledWithWaivers: 4,
+        fullyReconciled: 29,
+        movedToCode: 2,
+        dropped: 1,
+      },
     },
     service: {
       current: { interfaces: 6, endpoints: 45 },
@@ -75,11 +87,13 @@ function tbcSummary(): MigrationProgressSummaryDto {
         : s,
     ),
     db: {
-      current: { tables: 120, rows: null, views: 14, procs: 38 },
+      current: { tables: 120, rows: null, views: 14, procs: 38, routines: 40 },
       target: null,
       buckets: null,
       viewsMigrated: null,
       procsMigrated: null,
+      procsMigratedReconciled: null,
+      procBuckets: null,
     },
     service: {
       current: { interfaces: 6, endpoints: 45 },
@@ -135,7 +149,36 @@ describe('MigrationProgressReport', () => {
     expect(screen.getByTestId('mpr-db-views-migrated').getAttribute('data-tier')).toBe('yellow'); // 12 of 14 = 86%
     expect(screen.getByTestId('mpr-db-views-migrated').textContent).toContain('Views migrated');
     expect(screen.getByTestId('mpr-db-views-migrated').textContent).toContain('12 of 14 (86%)');
-    expect(screen.getByTestId('mpr-db-procs-migrated').getAttribute('data-tier')).toBe('light-orange'); // 31 of 38 = 82%
+    // Spec 5 (2026-09-09): the cell is now RECONCILED-of-in-scope, and it
+    // renders the server's own percentage rather than a second derivation.
+    const procsCell = screen.getByTestId('mpr-db-procs-migrated');
+    expect(procsCell.textContent).toContain('Stored procs migrated/reconciled');
+    expect(procsCell.textContent).toContain('33 of 38');
+    expect(procsCell.getAttribute('data-tier')).toBe('yellow'); // 33 of 38 = 86.8%
+    expect(screen.getByTestId('mpr-db-procs-reconciled-pct').textContent).toBe('(87%)');
+
+    // The catalog fact row (target = the reconciled routines).
+    expect(screen.getByTestId('mpr-db-routines-current').textContent).toContain(
+      'Stored procs & functions (catalog)',
+    );
+    expect(screen.getByTestId('mpr-db-routines-current').textContent).toContain('40');
+    expect(screen.getByTestId('mpr-db-routines-target').textContent).toContain('33');
+    expect(screen.getByTestId('mpr-db-routines-matching').textContent).toBe('false');
+
+    // The six-bucket worst->best strip partitions the SAME 38 in-scope routines.
+    expect(screen.getByTestId('mpr-db-proc-bucket-not-captured').textContent).toContain('1 of 38');
+    expect(screen.getByTestId('mpr-db-proc-bucket-divergent').textContent).toContain('2 of 38');
+    expect(screen.getByTestId('mpr-db-proc-bucket-unverified').textContent).toContain('1 of 38');
+    expect(screen.getByTestId('mpr-db-proc-bucket-not-migrated').textContent).toContain('1 of 38');
+    expect(screen.getByTestId('mpr-db-proc-bucket-waived').textContent).toContain('4 of 38');
+    expect(screen.getByTestId('mpr-db-proc-bucket-reconciled').textContent).toContain('29 of 38');
+    // Undesired ladder for the four bad buckets, reconciled ladder for the good.
+    expect(screen.getByTestId('mpr-db-proc-bucket-divergent').getAttribute('data-tier')).toBe('light-orange'); // 2 of 38 = 5.3%
+    expect(screen.getByTestId('mpr-db-proc-bucket-reconciled').getAttribute('data-tier')).toBe('light-orange'); // 29 of 38 = 76%
+    // Dispositioned routines are an aside, never a bucket.
+    expect(screen.getByTestId('mpr-db-proc-out-of-scope').textContent).toBe(
+      'Moved to code: 2 · Dropped: 1',
+    );
 
     // Service buckets partition the 45 endpoints; strip renders the rollup.
     expect(screen.getByTestId('mpr-service-bucket-reconciled').textContent).toContain('41 of 45 (91%)');
@@ -191,5 +234,42 @@ describe('MigrationProgressReport', () => {
     expect(screen.getByTestId('mpr-db-section')).toBeTruthy();
     expect(screen.queryByTestId('mpr-service-section')).toBeNull();
     expect(screen.queryByTestId('mpr-stage-live_behaviour')).toBeNull();
+    // Spec 5 (2026-09-09): the page states the DB-only shape, and the single
+    // column leaves no blank half where the service section would have been.
+    expect(screen.getByTestId('mpr-page').getAttribute('data-layout')).toBe('db-only');
+    // The proc surfaces are fully present in a DB-only book.
+    expect(screen.getByTestId('mpr-db-procs-migrated').textContent).toContain(
+      'Stored procs migrated/reconciled',
+    );
+    expect(screen.getByTestId('mpr-db-proc-bucket-reconciled')).toBeTruthy();
+  });
+
+  it('falls back to the legacy procsMigrated pair and hides the strip when the proc data is absent', async () => {
+    const dto = populatedSummary();
+    dto.db!.procsMigratedReconciled = null;
+    dto.db!.procBuckets = null;
+    renderReport(dto);
+    await waitFor(() => expect(screen.getByTestId('mpr-page')).toBeTruthy());
+    const cell = screen.getByTestId('mpr-db-procs-migrated');
+    // The one-release compatibility path: the OLD label + the old pair.
+    expect(cell.textContent).toContain('Stored procs migrated:');
+    expect(cell.textContent).not.toContain('migrated/reconciled');
+    expect(cell.textContent).toContain('31 of 38');
+    // The strip only renders on real bucket data — never as an all-zero lie.
+    expect(screen.queryByTestId('mpr-db-proc-bucket-reconciled')).toBeNull();
+    expect(screen.queryByTestId('mpr-db-proc-out-of-scope')).toBeNull();
+  });
+
+  it('omits the out-of-scope line when nothing was moved to code or dropped', async () => {
+    const dto = populatedSummary();
+    dto.db!.procBuckets = {
+      ...dto.db!.procBuckets!,
+      movedToCode: 0,
+      dropped: 0,
+    };
+    renderReport(dto);
+    await waitFor(() => expect(screen.getByTestId('mpr-page')).toBeTruthy());
+    expect(screen.getByTestId('mpr-db-proc-bucket-reconciled')).toBeTruthy();
+    expect(screen.queryByTestId('mpr-db-proc-out-of-scope')).toBeNull();
   });
 });

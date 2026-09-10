@@ -63,6 +63,10 @@ import {
   migrationTargetCredentialsStore,
 } from './migrationTargetCredentialsStore';
 import { currentSystemCredentialsStore } from './baselineDriftScheduler';
+import {
+  checkProcParityPreconditions,
+  runProcParityForArchitecture,
+} from './migrationProcParityReconcile';
 
 const trace = createTracer('gateway');
 
@@ -92,6 +96,12 @@ export interface ManualDbBlock {
 export interface ManualReconcileRequest {
   runDataParity: boolean;
   runApiReconcile: boolean;
+  /**
+   * Stored procs & functions (Spec 5, proc behaviour program): replay the
+   * pinned proc baseline against the target DB (purpose `manual`). Works
+   * with NO service plane at all — target DB credentials only.
+   */
+  runProcParity?: boolean;
   /** CURRENT-state (source) DB credentials — data-parity source side. */
   sourceDb?: ManualDbBlock | null;
   /** TARGET DB credentials — parity target side + reconcile state snapshots. */
@@ -121,6 +131,8 @@ export type ManualRecOutcome =
 export interface ManualReconcileResult {
   dataParity: ManualRecOutcome | null;
   apiReconcile: ManualRecOutcome | null;
+  /** Spec 5: stored procs & functions parity (null when not requested). */
+  procParity: ManualRecOutcome | null;
 }
 
 // ============================================================================
@@ -130,6 +142,9 @@ export interface ManualReconcileResult {
 export interface ManualReconcileDeps {
   resolveTables(projectId: string, architectureId: string): Promise<DataParityTable[]>;
   runParity: typeof runDataParityReconcileViaAmvs;
+  /** Spec 5: proc parity preconditions (named block reasons) + engine. */
+  checkProcParityPreconditions: typeof checkProcParityPreconditions;
+  runProcParity: typeof runProcParityForArchitecture;
   getRunsForBook: typeof getMigrationExecutionRunsForBook;
   getBreaksForRun: typeof getReconciliationBreaksForRun;
   patchBreak: typeof patchReconciliationBreak;
@@ -159,6 +174,8 @@ export function defaultManualReconcileDeps(): ManualReconcileDeps {
   return {
     resolveTables: (p, a) => defaultResolveDataParityTables(p, a),
     runParity: runDataParityReconcileViaAmvs,
+    checkProcParityPreconditions: (p, a) => checkProcParityPreconditions(p, a),
+    runProcParity: (args) => runProcParityForArchitecture(args),
     getRunsForBook: getMigrationExecutionRunsForBook,
     getBreaksForRun: getReconciliationBreaksForRun,
     patchBreak: patchReconciliationBreak,
@@ -240,7 +257,7 @@ export async function startManualReconciliation(
   deps: ManualReconcileDeps = defaultManualReconcileDeps(),
 ): Promise<{ ok: true; result: ManualReconcileResult } | { ok: false; error: string }> {
   const { projectId, architectureId, bookId, request } = args;
-  if (!request.runDataParity && !request.runApiReconcile) {
+  if (!request.runDataParity && !request.runApiReconcile && !request.runProcParity) {
     return { ok: false, error: 'Select at least one reconciliation to run.' };
   }
 
@@ -254,7 +271,7 @@ export async function startManualReconciliation(
   const sourceAuth = validateAuth(request.sourceApi?.api, 'source');
   if (sourceAuth.error) return { ok: false, error: sourceAuth.error };
 
-  const result: ManualReconcileResult = { dataParity: null, apiReconcile: null };
+  const result: ManualReconcileResult = { dataParity: null, apiReconcile: null, procParity: null };
   const corr = { project: projectId };
 
   // --- DATABASE reconciliation (data parity). ------------------------------
@@ -317,6 +334,69 @@ export async function startManualReconciliation(
         result.dataParity = {
           status: 'started',
           detail: `Comparing ${tables.length} migrated table(s); the report lands on this screen when done.`,
+        };
+      }
+    }
+  }
+
+  // --- STORED PROCS & FUNCTIONS (proc parity, Spec 5). ---------------------
+  // DB-only by design: the pinned proc baseline is the source side, so only
+  // TARGET DB credentials are needed (body wins; registered store fallback).
+  if (request.runProcParity) {
+    const runsForFallback = request.targetDb
+      ? []
+      : await deps.getRunsForBook(projectId, bookId).catch(() => [] as MigrationExecutionRun[]);
+    const latestRunId = runsForFallback[0]?.id ?? null;
+    const effectiveTarget =
+      targetDb.db ?? (latestRunId ? deps.getRegisteredTargetDb(latestRunId) : undefined);
+    if (!effectiveTarget) {
+      result.procParity = {
+        status: 'blocked',
+        reason: 'Missing target DB credentials (enter them here, or register them at Migrate confirm).',
+      };
+    } else {
+      const pre = await deps
+        .checkProcParityPreconditions(projectId, architectureId)
+        .catch((err: unknown) => ({
+          ok: false as const,
+          blocked: `Could not read the proc-parity preconditions: ${err instanceof Error ? err.message : String(err)}`,
+        }));
+      if (!pre.ok) {
+        result.procParity = { status: 'blocked', reason: pre.blocked };
+      } else if (pre.routineIds.length === 0) {
+        result.procParity = {
+          status: 'blocked',
+          reason: 'No translate-dispositioned stored procs or functions on the DB migration pack.',
+        };
+      } else {
+        trace.step(`manual proc-parity reconcile — ${pre.routineIds.length} routine(s) via AMVS`, corr);
+        void deps
+          .runProcParity({ projectId, architectureId, targetDb: effectiveTarget, purpose: 'manual' })
+          .then((r) => {
+            if (r.ok) {
+              trace.ok(
+                `manual proc-parity reconcile COMPLETED — status=${r.status} routines=${r.routines} ` +
+                  `reports=${r.reports.length} skipped=${r.skipped.length}`,
+                corr,
+              );
+            } else {
+              trace.fail(
+                `manual proc-parity reconcile ${'blocked' in r ? 'blocked' : 'failed'}: ${'blocked' in r ? r.blocked : r.error}`,
+                corr,
+              );
+            }
+          })
+          .catch((err) => {
+            logger.error('[diag-gateway] manual_proc_parity_error', {
+              projectId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          });
+        result.procParity = {
+          status: 'started',
+          detail:
+            `Replaying the pinned proc baseline for ${pre.routineIds.length} routine(s); ` +
+            'per-routine reports land on the pack workbench and this report when done.',
         };
       }
     }

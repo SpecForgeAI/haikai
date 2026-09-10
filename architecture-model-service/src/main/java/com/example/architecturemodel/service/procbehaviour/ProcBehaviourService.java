@@ -483,6 +483,29 @@ public class ProcBehaviourService {
     }
 
     /**
+     * Drift (Spec 5): apply {@link #markItemsStale(UUID, Map)} to EVERY pinned
+     * baseline of the architecture (one per kind) after a re-scan changed the
+     * given routines' bodies. A signal for the baseline / workbench screens,
+     * never a lock.
+     *
+     * @return items flipped to stale across the pinned baselines
+     */
+    @Transactional
+    public int markItemsStaleForArchitecture(UUID architectureId, Map<String, String> currentBodyHashes) {
+        if (architectureId == null || currentBodyHashes == null || currentBodyHashes.isEmpty()) {
+            return 0;
+        }
+        int total = 0;
+        for (ProcBehaviourBaselineEntity baseline : baselineRepository.findByArchitectureIdOrderByCreatedAtDesc(architectureId)) {
+            if (!ProcBehaviourBaselineEntity.STATUS_PINNED.equals(baseline.getStatus())) {
+                continue;
+            }
+            total += markItemsStale(baseline.getId(), currentBodyHashes);
+        }
+        return total;
+    }
+
+    /**
      * Mark baseline items stale where the routine body has moved on. Only
      * routines named in {@code currentBodyHashes} are considered -- an absent
      * routine is "no information", not "unchanged".

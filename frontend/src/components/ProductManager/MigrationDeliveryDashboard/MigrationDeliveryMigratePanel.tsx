@@ -263,6 +263,11 @@ export const MigrationDeliveryMigratePanel: React.FC<
   const [serverBlockReasons, setServerBlockReasons] = useState<
     MigrateBlockReason[] | null
   >(null);
+  // NON-BLOCKING proc-parity findings from the graduated gate (stored-proc
+  // program Spec 5, 2026-09-09). They ride BOTH a `started` and a `blocked`
+  // response and are a SIGNAL, never a lock: nothing on this panel is disabled
+  // because of them.
+  const [serverWarnings, setServerWarnings] = useState<string[] | null>(null);
   const [run, setRun] = useState<MigrationExecutionRunDto | null>(null);
   // Phased execution (Spec W): approve-&-continue state for a paused run.
   const [approving, setApproving] = useState<boolean>(false);
@@ -323,6 +328,7 @@ export const MigrationDeliveryMigratePanel: React.FC<
     if (lastRefreshTokenRef.current === refreshToken) return;
     lastRefreshTokenRef.current = refreshToken;
     setServerBlockReasons(null);
+    setServerWarnings(null);
     void loadRun();
   }, [refreshToken, loadRun]);
 
@@ -332,12 +338,17 @@ export const MigrationDeliveryMigratePanel: React.FC<
     setLaunching(true);
     setError(null);
     setServerBlockReasons(null);
+    setServerWarnings(null);
     try {
       const result: TriggerMigrateResult = await triggerMigrateFn(
         projectId,
         bookId,
         { company, project },
       );
+      // Findings ride BOTH outcomes and never gate the launch.
+      if (result.status === 'started' || result.status === 'blocked') {
+        setServerWarnings(result.warnings ?? null);
+      }
       if (result.status === 'started') {
         // Surface the freshly-created run immediately.
         await loadRun();
@@ -403,6 +414,7 @@ export const MigrationDeliveryMigratePanel: React.FC<
     setLaunching(true);
     setError(null);
     setServerBlockReasons(null);
+    setServerWarnings(null);
     try {
       const result: TriggerMigrateResult = await triggerMigrateSelectedFn(
         projectId,
@@ -414,6 +426,9 @@ export const MigrationDeliveryMigratePanel: React.FC<
           batchName: batchName.trim() || undefined,
         },
       );
+      if (result.status === 'started' || result.status === 'blocked') {
+        setServerWarnings(result.warnings ?? null);
+      }
       if (result.status === 'started') {
         setSelectedIds(new Set());
         await loadRun();
@@ -675,6 +690,26 @@ export const MigrationDeliveryMigratePanel: React.FC<
                 review (cite a story or dismiss with a reason), then retry.
               </span>
             ))}
+        </div>
+      )}
+
+      {/* ----- Proc-parity FINDINGS (stored-proc program Spec 5, 2026-09-09).
+          The graduated gate blocks ONLY on a routine the next plane depends on;
+          everything else lands here. Amber, not red; role="status", not
+          "alert"; rendered under the server block reasons on BOTH a started and
+          a blocked launch, and it disables nothing. ----- */}
+      {serverWarnings && serverWarnings.length > 0 && (
+        <div
+          className={styles.warningBanner}
+          role="status"
+          data-testid="mdd-migrate-warnings"
+        >
+          <span>Proc parity findings (nothing blocks):</span>
+          <ul className={styles.defineTestsBannerList}>
+            {serverWarnings.map((w, i) => (
+              <li key={`${i}-${w}`}>{w}</li>
+            ))}
+          </ul>
         </div>
       )}
 

@@ -52,6 +52,7 @@ function deployedRun(): MigrationExecutionRun {
 function makeDeps(overrides: Partial<ManualReconcileDeps> = {}) {
   const calls = {
     parity: [] as unknown[],
+    procParity: [] as unknown[],
     trigger: [] as MigrationExecutionRun[],
     registered: [] as Array<{ runId: string; db?: TargetDbSecret }>,
     patched: [] as unknown[],
@@ -67,6 +68,11 @@ function makeDeps(overrides: Partial<ManualReconcileDeps> = {}) {
       return { ok: true, reportPersisted: true, status: 'clean', reportId: 'rep-1' };
     }) as ManualReconcileDeps['runParity'],
     getRunsForBook: async () => [deployedRun()],
+    checkProcParityPreconditions: async () => ({ ok: true, packId: 'pack-1', routineIds: ['r1', 'r2'], baselineId: 'bl-proc' }),
+    runProcParity: (async (args: unknown) => {
+      calls.procParity.push(args);
+      return { ok: true, status: 'clean', baselineId: 'bl-proc', routines: 2, reports: [], skipped: [] };
+    }) as ManualReconcileDeps['runProcParity'],
     getBreaksForRun: async () => [],
     patchBreak: (async (_p: string, breakId: string, body: MigrationReconciliationBreak) => {
       calls.breakPatches.push({ breakId, body: body as Record<string, unknown> });
@@ -317,5 +323,47 @@ describe('startManualReconciliation', () => {
     expect(outcome.ok && outcome.result.apiReconcile?.status).toBe('started');
     await flush();
     expect(calls.trigger).toHaveLength(1);
+  });
+});
+
+// ----------------------------------------------------------------------------
+// Spec 5 (Stored Proc & Function Behaviour Program, 2026-09-09): the
+// "Stored procs and functions" checkbox — DB-only by design (target creds
+// only), preconditions as named block reasons, purpose=manual.
+// ----------------------------------------------------------------------------
+describe('startManualReconciliation — proc parity (Spec 5)', () => {
+  it('starts with the body target creds only (no source, no API) and fires purpose=manual', async () => {
+    const { deps, calls } = makeDeps();
+    const outcome = await startManualReconciliation(
+      { ...ARGS, request: { runDataParity: false, runApiReconcile: false, runProcParity: true, targetDb: TARGET_DB } },
+      deps,
+    );
+    await flush();
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.result.procParity).toMatchObject({ status: 'started' });
+    expect(outcome.result.dataParity).toBeNull();
+    expect(outcome.result.apiReconcile).toBeNull();
+    expect(calls.procParity).toHaveLength(1);
+    expect(calls.procParity[0]).toMatchObject({ projectId: PROJECT, architectureId: ARCH, purpose: 'manual', targetDb: expect.objectContaining({ host: 'tgt-host' }) });
+  });
+
+  it('falls back to the registered target creds, and names each blocked precondition', async () => {
+    const registered = makeDeps({ getRegisteredTargetDb: () => ({ ...TARGET_DB, schema: null }) as TargetDbSecret });
+    const viaStore = await startManualReconciliation({ ...ARGS, request: { runDataParity: false, runApiReconcile: false, runProcParity: true } }, registered.deps);
+    await flush();
+    expect(viaStore.ok && viaStore.result.procParity).toMatchObject({ status: 'started' });
+
+    const noCreds = await startManualReconciliation({ ...ARGS, request: { runDataParity: false, runApiReconcile: false, runProcParity: true } }, makeDeps().deps);
+    expect(noCreds.ok && noCreds.result.procParity).toMatchObject({ status: 'blocked', reason: expect.stringContaining('target DB credentials') });
+
+    const noBaseline = makeDeps({ checkProcParityPreconditions: async () => ({ ok: false, blocked: 'No pinned proc behaviour baseline' }) });
+    const blocked = await startManualReconciliation({ ...ARGS, request: { runDataParity: false, runApiReconcile: false, runProcParity: true, targetDb: TARGET_DB } }, noBaseline.deps);
+    expect(blocked.ok && blocked.result.procParity).toEqual({ status: 'blocked', reason: 'No pinned proc behaviour baseline' });
+    expect(noBaseline.calls.procParity).toHaveLength(0);
+
+    const noRoutines = makeDeps({ checkProcParityPreconditions: async () => ({ ok: true, packId: 'pack-1', routineIds: [], baselineId: null }) });
+    const none = await startManualReconciliation({ ...ARGS, request: { runDataParity: false, runApiReconcile: false, runProcParity: true, targetDb: TARGET_DB } }, noRoutines.deps);
+    expect(none.ok && none.result.procParity).toMatchObject({ status: 'blocked', reason: expect.stringContaining('No translate-dispositioned') });
   });
 });

@@ -222,3 +222,19 @@
   color: #666;
   margin: 4px 0 8px;
 }
+
+/* Source-drift banner (Spec 5, 2026-09-09). Amber: drift is a SIGNAL that the
+   oracle has aged, never a lock — nothing on the page is disabled by it. */
+.driftBanner {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 4px 0 10px;
+  padding: 8px 12px;
+  border: 1px solid #ffe082;
+  border-radius: 4px;
+  background: #fff8e1;
+  color: #6d4c41;
+  font-size: 13px;
+}

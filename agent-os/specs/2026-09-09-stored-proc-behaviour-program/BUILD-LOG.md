@@ -1,6 +1,6 @@
 # Stored Proc & Function Behaviour Program — Build Log
 
-## STATUS: SHAPED 2026-09-09 — awaiting the owner's explicit build go
+## STATUS: BUILT 2026-09-10 — Specs 1–5 on `feature/stored-proc-behaviour-program` (one commit per spec); merge to main + work-machine shakedown pending
 
 Design of record:
 `agent-os/planning/2026-09-09-stored-proc-behaviour-baseline-shaping.md`
@@ -9,11 +9,11 @@ list, build assumptions). Specs in this folder:
 
 | # | Spec | Size | Depends on | Status |
 |---|------|------|------------|--------|
-| 1 | Routine catalog + static profile | M | — | shaped |
-| 2 | Invocation surface + descriptor | L | 1 | shaped |
-| 3 | Proc behaviour capture | L | 1, 2 (Sybase side) | shaped |
-| 4 | Translation workbench loop | L | 1, 2 (Postgres side), 3 | shaped |
-| 5 | Execution integration | M | 4 | shaped |
+| 1 | Routine catalog + static profile | M | — | built 2026-09-09 (8519e9fd) |
+| 2 | Invocation surface + descriptor | L | 1 | built 2026-09-09 (92d276d2) |
+| 3 | Proc behaviour capture | L | 1, 2 (Sybase side) | built 2026-09-09 (1e7e3682) |
+| 4 | Translation workbench loop | L | 1, 2 (Postgres side), 3 | built 2026-09-10 (16ba122a) |
+| 5 | Execution integration | M | 4 | built 2026-09-10 (see the per-spec notes) |
 
 Build order 1 → 2 → 3 → 4 → 5 (2 and 3 may overlap once 1's entity
 exists). One commit per spec on `feature/stored-proc-behaviour-program`;
@@ -26,21 +26,78 @@ in the shaping doc stay untouched; never write client-derived tokens.
 
 ### Work-machine pickup (clone + copy convention — big change ⇒ FRESH CLONE)
 
-To be completed per spec at build time. Expected shape:
-1. AMS REBUILD — changesets 229 (routines), 230 (proc behaviour), 231
-   (workbench/parity) apply on boot.
-2. REBUILD the sybase-discovery-sidecar jar (`/call` + guard) and restart
-   it bare (no Docker on the work machine).
-3. Restart discovery-service, AMVS, gateway, frontend. New env knobs (all
-   optional, defaults in the shaping doc): PROC_CALL_SESSION_SET,
-   PROC_CALL_MAX_ROWS_PER_RESULT_SET, PROC_LLM_ATTEMPTS_PER_ROUTINE,
-   PROC_TRANSLATE_ATTEMPT_CAP, PROC_TRANSLATE_CONCURRENCY,
-   PROC_TRANSLATE_EVIDENCE_LADDER, SCL_PROC_CLOSURE_MAX_DEPTH.
-4. FIRST OPERATIONAL STEPS: re-run the DB scan (routine catalog + S0) →
-   Live behaviour → "Stored procs and functions" capture → pin → pack
-   Translations tab → Build target → Translate & reconcile all.
+This is a BIG change (five specs, every service) ⇒ take a FRESH CLONE of
+main after the merge and make it the new working area.
 
-### Shakedown checklist (live) — to be filled at build time
+1. AMS FULL REBUILD (`mvn -q package`, restart bare). Changesets 229
+   (routines), 230 (proc behaviour), 231 (workbench / attempts / target
+   builds / parity reports) apply on boot. Code beyond the changesets:
+   `service/discovery/DbRoutineService` (catalog upsert + DRIFT hook),
+   `service/procbehaviour/ProcBehaviourService`, `controller/procbehaviour/*`,
+   `controller/DbMigrationPackWorkbenchController`, `DbRoutineController`,
+   translation entity/DTO/mapper/service (loop fields), `DbSurfaceInventoryService`,
+   `EndpointDataEffects…/proc-calls` read.
+2. REBUILD the sybase-discovery-sidecar jar (`POST /call` + `CallSqlGuard`)
+   and restart it bare (no Docker on the work machine; the UTC pin in the
+   Dockerfile does not apply there).
+3. Restart discovery-service (routine profiler + catalog save), AMVS
+   (proc capture, proc parity, routine apply), gateway (workbench routes,
+   proc-behaviour proxies, gate, step 6, progress cells, manual modal
+   branch), frontend.
+4. Env knobs — ALL optional, defaults in the shaping doc / code:
+   - discovery: `SCL_PROC_CLOSURE_MAX_DEPTH` (0 = uncapped, default).
+   - AMVS: `PROC_CALL_SESSION_SET`, `PROC_CALL_MAX_ROWS_PER_RESULT_SET`,
+     `PROC_CALL_MAX_RESULT_SETS`, `PROC_CALL_TIMEOUT_SECONDS`,
+     `PROC_CAPTURE_QUIET_WINDOW_SECONDS` (120), `PROC_LLM_ATTEMPTS_PER_ROUTINE`,
+     `PROC_LLM_ROUND_LIMIT`, `PROC_LLM_RESEARCH_ROUND_CEILING`,
+     `PROC_LLM_SCENARIO_WALL_CLOCK_MS`, `PROC_LLM_TOOL_CALL_TIMEOUT_MS`.
+   - gateway: `PROC_TRANSLATE_ATTEMPT_CAP` (4), `PROC_TRANSLATE_CONCURRENCY`
+     (3), `PROC_TRANSLATE_EVIDENCE_LADDER`.
+5. FIRST OPERATIONAL STEPS: re-run the DB scan (routine catalog + S0 pin)
+   → Baselines → Stored procs → capture → Save as baseline → Pin →
+   generate the DB pack → Translations tab (workbench) → Build target →
+   Translate & reconcile all → review / Guidance & retry / Waive →
+   Approve all reconciled → progress report → (plan) Migrate.
+   Transfer = screenshots only; the shakedown checklist below is written to
+   be screenshotable one line per item.
+
+### Shakedown checklist (live) — work machine, in this order
+
+1. AMS boots: changesets 229 / 230 / 231 applied (Liquibase log); the
+   `db_routines`, `proc_behaviour_*`, `db_migration_pack_translation_attempts`,
+   `db_migration_pack_target_builds`, `proc_parity_reports` tables exist.
+2. DB scan → the run page shows the **Routine catalog** row (profiled /
+   unparsed counts; `routine_signature_unparsed` findings name the rest).
+   `GET .../db-routines?kind=procedure` lists rows with `proc_calls_json`.
+3. Baselines → **Stored procs** tab → Start capture (DB creds from the
+   wizard) → session runs: compensation bracket on every writing routine
+   (trace `PROC.CAP.01`), coverage panel per routine, exit-outcome buckets,
+   retry-uncovered / exclude / not-possible paths; Save as baseline → Pin.
+4. Generate the DB pack (no plan needed) → Translations tab = workbench:
+   Build target (per-invocation creds) → phases schema → data → post-load;
+   `rebuild` refused honestly.
+5. Translate & reconcile all → attempt 1 shows ZERO scenarios in the prompt
+   evidence (trace `PROC.LOOP.01`), callee-first order (`blocked_by_callee`
+   on callers), exhaustion banner after 4 attempts; Guidance & retry; Waive
+   with reason; Approve is refused (409, inline reason) on an unreconciled,
+   unwaived routine; Approve all reconciled emits callee-first.
+6. Re-scan the DB after editing one proc body on the source → baseline page
+   shows the drift banner; the routine's translation flips to `stale`
+   (signal only — every button still works).
+7. Progress report: "Stored procs migrated/reconciled: X of Y" + the six
+   buckets + out-of-scope line BEFORE any plan runs; Live behaviour counts
+   captured routines; DB-only book renders no service section.
+8. Run reconciliation modal: DB-only book hides the API group; "Stored
+   procs and functions" with target creds only → started / named block
+   reasons (no pack / no pinned baseline / no creds).
+9. Execute the DB plane: trace shows step 6 `proc-parity reconcile (DB
+   plane)` after data parity; a DB-only run ends DEPLOYED with
+   `proc_parity_findings` on the decision log when routines remain
+   unreconciled (never halted); a multi-plane run's service start is
+   blocked ONLY by routines the service code calls (`proc_parity_failed` /
+   `proc_parity_unverified`), warnings listed amber on the migrate panel.
+10. Views: the data-parity report carries the approved views as keyless
+    relations (multiset under the bound, else `unverifiable` naming it).
 
 ### Per-spec notes
 
@@ -299,3 +356,86 @@ LLMs over-weighted runtime evidence in spec generation); a first attempt
 that cites scenarios is a PROC.LOOP.01 finding. Waivers never break
 reconciliation: a waived routine is "reconciled with waivers" in every
 count. The workbench needs no plan, book or service plane.
+
+#### Spec 5 — Execution integration (BUILT 2026-09-10)
+
+As built:
+- gateway `services/migrationProcParityReconcile.ts`: `checkProcParityPreconditions`
+  (pack / translate-dispositioned routines / pinned proc baseline as NAMED
+  block reasons), `runProcParityForArchitecture` (descriptors from the
+  routine catalog keyed by bare name, waivers, purpose `execution` |
+  `manual`, one AMVS call), `createProcParityReconcileTrigger` = DB-plane
+  STEP 6 (after the data-parity reconcile; target creds only — the pinned
+  baseline is the source side; loud skip when creds are missing; never
+  throws). Wired as `deps.triggerProcParityReconcile` in the driver defaults
+  and called from `migrationDbPlaneCompletion.ts` (fail-open execute).
+- gateway `services/migrationProcParityGate.ts`: the shared resolver
+  (`resolveRoutineParityStates`: disposition > approval > routine waiver >
+  latest report (execution purpose first) > workbench loop status; states
+  reconciled / reconciled_with_waivers / divergent / unverified /
+  not_captured / not_migrated / moved_to_code / dropped) + the GRADUATED
+  gate (`evaluateProcParityGate` pure, `evaluateProcParityReadiness` reads):
+  block reasons ONLY for routines the next plane calls (call-site edges from
+  `endpoint_data_effects.path_metadata_json.proc_name`, schema stripped)
+  that are divergent / not migrated (`proc_parity_failed`) or without a
+  verdict (`proc_parity_unverified`); everything else = warnings with
+  counts; final plane = findings only. Read failure: fail-closed for the
+  service plane, a warning on the final plane. `PROC.GATE.01`.
+- driver: plane-precedence check (DB → next plane) and the resume-time gate
+  evaluate the proc gate beside data parity (same `parityOverride`
+  break-glass); non-blocking warnings ride the start result (`warnings` on
+  both `started` and `blocked`).
+- DB-plane completion, FINAL plane (DB-only included): the run completes
+  DEPLOYED and every non-reconciled routine lands in a `proc_parity_findings`
+  decision-log entry (routines + counts + note). A dedicated
+  `completed_with_findings` RUN STATUS was deliberately NOT introduced: it
+  would re-block the next plane's precedence check and every status
+  consumer — the findings entry IS the with-findings marker, and the
+  progress report / trace narrate it.
+- manual Run-reconciliation: `run_proc_parity` (request `runProcParity`) →
+  target creds (body or registered) → preconditions → fire-and-forget AMVS
+  run with purpose `manual`; result `procParity: started | blocked(reason)`.
+  Works with no service plane.
+- progress summary: `DbSectionTotals.routines` (catalog procs + functions /
+  reconciled), `procsMigratedReconciled {reconciled, total, pct}` (total =
+  translate-dispositioned routines; dispositioned-away tail outside it),
+  `procBuckets` {notCaptured, divergent, unverified, notMigrated,
+  reconciledWithWaivers, fullyReconciled, movedToCode, dropped} — a sixth
+  `notMigrated` bucket was added to the shaped five because an unapproved
+  translation is honestly "not on the target", not "unverified";
+  `procsMigrated` kept one release. Computed from the workbench states
+  BEFORE any plan runs (progress = the loop getting routines reconciled).
+  Live-behaviour cell now counts captured routines too (DB-only gets an
+  honest cell; complete only when every in-scope routine is captured).
+- views: `defaultResolveDataParityTables` appends every APPROVED translate
+  view as a KEYLESS relation (canonical multiset under the AMVS bound, else
+  honest unverifiable naming the bound).
+- drift (AMS, code only — no schema change): `DbRoutineService.bulkUpsert`
+  detects body-hash changes on re-scan → `ProcBehaviourService.markItemsStaleForArchitecture`
+  (every pinned baseline's items for those routines → `stale`,
+  `body_changed`) + linked translations → `loop_status=stale`,
+  `stale_reason=body_changed` (dispositioned rows untouched); the shaped
+  pickup line "no AMS change" was wrong — AMS must be REBUILT.
+- docs: `docs/run-judge/RUN_JUDGE_INSTRUCTIONS.md` PROC family (CAP.01/02,
+  APPLY.01, BUILD.01, LOOP.01, REC.01, GATE.01) between DATA and CAP.
+- frontend (subagent): Run-reconciliation modal "Stored procs and
+  functions" checkbox (`rrm-check-proc`, target DB block only; API group
+  hidden when the service plane is out of scope; `rrm-result-proc`);
+  progress report "Stored procs migrated/reconciled" + six-bucket strip +
+  out-of-scope line + catalog routines row + DB-only layout; migrate panel
+  amber `mdd-migrate-warnings` (both outcomes); proc baseline page drift
+  banner (`proc-baseline-drift-banner`).
+
+Verification: gateway `migrationProcParityGate` 10/10, `migrationProcParityReconcile`
+6/6, `migrationDbPlaneCompletion` +3, `migrationManualReconcileTriggers` +2,
+`migrationProgressSummary` +3, `migrationDataParityReconcile` +1, driver
+suites green with the gate stubbed, tsc clean; AMS `DbRoutineServiceTest`
+4/4 + `ProcBehaviourServiceTest` 7/7 + test-compile clean; frontend touched
+suites 46/46 (8 files) + neighbouring migrate/dashboard/rail suites 35/35,
+tsc/eslint clean on the touched files.
+
+Notes: the frontend reads `warnings` as a top-level `string[]` on BOTH
+migrate outcomes (absent → no banner) and treats `procParity` on the
+reconciliation result as optional (an older gateway still types); the
+progress page carries `data-layout=db-only` when the service section is
+null so the DB section spans.

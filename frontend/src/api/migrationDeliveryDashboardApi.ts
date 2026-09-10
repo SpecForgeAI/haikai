@@ -869,9 +869,23 @@ export interface MigrateBlockReason {
  * `blocked` is authoritative: the UI surfaces `reasons` on attempt.
  */
 export type TriggerMigrateResult =
-  | { status: 'started'; runId: string; itemCount: number }
-  | { status: 'blocked'; reasons: MigrateBlockReason[] }
+  | { status: 'started'; runId: string; itemCount: number; warnings?: string[] }
+  | { status: 'blocked'; reasons: MigrateBlockReason[]; warnings?: string[] }
   | { status: 'error'; message: string };
+
+/**
+ * NON-BLOCKING findings carried alongside a start response (stored-proc
+ * program Spec 5, 2026-09-09). The proc-parity gate is GRADUATED: only a
+ * routine the NEXT plane actually depends on can block; every other
+ * non-reconciled routine reports here instead. Warnings therefore ride BOTH
+ * outcomes — a `started` run can carry findings, and a run blocked for some
+ * other reason still reports its proc findings. They never gate anything.
+ */
+function readWarnings(obj: Record<string, unknown>): string[] | undefined {
+  if (!Array.isArray(obj.warnings)) return undefined;
+  const lines = obj.warnings.filter((w): w is string => typeof w === 'string' && w.length > 0);
+  return lines.length > 0 ? lines : undefined;
+}
 
 /**
  * One dispatched spec within a Migration Execution run (AMS
@@ -984,6 +998,7 @@ export async function triggerMigrate(
       status: 'started',
       runId: String(obj.runId ?? ''),
       itemCount: typeof obj.itemCount === 'number' ? obj.itemCount : 0,
+      warnings: readWarnings(obj),
     };
   }
   if (res.status === 409 || obj.status === 'blocked') {
@@ -992,6 +1007,7 @@ export async function triggerMigrate(
       reasons: Array.isArray(obj.reasons)
         ? (obj.reasons as MigrateBlockReason[])
         : [],
+      warnings: readWarnings(obj),
     };
   }
   return {
@@ -1056,12 +1072,14 @@ export async function triggerMigrateSelected(
       status: 'started',
       runId: String(obj.runId ?? ''),
       itemCount: typeof obj.itemCount === 'number' ? obj.itemCount : 0,
+      warnings: readWarnings(obj),
     };
   }
   if (res.status === 409 || obj.status === 'blocked') {
     return {
       status: 'blocked',
       reasons: Array.isArray(obj.reasons) ? (obj.reasons as MigrateBlockReason[]) : [],
+      warnings: readWarnings(obj),
     };
   }
   return {

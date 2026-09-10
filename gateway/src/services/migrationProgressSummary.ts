@@ -66,6 +66,13 @@ import {
   fetchMigrationDiscoveryContext,
 } from './migrationDiscoveryContextClient';
 import { fetchLatestCapturedDecisions } from './targetStateCapturedDecisionsClient';
+import {
+  defaultProcParityGateReads,
+  loadRoutineParityInputs,
+  resolveRoutineParityStates,
+  type RoutineParityStateRow,
+} from './migrationProcParityGate';
+import { fetchPinnedProcBaselineItems } from './dbMigrationPack/procWorkbench';
 import { architectureDecisionValues } from './migrationTargetStackSpecSection';
 import {
   FetchPackViewFn,
@@ -106,6 +113,34 @@ export interface DbSectionTotals {
   rows: number | null;
   views: number | null;
   procs: number | null;
+  /**
+   * Spec 5 (proc behaviour program): routine-CATALOG procs + functions
+   * (current) / reconciled routines (target). Null before the DB scan
+   * profiled the catalog.
+   */
+  routines: number | null;
+}
+
+/** Spec 5: the "Stored procs migrated/reconciled: X of Y" cell. */
+export interface ProcsMigratedReconciled {
+  /** Approved AND reconciled (incl. reconciled with waivers). */
+  reconciled: number;
+  /** Translate-dispositioned routines (dispositioned-away ones excluded). */
+  total: number;
+  pct: number | null;
+}
+
+/** Spec 5: one bucket per in-scope routine, worst -> best; the out-of-scope
+ *  tail (movedToCode / dropped) sits outside `procsMigratedReconciled.total`. */
+export interface ProcBuckets {
+  notCaptured: number;
+  divergent: number;
+  unverified: number;
+  notMigrated: number;
+  reconciledWithWaivers: number;
+  fullyReconciled: number;
+  movedToCode: number;
+  dropped: number;
 }
 
 export interface DbSection {
@@ -134,7 +169,14 @@ export interface DbSection {
    * an approved `translate` translation, out of `current.views`/`current.procs`.
    */
   viewsMigrated: number | null;
+  /**
+   * Kept one release beside `procsMigratedReconciled` (Spec 5): approved
+   * `translate` stored procedures on the pack.
+   */
   procsMigrated: number | null;
+  /** Spec 5: "Stored procs migrated/reconciled: X of Y". Null without a pack. */
+  procsMigratedReconciled: ProcsMigratedReconciled | null;
+  procBuckets: ProcBuckets | null;
 }
 
 export interface ServiceSectionTotals {
@@ -294,6 +336,36 @@ export interface ProgressSummaryDeps {
     projectId: string,
     architectureId: string,
   ): Promise<ServiceInventory | null>;
+  /**
+   * Spec 5: one state per routine-linked translation (the gate's resolver)
+   * plus the catalog size and the captured set. Null without a DB pack.
+   */
+  fetchRoutineParity(projectId: string, architectureId: string): Promise<RoutineParitySnapshot | null>;
+}
+
+export interface RoutineParitySnapshot {
+  states: RoutineParityStateRow[];
+  /** Routine-catalog procs + functions (triggers ride the table comparator). */
+  catalogRoutines: number;
+  /** Routine ids with at least one pinned-baseline scenario. */
+  capturedRoutineIds: string[];
+}
+
+export async function defaultFetchRoutineParity(
+  projectId: string,
+  architectureId: string,
+): Promise<RoutineParitySnapshot | null> {
+  const reads = defaultProcParityGateReads();
+  const loaded = await loadRoutineParityInputs(projectId, architectureId, reads);
+  if (!loaded) return null;
+  const baseline = await fetchPinnedProcBaselineItems(projectId, architectureId);
+  const capturedRoutineIds = [...new Set(baseline.items.map((i) => i.routine_id))];
+  const states = resolveRoutineParityStates({
+    ...loaded.input,
+    capturedRoutineIds: new Set(capturedRoutineIds),
+  });
+  const catalogRoutines = loaded.input.routines.filter((r) => r.routine_kind !== 'trigger').length;
+  return { states, catalogRoutines, capturedRoutineIds };
 }
 
 async function amsLatestOrNull<T>(url: string, label: string): Promise<T | null> {
@@ -400,6 +472,7 @@ export function defaultProgressSummaryDeps(): ProgressSummaryDeps {
       return amsLatestOrNull<LatestDataParityReportRow>(url, 'latest data-parity report');
     },
     getBreaksForRun: getReconciliationBreaksForRun,
+    fetchRoutineParity: defaultFetchRoutineParity,
     async fetchServiceInventory(projectId, architectureId) {
       const url =
         `${amsBase()}/api/model/projects/${encodeURIComponent(projectId)}` +
@@ -602,7 +675,7 @@ export async function computeMigrationProgressSummary(
     ? (await soft('Baseline items', () => deps.fetchBaselineItems(projectId, baseline.id as string))) ?? []
     : [];
 
-  const [loadReport, parityReport] = scope.db
+  const [loadReport, parityReport, routineParity] = scope.db
     ? await Promise.all([
         soft('Data-migration (load) report', () =>
           deps.fetchLatestDataMigrationReport(projectId, architectureId),
@@ -610,8 +683,9 @@ export async function computeMigrationProgressSummary(
         soft('Data-parity report', () =>
           deps.fetchLatestDataParityReport(projectId, architectureId),
         ),
+        soft('Proc parity', () => deps.fetchRoutineParity(projectId, architectureId)),
       ])
-    : [null, null];
+    : [null, null, null];
 
   const currentInventory = scope.service
     ? await soft('Current service inventory', () =>
@@ -650,7 +724,7 @@ export async function computeMigrationProgressSummary(
   // --- DB section. ----------------------------------------------------------
   let db: DbSection | null = null;
   if (scope.db) {
-    db = buildDbSection(packView, loadReport, parityReport, warnings);
+    db = buildDbSection(packView, loadReport, parityReport, routineParity, warnings);
   }
 
   // --- Service section. -----------------------------------------------------
@@ -758,6 +832,7 @@ export async function computeMigrationProgressSummary(
     db,
     service,
     breakCount: serviceBreaks.length,
+    routineParity,
     unresolvedBreakCount: serviceBreaks.filter(
       (b) => !RESOLVED_BREAK_DISPOSITIONS.has(b.disposition_status ?? BREAK_DISPOSITION.OPEN),
     ).length,
@@ -802,14 +877,64 @@ export async function computeMigrationProgressSummary(
 // DB section
 // ============================================================================
 
+/**
+ * Spec 5: the proc cells from the resolver's per-routine states. Pure.
+ * `total` = translate-dispositioned routines; the dispositioned-away tail is
+ * reported beside it, never inside it.
+ */
+export function buildProcCells(snapshot: RoutineParitySnapshot | null): {
+  procsMigratedReconciled: ProcsMigratedReconciled | null;
+  procBuckets: ProcBuckets | null;
+  routinesReconciled: number | null;
+} {
+  if (!snapshot) return { procsMigratedReconciled: null, procBuckets: null, routinesReconciled: null };
+  const buckets: ProcBuckets = {
+    notCaptured: 0,
+    divergent: 0,
+    unverified: 0,
+    notMigrated: 0,
+    reconciledWithWaivers: 0,
+    fullyReconciled: 0,
+    movedToCode: 0,
+    dropped: 0,
+  };
+  for (const s of snapshot.states) {
+    switch (s.state) {
+      case 'not_captured': buckets.notCaptured += 1; break;
+      case 'divergent': buckets.divergent += 1; break;
+      case 'unverified': buckets.unverified += 1; break;
+      case 'not_migrated': buckets.notMigrated += 1; break;
+      case 'reconciled_with_waivers': buckets.reconciledWithWaivers += 1; break;
+      case 'reconciled': buckets.fullyReconciled += 1; break;
+      case 'moved_to_code': buckets.movedToCode += 1; break;
+      case 'dropped': buckets.dropped += 1; break;
+    }
+  }
+  const total =
+    buckets.notCaptured + buckets.divergent + buckets.unverified + buckets.notMigrated +
+    buckets.reconciledWithWaivers + buckets.fullyReconciled;
+  const reconciled = buckets.reconciledWithWaivers + buckets.fullyReconciled;
+  return {
+    procsMigratedReconciled: {
+      reconciled,
+      total,
+      pct: total > 0 ? Math.round((reconciled / total) * 1000) / 10 : null,
+    },
+    procBuckets: buckets,
+    routinesReconciled: reconciled,
+  };
+}
+
 function buildDbSection(
   packView: PackView | null,
   loadReport: LatestDataMigrationReport | null,
   parityReport: LatestDataParityReportRow | null,
+  routineParity: RoutineParitySnapshot | null,
   warnings: string[],
 ): DbSection {
   const loadTables = loadReport?.report_json?.tables ?? [];
   const parityTables = parityReport?.report_json?.tables ?? [];
+  const procCells = buildProcCells(routineParity);
 
   const capturedViews =
     packView?.manifest?.structural_accounting?.code_objects_captured?.view ?? null;
@@ -828,6 +953,7 @@ function buildDbSection(
     rows: sourceRowTotal,
     views: capturedViews,
     procs: capturedProcs,
+    routines: routineParity ? routineParity.catalogRoutines : null,
   };
 
   const receipt = packView?.manifest?.scope_receipt ?? null;
@@ -854,6 +980,11 @@ function buildDbSection(
       buckets: null,
       viewsMigrated: null,
       procsMigrated: null,
+      // Spec 5: the workbench loop reports progress BEFORE any plan runs —
+      // "Stored procs migrated/reconciled" is the create/reconcile/edit loop
+      // getting routines reconciled, so it never waits for execution.
+      procsMigratedReconciled: procCells.procsMigratedReconciled,
+      procBuckets: procCells.procBuckets,
     };
   }
 
@@ -881,6 +1012,7 @@ function buildDbSection(
       }, null),
     views: migratedViews,
     procs: migratedProcs,
+    routines: procCells.routinesReconciled,
   };
 
   // Bucket every current-state table into exactly ONE bucket, worst-first.
@@ -930,6 +1062,8 @@ function buildDbSection(
     buckets,
     viewsMigrated: migratedViews,
     procsMigrated: migratedProcs,
+    procsMigratedReconciled: procCells.procsMigratedReconciled,
+    procBuckets: procCells.procBuckets,
   };
 }
 
@@ -1085,10 +1219,13 @@ function buildStages(args: {
   service: ServiceSection | null;
   breakCount: number;
   unresolvedBreakCount: number;
+  /** Spec 5: captured routines feed the Live-behaviour cell (DB-only included). */
+  routineParity: RoutineParitySnapshot | null;
 }): ProgressStage[] {
   const {
     scope,
     context,
+    routineParity,
     discoveryRuns,
     dbDiscoveryFacts,
     codeDiscoveryFacts,
@@ -1160,19 +1297,43 @@ function buildStages(args: {
       discoveryStage('code_discovery', 'Code/logs discovery', ['code', 'combined'], codeDiscoveryFacts),
     );
 
-    // Live behaviour rides the service plane only.
+  }
+
+  // Live behaviour: the API baseline when the service plane is in scope, PLUS
+  // the captured stored routines (Spec 5) — so a DB-only migration has an
+  // honest cell instead of no cell.
+  {
     const distinctEndpoints = new Set(
       baselineItems.map((i) => `${(i.method ?? '').toUpperCase()} ${i.path ?? ''}`),
     ).size;
     const anyBaselines = (context?.apiBehaviourBaselineSummary?.totalBaselines ?? 0) > 0;
-    stages.push({
-      key: 'live_behaviour',
-      label: 'Live behaviour',
-      status: baseline ? 'complete' : anyBaselines ? 'in_progress' : 'not_started',
-      facts: baseline
-        ? [`${distinctEndpoints} endpoints`, `${baselineItems.length} captured behaviours`]
-        : ['not started'],
-    });
+    const capturedRoutines = routineParity?.capturedRoutineIds.length ?? 0;
+    const routinesInScope =
+      routineParity?.states.filter((s) => s.state !== 'moved_to_code' && s.state !== 'dropped').length ?? 0;
+    const apiComplete = scope.service && !!baseline;
+    const procComplete = scope.db && capturedRoutines > 0;
+    const facts: string[] = [];
+    if (apiComplete && procComplete) {
+      // Two slots, two planes: one line each.
+      facts.push(`${distinctEndpoints} endpoints, ${baselineItems.length} captured behaviours`);
+    } else if (apiComplete) {
+      facts.push(`${distinctEndpoints} endpoints`, `${baselineItems.length} captured behaviours`);
+    }
+    if (procComplete) facts.push(`${capturedRoutines} of ${routinesInScope} stored routines captured`);
+    if (facts.length === 0) facts.push('not started');
+    // Complete only when every in-scope plane is fully captured: the API
+    // baseline pinned (service) and EVERY translate-dispositioned routine
+    // captured (db) — a partial proc capture is honest in-progress.
+    const procPartial = scope.db && routinesInScope > 0 && capturedRoutines < routinesInScope;
+    const status: ProgressStageStatus =
+      apiComplete || procComplete
+        ? (scope.service && !apiComplete) || procPartial
+          ? 'in_progress'
+          : 'complete'
+        : anyBaselines
+          ? 'in_progress'
+          : 'not_started';
+    stages.push({ key: 'live_behaviour', label: 'Live behaviour', status, facts: facts.slice(0, 2) });
   }
 
   stages.push({

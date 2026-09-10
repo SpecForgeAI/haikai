@@ -262,6 +262,7 @@ function makeDeps(overrides: Partial<ProgressSummaryDeps> = {}): ProgressSummary
     fetchPackView: async () => basePackView(),
     fetchLatestDataMigrationReport: async () => null,
     fetchLatestDataParityReport: async () => null,
+    fetchRoutineParity: async () => null,
     getBreaksForRun: async () => [],
     listDiscoveryRuns: async () => [
       { id: 'r-db', status: 'COMPLETED', discovery_kind: 'database' },
@@ -289,7 +290,7 @@ describe('computeMigrationProgressSummary', () => {
 
     // DB section: structure counts from the pack, rows unknown pre-load.
     expect(summary.db).not.toBeNull();
-    expect(summary.db?.current).toEqual({ tables: 3, rows: null, views: 2, procs: 3 });
+    expect(summary.db?.current).toEqual({ tables: 3, rows: null, views: 2, procs: 3, routines: null });
     expect(summary.db?.target).toBeNull();
     expect(summary.db?.buckets).toBeNull();
     expect(summary.db?.viewsMigrated).toBeNull();
@@ -350,8 +351,8 @@ describe('computeMigrationProgressSummary', () => {
     );
 
     // DB: current rows = sum of sourceCount; target from the reports.
-    expect(summary.db?.current).toEqual({ tables: 3, rows: 100, views: 2, procs: 3 });
-    expect(summary.db?.target).toEqual({ tables: 2, rows: 70, views: 1, procs: 1 });
+    expect(summary.db?.current).toEqual({ tables: 3, rows: 100, views: 2, procs: 3, routines: null });
+    expect(summary.db?.target).toEqual({ tables: 2, rows: 70, views: 1, procs: 1, routines: null });
     // Worst -> best partition: t3 failed load, t2 count mismatch, t1 clean.
     expect(summary.db?.buckets).toEqual({
       failedToLoad: 1,
@@ -524,5 +525,75 @@ describe('computeMigrationProgressSummary', () => {
     expect(summary.warnings.length).toBeGreaterThan(0);
     expect(summary.db?.current.tables).toBeNull();
     expect(summary.service?.buckets).toBeNull();
+  });
+});
+
+// ----------------------------------------------------------------------------
+// Spec 5 (Stored Proc & Function Behaviour Program, 2026-09-09): the
+// "Stored procs migrated/reconciled: X of Y" cell + buckets ride the resolver
+// snapshot — BEFORE any plan executes (the workbench loop is the progress),
+// the dispositioned-away tail sits outside the total, and both wire keys
+// stay populated for one release.
+// ----------------------------------------------------------------------------
+describe('computeMigrationProgressSummary — stored routines (Spec 5)', () => {
+  const snapshot = () => ({
+    catalogRoutines: 7,
+    capturedRoutineIds: ['r1', 'r2', 'r3'],
+    states: [
+      { routine_id: 'r1', routine_name: 'dbo.upd_ledger_roll', bare_name: 'upd_ledger_roll', translation_id: 't1', state: 'reconciled', detail: '', report_id: 'rep1', report_purpose: 'workbench' },
+      { routine_id: 'r2', routine_name: 'dbo.fn_ledger_total', bare_name: 'fn_ledger_total', translation_id: 't2', state: 'reconciled_with_waivers', detail: '', report_id: null, report_purpose: null },
+      { routine_id: 'r3', routine_name: 'dbo.sp_archive_old', bare_name: 'sp_archive_old', translation_id: 't3', state: 'divergent', detail: '', report_id: 'rep3', report_purpose: 'execution' },
+      { routine_id: 'r4', routine_name: 'dbo.sp_rebuild_idx', bare_name: 'sp_rebuild_idx', translation_id: 't4', state: 'not_captured', detail: '', report_id: null, report_purpose: null },
+      { routine_id: 'r5', routine_name: 'dbo.sp_nightly', bare_name: 'sp_nightly', translation_id: 't5', state: 'unverified', detail: '', report_id: null, report_purpose: null },
+      { routine_id: 'r6', routine_name: 'dbo.sp_pending', bare_name: 'sp_pending', translation_id: 't6', state: 'not_migrated', detail: '', report_id: null, report_purpose: null },
+      { routine_id: 'r7', routine_name: 'dbo.sp_legacy_dump', bare_name: 'sp_legacy_dump', translation_id: 't7', state: 'moved_to_code', detail: '', report_id: null, report_purpose: null },
+      { routine_id: 'r8', routine_name: 'dbo.sp_dead', bare_name: 'sp_dead', translation_id: 't8', state: 'dropped', detail: '', report_id: null, report_purpose: null },
+    ] as never,
+  });
+
+  it('pre-execution: the cell and buckets populate from the workbench states; the total excludes dispositions', async () => {
+    const summary = await computeMigrationProgressSummary(ARGS, makeDeps({ fetchRoutineParity: async () => snapshot() }));
+    expect(summary.db?.current.routines).toBe(7);
+    expect(summary.db?.target).toBeNull();
+    expect(summary.db?.procsMigrated).toBeNull();
+    expect(summary.db?.procsMigratedReconciled).toEqual({ reconciled: 2, total: 6, pct: 33.3 });
+    expect(summary.db?.procBuckets).toEqual({
+      notCaptured: 1, divergent: 1, unverified: 1, notMigrated: 1, reconciledWithWaivers: 1, fullyReconciled: 1, movedToCode: 1, dropped: 1,
+    });
+    const b = summary.db?.procBuckets;
+    expect((b?.notCaptured ?? 0) + (b?.divergent ?? 0) + (b?.unverified ?? 0) + (b?.notMigrated ?? 0) + (b?.reconciledWithWaivers ?? 0) + (b?.fullyReconciled ?? 0))
+      .toBe(summary.db?.procsMigratedReconciled?.total);
+    const live = summary.stages.find((s) => s.key === 'live_behaviour');
+    expect(live?.facts).toContain('3 of 6 stored routines captured');
+  });
+
+  it('after execution: target.routines = reconciled; procsMigrated stays populated beside the new cell', async () => {
+    const summary = await computeMigrationProgressSummary(
+      ARGS,
+      makeDeps({
+        fetchRoutineParity: async () => snapshot(),
+        fetchLatestDataMigrationReport: async () => baseLoadReport(),
+        fetchLatestDataParityReport: async () => baseParityReport(),
+      }),
+    );
+    expect(summary.db?.target?.routines).toBe(2);
+    expect(summary.db?.procsMigrated).toBe(1);
+    expect(summary.db?.procsMigratedReconciled?.reconciled).toBe(2);
+  });
+
+  it('DB-only scope: no service section, and the Live-behaviour cell counts captured routines', async () => {
+    const summary = await computeMigrationProgressSummary(
+      ARGS,
+      makeDeps({
+        fetchBookOfWork: async () => ({ ...baseBook(), book_of_work_json: { items: (baseBook().book_of_work_json as { items: unknown[] }).items.filter((i) => (i as { workItemId?: string }).workItemId === 'w-db1') } }) as never,
+        fetchRoutineParity: async () => snapshot(),
+      }),
+    );
+    expect(summary.scope).toEqual({ db: true, service: false });
+    expect(summary.service).toBeNull();
+    const live = summary.stages.find((s) => s.key === 'live_behaviour');
+    expect(live).toBeDefined();
+    expect(live?.facts).toEqual(['3 of 6 stored routines captured']);
+    expect(live?.status).toBe('in_progress');
   });
 });

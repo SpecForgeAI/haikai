@@ -147,6 +147,10 @@ export const ProcBaselineDetailPage: React.FC = () => {
   }
 
   const staleCount = items.filter((i) => i.stale).length;
+  // Spec 5 (2026-09-09) DRIFT: the banner counts ROUTINES, not items — one
+  // routine whose body moved stales every scenario captured against it, and
+  // "12 stale items" reads far worse than the "2 routines" it really is.
+  const staleRoutineCount = new Set(items.filter((i) => i.stale).map((i) => i.routineId)).size;
 
   return (
     <div
@@ -228,6 +232,17 @@ export const ProcBaselineDetailPage: React.FC = () => {
 
       <div className={styles.detailSection} data-testid="proc-baseline-items">
         <h3>Baseline items</h3>
+        {/* SOURCE DRIFT (Spec 5, 2026-09-09). The current-state routine body
+            moved after this baseline was captured, so the oracle below is
+            describing code that no longer exists. Staleness is a SIGNAL, never
+            a lock: nothing here is disabled — the operator is told what to
+            re-capture and re-run. */}
+        {staleRoutineCount > 0 && (
+          <div className={proc.driftBanner} role="status" data-testid="proc-baseline-drift-banner">
+            <span className={`${proc.flag} ${proc.flagWarn}`}>drift</span>
+            {`${staleRoutineCount} routine(s) changed since capture — re-capture (scoped) and re-run the translation loop`}
+          </div>
+        )}
         {groups.length === 0 && (
           <div className={styles.emptyMessage} data-testid="proc-baseline-items-empty">
             This baseline has no items.

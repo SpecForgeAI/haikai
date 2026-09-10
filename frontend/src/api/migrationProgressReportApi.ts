@@ -55,6 +55,13 @@ export interface DbSectionTotalsDto {
   rows: number | null;
   views: number | null;
   procs: number | null;
+  /**
+   * Stored-proc program Spec 5 (2026-09-09): the CATALOG routine count —
+   * procs + functions + triggers as the scan found them. Current state = the
+   * in-scope `db_routines` rows; target state = the RECONCILED routines (so
+   * the Matching? cell reads "every routine the target owes is proven").
+   */
+  routines: number | null;
 }
 
 export interface DbSectionDto {
@@ -77,9 +84,40 @@ export interface DbSectionDto {
   /**
    * MIGRATED counts (2026-08-16, positive phrasing): views/procs with an
    * approved translation, out of `current.views`/`current.procs`.
+   *
+   * `procsMigrated` is SUPERSEDED by `procsMigratedReconciled` (Spec 5,
+   * 2026-09-09) but stays populated on the wire for one release — the UI
+   * falls back to it when the richer cell is absent.
    */
   viewsMigrated: number | null;
   procsMigrated: number | null;
+  /**
+   * Stored-proc program Spec 5: "migrated" is not the bar — RECONCILED is.
+   * `reconciled` of `total` in-scope routines, `pct` pre-computed server-side
+   * (null when `total` is 0). Null on an older gateway -> the UI falls back to
+   * the `procsMigrated` / `current.procs` pair.
+   */
+  procsMigratedReconciled: {
+    reconciled: number;
+    total: number;
+    pct: number | null;
+  } | null;
+  /**
+   * Worst -> best routine buckets; the six in-scope buckets sum to the same
+   * `total` as `procsMigratedReconciled`. `movedToCode` / `dropped` are the
+   * dispositioned OUT-of-scope routines (rendered as a small grey aside, never
+   * inside the strip). Null until the proc parity data plane produced reports.
+   */
+  procBuckets: {
+    notCaptured: number;
+    divergent: number;
+    unverified: number;
+    notMigrated: number;
+    reconciledWithWaivers: number;
+    fullyReconciled: number;
+    movedToCode: number;
+    dropped: number;
+  } | null;
 }
 
 export interface ServiceSectionTotalsDto {
@@ -196,6 +234,13 @@ export interface ManualAuthDto {
 export interface StartReconciliationRequestDto {
   run_data_parity: boolean;
   run_api_reconcile: boolean;
+  /**
+   * Stored-proc program Spec 5 (2026-09-09): re-run the PROC PARITY comparator
+   * (purpose `manual`) over the pack's translate-dispositioned routines against
+   * the pinned proc baseline. Needs the TARGET DB credentials only — the oracle
+   * is the pinned baseline, so no source side is replayed.
+   */
+  run_proc_parity: boolean;
   /** CURRENT-state (source) DB credentials — the data-parity source side. */
   source_db?: ManualDbBlockDto | null;
   /** TARGET DB credentials — parity target side + reconcile state snapshots. */
@@ -222,6 +267,13 @@ export type ManualRecOutcomeDto =
 export interface StartReconciliationResultDto {
   dataParity: ManualRecOutcomeDto | null;
   apiReconcile: ManualRecOutcomeDto | null;
+  /**
+   * Spec 5 (2026-09-09): the proc-parity kick. `blocked` carries the named
+   * synchronous precondition (no pinned proc baseline / no target creds / no
+   * target build); null when the checkbox was not ticked. Optional so an older
+   * gateway response still types.
+   */
+  procParity?: ManualRecOutcomeDto | null;
 }
 
 /**

@@ -817,6 +817,7 @@ migrationExecutionRouter.post(
     const body = (req.body ?? {}) as {
       run_data_parity?: boolean;
       run_api_reconcile?: boolean;
+      run_proc_parity?: boolean;
       source_db?: ManualDbBlock | null;
       target_db?: ManualDbBlock | null;
       api?: Parameters<typeof startManualReconciliation>[0]['request']['api'];
@@ -835,6 +836,7 @@ migrationExecutionRouter.post(
         request: {
           runDataParity: body.run_data_parity === true,
           runApiReconcile: body.run_api_reconcile === true,
+          runProcParity: body.run_proc_parity === true,
           sourceDb: body.source_db ?? null,
           targetDb: body.target_db ?? null,
           api: body.api ?? null,

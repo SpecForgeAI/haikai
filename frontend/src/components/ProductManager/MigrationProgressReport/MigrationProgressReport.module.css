@@ -220,6 +220,25 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+/* Stored procs & functions worst->best strip (Spec 5, 2026-09-09). */
+.bucketRow6 {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+/* The pre-computed server percentage inside a bucket value. */
+.bucketPct {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Dispositioned OUT-of-scope routines: an aside under the strip, never a
+   bucket (they are in neither numerator nor denominator). */
+.outOfScopeLine {
+  padding: 3px 12px;
+  font-size: 11px;
+  color: #5f6368;
+  border-top: 1px solid #eceff1;
+}
+
 .bucketCell {
   display: flex;
   justify-content: space-between;
