@@ -66,6 +66,15 @@ const mockRetry = vi.fn();
 const mockSetDisposition = vi.fn();
 const mockReview = vi.fn();
 const mockApproveAll = vi.fn();
+// Workbench header reads (2026-09-09 Spec 4) — the tab polls these on mount,
+// so they are stubbed here to keep this suite network-free. The pre-workbench
+// fixtures carry no `routine_id` / `loop_status`, so no routine row exists and
+// the attempt / parity-report reads never fire.
+const mockBuildStatus = vi.fn();
+const mockBaselineStatus = vi.fn();
+const mockLoopStatus = vi.fn();
+const mockAttempts = vi.fn();
+const mockParityReport = vi.fn();
 
 vi.mock('../../../../api/dbMigrationPackApi', async () => {
   const actual = await vi.importActual<
@@ -90,6 +99,15 @@ vi.mock('../../../../api/dbMigrationPackApi', async () => {
       mockReview(...args),
     approveAllDbMigrationPackTranslations: (...args: unknown[]) =>
       mockApproveAll(...args),
+    getDbMigrationPackTargetBuildStatus: (...args: unknown[]) =>
+      mockBuildStatus(...args),
+    getDbMigrationPackProcBaselineStatus: (...args: unknown[]) =>
+      mockBaselineStatus(...args),
+    getDbMigrationPackLoopStatus: (...args: unknown[]) => mockLoopStatus(...args),
+    listDbMigrationPackTranslationAttempts: (...args: unknown[]) =>
+      mockAttempts(...args),
+    getDbMigrationPackTranslationParityReport: (...args: unknown[]) =>
+      mockParityReport(...args),
   };
 });
 
@@ -247,6 +265,30 @@ beforeEach(() => {
   mockReview.mockReset();
   mockListBooks.mockReset();
   mockListBooks.mockResolvedValue([]);
+  mockBuildStatus.mockReset();
+  mockBaselineStatus.mockReset();
+  mockLoopStatus.mockReset();
+  mockAttempts.mockReset();
+  mockParityReport.mockReset();
+  mockBuildStatus.mockResolvedValue({ inFlight: null, latest: null });
+  mockBaselineStatus.mockResolvedValue({
+    pinned: false,
+    baselineId: null,
+    scenarios: 0,
+    routines: 0,
+  });
+  mockLoopStatus.mockResolvedValue({
+    inFlight: false,
+    phase: null,
+    routines: 0,
+    done: 0,
+    startedAt: null,
+    error: null,
+    events: [],
+    results: null,
+  });
+  mockAttempts.mockResolvedValue([]);
+  mockParityReport.mockResolvedValue(null);
   mockListTranslations.mockResolvedValue({
     translations: ROWS,
     coverage: COVERAGE,

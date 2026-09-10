@@ -121,6 +121,38 @@ public class DbMigrationPackTranslationEntity {
         REVIEW_NEEDS_REWORK
     );
 
+    public static final String LOOP_IDLE = "idle";
+    public static final String LOOP_QUEUED = "queued";
+    public static final String LOOP_TRANSLATING = "translating";
+    public static final String LOOP_APPLYING = "applying";
+    public static final String LOOP_RECONCILING = "reconciling";
+    public static final String LOOP_RECONCILED = "reconciled";
+    public static final String LOOP_EXHAUSTED = "exhausted";
+    public static final String LOOP_APPLY_FAILED = "apply_failed";
+    public static final String LOOP_UNVERIFIED = "unverified";
+    public static final String LOOP_STALE = "stale";
+    public static final String LOOP_BLOCKED_BY_CALLEE = "blocked_by_callee";
+    public static final String LOOP_DISPOSITIONED = "dispositioned";
+
+    /**
+     * All allowed workbench loop states, mirroring chk_dmpt_loop_status
+     * (changeset 231, Stored Proc &amp; Function Behaviour Program, Spec 4).
+     */
+    public static final Set<String> ALL_LOOP_STATUSES = Set.of(
+        LOOP_IDLE,
+        LOOP_QUEUED,
+        LOOP_TRANSLATING,
+        LOOP_APPLYING,
+        LOOP_RECONCILING,
+        LOOP_RECONCILED,
+        LOOP_EXHAUSTED,
+        LOOP_APPLY_FAILED,
+        LOOP_UNVERIFIED,
+        LOOP_STALE,
+        LOOP_BLOCKED_BY_CALLEE,
+        LOOP_DISPOSITIONED
+    );
+
     @Id
     @Column(name = "id", nullable = false)
     private UUID id;
@@ -206,6 +238,42 @@ public class DbMigrationPackTranslationEntity {
     @Column(name = "reviewer_notes", columnDefinition = "TEXT")
     private String reviewerNotes;
 
+    /**
+     * Workbench loop state -- one of {@link #ALL_LOOP_STATUSES};
+     * chk_dmpt_loop_status is the source of truth (changeset 231). ORTHOGONAL
+     * to {@link #pipelineState} / {@link #reviewStatus} / {@link #disposition}:
+     * the loop drives translate -&gt; apply -&gt; reconcile, the other three
+     * axes stay exactly what they were.
+     */
+    @Column(name = "loop_status", nullable = false, length = 32)
+    @Builder.Default
+    private String loopStatus = LOOP_IDLE;
+
+    /** Attempt the loop is currently on; 0 = never attempted. */
+    @Column(name = "current_attempt_no", nullable = false)
+    @Builder.Default
+    private Integer currentAttemptNo = 0;
+
+    /**
+     * On exhaustion, the attempt with the fewest failing scenarios -- its
+     * draft becomes {@link #draftContent}. Null until the loop exhausts.
+     */
+    @Column(name = "best_attempt_no")
+    private Integer bestAttemptNo;
+
+    /** Rolled-up loop verdict for the row (match n of m, divergent dimensions, ...). */
+    @Type(JsonType.class)
+    @Column(name = "verdict_json", columnDefinition = "jsonb")
+    private Map<String, Object> verdictJson;
+
+    /** {@code proc_parity_reports.id} backing the current verdict. */
+    @Column(name = "parity_report_id")
+    private UUID parityReportId;
+
+    /** Why the row went stale (source body changed, baseline re-pinned, target rebuilt). */
+    @Column(name = "stale_reason", length = 64)
+    private String staleReason;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     @Builder.Default
     private Instant createdAt = Instant.now();
@@ -231,6 +299,12 @@ public class DbMigrationPackTranslationEntity {
         }
         if (reviewStatus == null) {
             reviewStatus = REVIEW_UNREVIEWED;
+        }
+        if (loopStatus == null) {
+            loopStatus = LOOP_IDLE;
+        }
+        if (currentAttemptNo == null) {
+            currentAttemptNo = 0;
         }
     }
 }

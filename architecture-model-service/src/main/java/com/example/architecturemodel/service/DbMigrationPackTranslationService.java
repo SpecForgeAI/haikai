@@ -241,6 +241,29 @@ public class DbMigrationPackTranslationService {
         if (patch.reviewerNotes() != null) {
             entity.setReviewerNotes(blankToNull(patch.reviewerNotes()));
         }
+        // Workbench loop (changeset 231, Spec 4, 2026-09-09) -- same
+        // null-guarded discipline: the loop PATCHes its own axis without ever
+        // touching pipeline_state / review_status / disposition.
+        if (patch.loopStatus() != null) {
+            validateValue("loop_status", patch.loopStatus(),
+                DbMigrationPackTranslationEntity.ALL_LOOP_STATUSES);
+            entity.setLoopStatus(patch.loopStatus());
+        }
+        if (patch.currentAttemptNo() != null) {
+            entity.setCurrentAttemptNo(patch.currentAttemptNo());
+        }
+        if (patch.bestAttemptNo() != null) {
+            entity.setBestAttemptNo(patch.bestAttemptNo());
+        }
+        if (patch.verdictJson() != null) {
+            entity.setVerdictJson(patch.verdictJson());
+        }
+        if (patch.parityReportId() != null) {
+            entity.setParityReportId(patch.parityReportId());
+        }
+        if (patch.staleReason() != null) {
+            entity.setStaleReason(blankToNull(patch.staleReason()));
+        }
         requireDropReason(entity);
 
         DbMigrationPackTranslationEntity saved = translationRepository.save(entity);
@@ -334,6 +357,28 @@ public class DbMigrationPackTranslationService {
         }
         if (dto.reviewerNotes() != null) {
             entity.setReviewerNotes(blankToNull(dto.reviewerNotes()));
+        }
+        // Workbench loop (changeset 231, Spec 4, 2026-09-09): copy-when-non-null
+        // so a regeneration re-link never resets a routine's loop progress.
+        if (dto.loopStatus() != null) {
+            validateValue("loop_status", dto.loopStatus(),
+                DbMigrationPackTranslationEntity.ALL_LOOP_STATUSES);
+            entity.setLoopStatus(dto.loopStatus());
+        }
+        if (dto.currentAttemptNo() != null) {
+            entity.setCurrentAttemptNo(dto.currentAttemptNo());
+        }
+        if (dto.bestAttemptNo() != null) {
+            entity.setBestAttemptNo(dto.bestAttemptNo());
+        }
+        if (dto.verdictJson() != null) {
+            entity.setVerdictJson(dto.verdictJson());
+        }
+        if (dto.parityReportId() != null) {
+            entity.setParityReportId(dto.parityReportId());
+        }
+        if (dto.staleReason() != null) {
+            entity.setStaleReason(blankToNull(dto.staleReason()));
         }
     }
 

@@ -125,6 +125,40 @@ export function emitTranslationFileContent(row: TranslationRow): string {
  * per approved object, id `translation--<kind>--<object_ref>` — stable, so
  * unchanged approved content emits byte-identical (no checksum churn).
  */
+/**
+ * Callee-first order for the emitted translations (Spec 4, 2026-09-09):
+ * routines with no proc calls first, callers after their callees. Rows the
+ * catalog does not know keep their relative order at the end. Deterministic
+ * (name-sorted DFS, cycle-safe).
+ */
+export function orderApprovedCalleesFirst(approved: TranslationRow[], routines: RoutineCatalogRow[] | undefined): TranslationRow[] {
+  if (!routines || routines.length === 0) return approved;
+  const tail = (ref: string): string => (ref.replace(/[[\]"]/g, '').split('.').pop() ?? ref).toLowerCase();
+  const rowsByName = new Map<string, TranslationRow[]>();
+  for (const row of approved) {
+    if (row.kind !== 'stored_procedure') continue;
+    const key = tail(row.object_ref);
+    rowsByName.set(key, [...(rowsByName.get(key) ?? []), row]);
+  }
+  const calls = new Map<string, string[]>();
+  for (const r of routines) {
+    if (r.routine_kind === 'trigger') continue;
+    calls.set(r.routine_name.toLowerCase(), (r.proc_calls_json ?? []).map((c) => c.toLowerCase()));
+  }
+  const state = new Map<string, 'visiting' | 'done'>();
+  const ordered: TranslationRow[] = [];
+  const visit = (name: string): void => {
+    if (state.get(name)) return;
+    state.set(name, 'visiting');
+    for (const callee of [...(calls.get(name) ?? [])].sort()) if (rowsByName.has(callee)) visit(callee);
+    state.set(name, 'done');
+    for (const row of rowsByName.get(name) ?? []) ordered.push(row);
+  };
+  for (const name of [...rowsByName.keys()].sort()) visit(name);
+  const placed = new Set(ordered);
+  return [...ordered, ...approved.filter((r) => !placed.has(r))];
+}
+
 export function emitTranslationsChangeset(approved: TranslationRow[]): string {
   const lines: string[] = [];
   lines.push(formattedSqlHeader(TRANSLATIONS_CHANGESET_PATH).trimEnd());
@@ -327,10 +361,13 @@ export function applyTranslationEmission(args: {
 
   // 1b) Emission gate (2026-08-09): approved drafts that cannot apply are
   // DEMOTED (excluded + reported), never allowed to brick the pack.
-  const { emittable: approved, demotions } = partitionEmittableTranslations(
+  const partitioned = partitionEmittableTranslations(
     selectApprovedTranslations(args.rows),
     base
   );
+  const demotions = partitioned.demotions;
+  // Callee-first (Spec 4): a caller's function is created after its callees.
+  const approved = orderApprovedCalleesFirst(partitioned.emittable, args.routines);
 
   // 2) Master changelog include list: 050 present ONLY with >=1 approved.
   const withMaster = base.map((f) =>

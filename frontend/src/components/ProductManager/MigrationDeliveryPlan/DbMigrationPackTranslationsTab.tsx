@@ -3,51 +3,116 @@
  *
  * Spec: 2026-06-11 LLM-Assisted DB Object Translation Drafts —
  * Task Group 5 (Tasks 5.3 object list + coverage chips, 5.4 actions).
+ * Reworked into the translation WORKBENCH by the 2026-09-09 Stored Proc &
+ * Function Behaviour Program, Spec 4.
  *
  * The fourth section tab on the Schema Migration surface
- * (`DbMigrationPackView` contents / decisions / drift / translations):
+ * (`DbMigrationPackView` contents / decisions / drift / translations).
+ *
+ * Original surface (unchanged for non-routine objects — views, jobs, check
+ * constraints keep the simple rendering):
  *
  *   - coverage-summary chips for the per-object buckets (drafted / approved /
- *     rewrite-in-app / dropped / failed / needs-manual), fed by the gateway
- *     list response's deterministic coverage summary;
+ *     rewrite-in-app / dropped / failed / needs-manual);
  *   - object list table: object_ref, kind, body size, disposition, pipeline
  *     state, review status, judge confidence, fidelity warning indicators;
  *   - actions (product rule: never individual-only): per-object Translate /
- *     Re-translate / Retry AND bulk Translate-all (the gateway scopes
- *     Translate-all to pending + failed only); per-object outcomes from the
- *     response surface in a notice — no polling-only behaviour;
+ *     Re-translate / Retry AND bulk Translate-all;
  *   - per-object disposition control (translate / rewrite-in-app / drop with
- *     REQUIRED reason — the call never fires without one); flipping back to
- *     translate returns the row to pending server-side;
- *   - `needs_manual` rows are terminal: no translate action, excluded from
- *     Translate-all (server-side), reviewer shows the truncated banner only;
- *   - stale `translating` rows (gateway restart mid-run) render as retryable;
- *   - the side-by-side reviewer (`DbMigrationPackTranslationReviewer`) opens
- *     per row beneath the table.
+ *     REQUIRED reason);
+ *   - `needs_manual` rows are terminal;
+ *   - the side-by-side reviewer opens per row beneath the table.
+ *
+ * WORKBENCH (routine rows the loop manages, marked by `routine_id` /
+ * `loop_status` on the list response):
+ *
+ *   - header: target-build status (polled every 3s while a build is in
+ *     flight) with the Build-target modal, pinned proc-baseline status, and
+ *     the attempt cap;
+ *   - actions: Translate & reconcile all (the AUTOMATIC loop: translate →
+ *     apply → reconcile → re-translate with evidence until reconciled or the
+ *     cap; the user is told LOUDLY on exhaustion), Reconcile all, Approve all
+ *     reconciled, plus the Needs you / Reconciled / Blocked / Unverified /
+ *     All filter;
+ *   - routine table: routine, kind, scenarios, attempts, loop status,
+ *     verdict, review state — every non-reconciled routine carries an honest
+ *     named state and a recorded-reason path (waive with a reason,
+ *     disposition), never a blank;
+ *   - the reviewer gains the behaviour verdict, the failing scenarios, the
+ *     attempt history with diff-vs-previous, and "Guidance & retry" — the
+ *     ONLY human intervention (decision 16: NO direct draft editing, no
+ *     manual-step loop).
+ *
+ * Target credentials are PER-INVOCATION: held in component state for the tab
+ * session only (memory, never storage) and re-prompted when absent.
+ *
+ * Staleness is a signal, never a lock: buttons are disabled ONLY while a
+ * build, the loop, or the action itself is in flight.
  *
  * Errors parse via the api module's `extractGatewayErrorMessage` pattern
- * (every call throws an `Error` with the parsed gateway message).
+ * (every call throws an `Error` with the parsed gateway message; the
+ * evidence-gated approve route's 409 carries a readable reason surfaced
+ * inline next to Approve rather than in the generic banner).
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  listDbMigrationPackTranslations,
-  retryDbMigrationPackTranslation,
   approveAllDbMigrationPackTranslations,
+  approveAllReconciledDbMigrationPackTranslations,
+  DB_PACK_TRANSLATION_ATTEMPT_CAP,
+  getDbMigrationPackLoopStatus,
+  getDbMigrationPackProcBaselineStatus,
+  getDbMigrationPackTargetBuildStatus,
+  getDbMigrationPackTranslationParityReport,
+  listDbMigrationPackTranslationAttempts,
+  listDbMigrationPackTranslations,
+  reconcileDbMigrationPackTranslation,
+  retryDbMigrationPackTranslation,
+  retryDbMigrationPackTranslationLoop,
   reviewDbMigrationPackTranslation,
-  supplyDbMigrationPackTranslationBody,
   setDbMigrationPackTranslationDisposition,
+  startDbMigrationPackTargetBuild,
+  supplyDbMigrationPackTranslationBody,
   translateAllDbMigrationPackTranslations,
+  translateAndReconcileDbMigrationPack,
   translateDbMigrationPackTranslation,
+  waiveDbMigrationPackTranslation,
+  type DbMigrationPackDbCredentials,
+  type DbMigrationPackLoopStatus,
+  type DbMigrationPackParityReport,
+  type DbMigrationPackProcBaselineStatus,
+  type DbMigrationPackTargetBuildStatus,
+  type DbMigrationPackTranslationAttempt,
   type DbMigrationPackTranslationCoverageSummary,
   type DbMigrationPackTranslationDisposition,
   type DbMigrationPackTranslationDto,
   type DbMigrationPackTranslationEmission,
   type DbMigrationPackTranslationOutcome,
   type DbMigrationPackTranslationReviewAction,
+  type DbMigrationPackWaiverScope,
 } from '../../../api/dbMigrationPackApi';
 import DbMigrationPackTranslationReviewer from './DbMigrationPackTranslationReviewer';
+import DbMigrationPackTargetBuildModal, {
+  type DbMigrationPackTargetBuildSubmit,
+  type DbMigrationPackTargetBuildVariant,
+} from './DbMigrationPackTargetBuildModal';
+import {
+  attemptsLabel,
+  isWorkbenchRow,
+  loopStatusLabel,
+  matchesWorkbenchFilter,
+  REVIEW_STATE_LABEL,
+  reviewState,
+  routineKindLabel,
+  scenariosLabel,
+  verdictLabel,
+  WORKBENCH_FILTERS,
+  type DbMigrationPackWorkbenchFilter,
+} from './dbMigrationPackWorkbench';
 import styles from './DbMigrationPack.module.css';
+
+/** Poll cadence for the target build and the loop while in flight. */
+const POLL_MS = 3000;
 
 export interface DbMigrationPackTranslationsTabProps {
   projectId: string;
@@ -60,10 +125,27 @@ export interface DbMigrationPackTranslationsTabProps {
   onEmissionChanged?: () => void;
 }
 
+/** An action that needs target credentials before it can run. */
+type PendingCredentialedAction =
+  | { kind: 'translate-reconcile' }
+  | { kind: 'reconcile-all' }
+  | { kind: 'reconcile-one'; translationId: string }
+  | { kind: 'retry-loop'; translationId: string; guidance: string };
+
 function formatBodySize(body: string | null): string {
   if (body === null || body.length === 0) return '—';
   if (body.length < 1024) return `${body.length} B`;
   return `${(body.length / 1024).toFixed(1)} KB`;
+}
+
+/** `14:02`-style clock for the build header; falls back to the raw value. */
+function formatClock(iso: string | null): string {
+  if (!iso) return 'an unknown time';
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return iso;
+  const hh = String(parsed.getHours()).padStart(2, '0');
+  const mm = String(parsed.getMinutes()).padStart(2, '0');
+  return `${hh}:${mm}`;
 }
 
 function pipelineStateBadgeClass(state: string): string {
@@ -94,6 +176,22 @@ function reviewStatusBadgeClass(status: string): string {
   }
 }
 
+function loopStatusBadgeClass(status: string): string {
+  switch (status) {
+    case 'reconciled':
+      return styles.badgeResolved;
+    case 'exhausted':
+    case 'apply_failed':
+      return styles.badgeMissing;
+    case 'unverified':
+    case 'stale':
+    case 'blocked_by_callee':
+      return styles.badgeFlagged;
+    default:
+      return styles.badge;
+  }
+}
+
 /** Human summary of per-object run outcomes (no polling-only behaviour). */
 function summarizeOutcomes(outcomes: DbMigrationPackTranslationOutcome[]): string {
   if (outcomes.length === 0) {
@@ -114,6 +212,16 @@ function summarizeOutcomes(outcomes: DbMigrationPackTranslationOutcome[]): strin
   return text;
 }
 
+/** HTTP status carried by `DbMigrationPackHttpError` (structural read). */
+function statusOf(err: unknown): number | null {
+  const status = (err as { status?: unknown } | null)?.status;
+  return typeof status === 'number' ? status : null;
+}
+
+function messageOf(err: unknown, fallback: string): string {
+  return err instanceof Error ? err.message : fallback;
+}
+
 export const DbMigrationPackTranslationsTab: React.FC<
   DbMigrationPackTranslationsTabProps
 > = ({ projectId, packId, onEmissionChanged }) => {
@@ -130,6 +238,38 @@ export const DbMigrationPackTranslationsTab: React.FC<
   const [dropDrafts, setDropDrafts] = useState<Record<string, string>>({});
   /** Row whose side-by-side reviewer is open. */
   const [reviewerId, setReviewerId] = useState<string | null>(null);
+
+  // --- workbench state (2026-09-09 Spec 4) -----------------------------------
+  /** Per-invocation target credentials — MEMORY ONLY, never persisted. */
+  const [targetDb, setTargetDb] = useState<DbMigrationPackDbCredentials | null>(
+    null,
+  );
+  const [buildStatus, setBuildStatus] =
+    useState<DbMigrationPackTargetBuildStatus | null>(null);
+  const [baseline, setBaseline] =
+    useState<DbMigrationPackProcBaselineStatus | null>(null);
+  const [loop, setLoop] = useState<DbMigrationPackLoopStatus | null>(null);
+  const [headerNote, setHeaderNote] = useState<string | null>(null);
+  const [filter, setFilter] = useState<DbMigrationPackWorkbenchFilter>('all');
+  const [modal, setModal] = useState<{
+    variant: DbMigrationPackTargetBuildVariant;
+    purpose: string | null;
+    pending: PendingCredentialedAction | null;
+  } | null>(null);
+  const [modalError, setModalError] = useState<string | null>(null);
+  /** Server 409 reasons from a blocked Approve, keyed by translation id. */
+  const [approveReasons, setApproveReasons] = useState<Record<string, string>>(
+    {},
+  );
+  const [attempts, setAttempts] = useState<DbMigrationPackTranslationAttempt[]>(
+    [],
+  );
+  const [parityReport, setParityReport] =
+    useState<DbMigrationPackParityReport | null>(null);
+  const [evidenceLoading, setEvidenceLoading] = useState(false);
+  const [evidenceError, setEvidenceError] = useState<string | null>(null);
+
+  const loopWasInFlight = useRef(false);
 
   const loadTranslations = useCallback(async () => {
     const result = await listDbMigrationPackTranslations(projectId, packId);
@@ -168,6 +308,137 @@ export const DbMigrationPackTranslationsTab: React.FC<
     () => rows.find((r) => r.id === reviewerId) ?? null,
     [rows, reviewerId],
   );
+
+  // --- workbench header + loop status -----------------------------------------
+
+  const refreshBuildStatus = useCallback(async () => {
+    const status = await getDbMigrationPackTargetBuildStatus(projectId, packId);
+    setBuildStatus(status);
+    return status;
+  }, [projectId, packId]);
+
+  const refreshLoopStatus = useCallback(async () => {
+    const status = await getDbMigrationPackLoopStatus(projectId, packId);
+    setLoop(status);
+    // The loop just finished: refresh the rows so every routine shows its
+    // terminal state (and the exhausted ones surface loudly).
+    if (loopWasInFlight.current && !status.inFlight) {
+      await loadTranslations().catch(() => {
+        /* the loop ledger is already on screen; row refresh is best-effort */
+      });
+    }
+    loopWasInFlight.current = status.inFlight;
+    return status;
+  }, [projectId, packId, loadTranslations]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const problems: string[] = [];
+      await Promise.all([
+        getDbMigrationPackTargetBuildStatus(projectId, packId)
+          .then((status) => {
+            if (!cancelled) setBuildStatus(status);
+          })
+          .catch((err: unknown) => {
+            problems.push(messageOf(err, 'target build status unavailable'));
+          }),
+        getDbMigrationPackProcBaselineStatus(projectId, packId)
+          .then((status) => {
+            if (!cancelled) setBaseline(status);
+          })
+          .catch((err: unknown) => {
+            problems.push(messageOf(err, 'proc baseline status unavailable'));
+          }),
+        getDbMigrationPackLoopStatus(projectId, packId)
+          .then((status) => {
+            if (!cancelled) {
+              setLoop(status);
+              loopWasInFlight.current = status.inFlight;
+            }
+          })
+          .catch((err: unknown) => {
+            problems.push(messageOf(err, 'loop status unavailable'));
+          }),
+      ]);
+      if (!cancelled && problems.length > 0) {
+        setHeaderNote(
+          `Workbench status could not be read: ${problems.join('; ')}`,
+        );
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, packId]);
+
+  const buildInFlight = buildStatus?.inFlight != null;
+  const loopInFlight = loop?.inFlight === true;
+
+  useEffect(() => {
+    if (!buildInFlight) return undefined;
+    const handle = setInterval(() => {
+      void refreshBuildStatus().catch(() => {
+        /* transient poll failure — the next tick retries */
+      });
+    }, POLL_MS);
+    return () => clearInterval(handle);
+  }, [buildInFlight, refreshBuildStatus]);
+
+  useEffect(() => {
+    if (!loopInFlight) return undefined;
+    const handle = setInterval(() => {
+      void refreshLoopStatus().catch(() => {
+        /* transient poll failure — the next tick retries */
+      });
+    }, POLL_MS);
+    return () => clearInterval(handle);
+  }, [loopInFlight, refreshLoopStatus]);
+
+  // --- reviewer evidence (attempts + parity report) ----------------------------
+
+  const reviewerIsWorkbench = reviewerRow !== null && isWorkbenchRow(reviewerRow);
+
+  const loadEvidence = useCallback(
+    async (translationId: string) => {
+      setEvidenceLoading(true);
+      setEvidenceError(null);
+      const problems: string[] = [];
+      const [attemptRows, report] = await Promise.all([
+        listDbMigrationPackTranslationAttempts(
+          projectId,
+          packId,
+          translationId,
+        ).catch((err: unknown) => {
+          problems.push(messageOf(err, 'attempt history unavailable'));
+          return [] as DbMigrationPackTranslationAttempt[];
+        }),
+        getDbMigrationPackTranslationParityReport(
+          projectId,
+          packId,
+          translationId,
+        ).catch((err: unknown) => {
+          problems.push(messageOf(err, 'parity report unavailable'));
+          return null;
+        }),
+      ]);
+      setAttempts(attemptRows);
+      setParityReport(report);
+      setEvidenceError(problems.length > 0 ? problems.join('; ') : null);
+      setEvidenceLoading(false);
+    },
+    [projectId, packId],
+  );
+
+  useEffect(() => {
+    if (!reviewerId || !reviewerIsWorkbench) {
+      setAttempts([]);
+      setParityReport(null);
+      setEvidenceError(null);
+      return;
+    }
+    void loadEvidence(reviewerId);
+  }, [reviewerId, reviewerIsWorkbench, loadEvidence]);
 
   // --- translate / retry / translate-all -------------------------------------
 
@@ -307,20 +578,29 @@ export const DbMigrationPackTranslationsTab: React.FC<
 
   // --- review -------------------------------------------------------------------
 
-  const handleReview = useCallback(
-    async (action: DbMigrationPackTranslationReviewAction, notes: string) => {
-      if (!reviewerRow || busyId) return;
-      setBusyId(reviewerRow.id);
+  const runReview = useCallback(
+    async (
+      translationId: string,
+      action: DbMigrationPackTranslationReviewAction,
+      notes: string,
+    ) => {
+      if (busyId) return;
+      setBusyId(translationId);
       setError(null);
       setNotice(null);
       try {
         const result = await reviewDbMigrationPackTranslation(
           projectId,
           packId,
-          reviewerRow.id,
+          translationId,
           action,
           notes,
         );
+        setApproveReasons((prev) => {
+          const next = { ...prev };
+          delete next[translationId];
+          return next;
+        });
         setRows((prev) =>
           prev.map((r) => (r.id === result.translation.id ? result.translation : r)),
         );
@@ -330,12 +610,32 @@ export const DbMigrationPackTranslationsTab: React.FC<
           /* chips refresh is best-effort; the row itself is already updated */
         });
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'The review action failed');
+        // Evidence-gated approve (decision 17): 409 carries a READABLE reason
+        // that belongs next to the button, not in the generic error banner.
+        if (action === 'approve' && statusOf(err) === 409) {
+          setApproveReasons((prev) => ({
+            ...prev,
+            [translationId]: messageOf(
+              err,
+              'not reconciled and no waiver covers the failing scenarios',
+            ),
+          }));
+        } else {
+          setError(messageOf(err, 'The review action failed'));
+        }
       } finally {
         setBusyId(null);
       }
     },
-    [reviewerRow, busyId, projectId, packId, loadTranslations, handleEmission],
+    [busyId, projectId, packId, loadTranslations, handleEmission],
+  );
+
+  const handleReview = useCallback(
+    async (action: DbMigrationPackTranslationReviewAction, notes: string) => {
+      if (!reviewerRow) return;
+      await runReview(reviewerRow.id, action, notes);
+    },
+    [reviewerRow, runReview],
   );
 
   // --- approve all (2026-08-08, server-side bulk) -------------------------------
@@ -433,6 +733,291 @@ export const DbMigrationPackTranslationsTab: React.FC<
     [reviewerRow, busyId, projectId, packId, loadTranslations, handleEmission],
   );
 
+  // --- workbench rows ----------------------------------------------------------
+
+  const workbenchRows = useMemo(
+    () => rows.filter((r) => isWorkbenchRow(r) && matchesWorkbenchFilter(r, filter)),
+    [rows, filter],
+  );
+  const plainRows = useMemo(
+    () => rows.filter((r) => !isWorkbenchRow(r) && matchesWorkbenchFilter(r, filter)),
+    [rows, filter],
+  );
+  const reconciledCount = useMemo(
+    () =>
+      rows.filter(
+        (r) => isWorkbenchRow(r) && r.loop_status === 'reconciled' &&
+          r.review_status !== 'approved',
+      ).length,
+    [rows],
+  );
+
+  // --- workbench actions --------------------------------------------------------
+
+  const runCredentialedAction = useCallback(
+    async (
+      action: PendingCredentialedAction,
+      creds: DbMigrationPackDbCredentials,
+    ) => {
+      setError(null);
+      setNotice(null);
+      try {
+        if (action.kind === 'translate-reconcile') {
+          setBusyId('translate-reconcile');
+          await translateAndReconcileDbMigrationPack(projectId, packId, {
+            targetDb: creds,
+          });
+          setNotice(
+            'Translate & reconcile started — the loop runs automatically ' +
+              `(translate → apply → reconcile → re-translate with evidence, cap ${DB_PACK_TRANSLATION_ATTEMPT_CAP}).`,
+          );
+          loopWasInFlight.current = true;
+          await refreshLoopStatus().catch(() => {
+            /* the poller picks it up on the next tick */
+          });
+        } else if (action.kind === 'reconcile-all') {
+          // No bulk reconcile route exists: the workbench reconciles each
+          // routine in turn and reports the per-routine outcome honestly.
+          setBusyId('reconcile-all');
+          const targets = rows.filter(
+            (r) => isWorkbenchRow(r) && r.loop_status !== 'dispositioned',
+          );
+          const summaries: string[] = [];
+          const failures: string[] = [];
+          for (const row of targets) {
+            try {
+              const result = await reconcileDbMigrationPackTranslation(
+                projectId,
+                packId,
+                row.id,
+                creds,
+              );
+              const summary = result.report?.summary;
+              summaries.push(
+                `${row.object_ref}: ${summary?.status ?? 'reported'}` +
+                  (summary && summary.divergent > 0
+                    ? ` (${summary.divergent} divergent)`
+                    : ''),
+              );
+            } catch (err) {
+              failures.push(`${row.object_ref}: ${messageOf(err, 'reconcile failed')}`);
+            }
+          }
+          setNotice(
+            targets.length === 0
+              ? 'No routines to reconcile.'
+              : `Reconciled ${summaries.length} of ${targets.length} routine(s): ${summaries.join('; ')}`,
+          );
+          if (failures.length > 0) {
+            setError(`Reconcile failures — ${failures.join('; ')}`);
+          }
+          await loadTranslations();
+        } else if (action.kind === 'reconcile-one') {
+          setBusyId(action.translationId);
+          const result = await reconcileDbMigrationPackTranslation(
+            projectId,
+            packId,
+            action.translationId,
+            creds,
+          );
+          const summary = result.report?.summary;
+          setNotice(
+            `Reconciled ${result.report?.routineName ?? 'the routine'}: ` +
+              `${summary?.status ?? 'reported'}` +
+              (summary
+                ? ` — ${summary.divergent} divergent, ${summary.unverifiable} unverifiable of ${summary.scenarios} scenario(s).`
+                : '.'),
+          );
+          await loadTranslations();
+          if (reviewerId === action.translationId) {
+            await loadEvidence(action.translationId);
+          }
+        } else {
+          setBusyId(action.translationId);
+          await retryDbMigrationPackTranslationLoop(
+            projectId,
+            packId,
+            action.translationId,
+            creds,
+            action.guidance,
+          );
+          setNotice(
+            'Guidance recorded — one more loop attempt is running with it in ' +
+              'the prompt. The draft is never edited by hand.',
+          );
+          loopWasInFlight.current = true;
+          await refreshLoopStatus().catch(() => {
+            /* the poller picks it up on the next tick */
+          });
+        }
+      } catch (err) {
+        setError(messageOf(err, 'The workbench action failed'));
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [
+      projectId,
+      packId,
+      rows,
+      reviewerId,
+      loadTranslations,
+      loadEvidence,
+      refreshLoopStatus,
+    ],
+  );
+
+  /** Run now when credentials are held, otherwise prompt for them once. */
+  const withTargetDb = useCallback(
+    (purpose: string, action: PendingCredentialedAction) => {
+      if (targetDb) {
+        void runCredentialedAction(action, targetDb);
+        return;
+      }
+      setModalError(null);
+      setModal({ variant: 'connect', purpose, pending: action });
+    },
+    [targetDb, runCredentialedAction],
+  );
+
+  const handleModalSubmit = useCallback(
+    async (payload: DbMigrationPackTargetBuildSubmit) => {
+      const current = modal;
+      if (!current) return;
+      // The same target block feeds every later workbench action this session.
+      setTargetDb(payload.targetDb);
+      if (current.variant === 'connect') {
+        setModal(null);
+        if (current.pending) {
+          void runCredentialedAction(current.pending, payload.targetDb);
+        }
+        return;
+      }
+      setBusyId('target-build');
+      setModalError(null);
+      try {
+        await startDbMigrationPackTargetBuild(projectId, packId, {
+          targetDb: payload.targetDb,
+          sourceDb: payload.sourceDb,
+          rebuild: payload.rebuild,
+        });
+        setModal(null);
+        setNotice(
+          'Target build started — schema, then data, then the approved ' +
+            'translations. The header tracks each phase.',
+        );
+        await refreshBuildStatus().catch(() => {
+          /* the poller picks it up on the next tick */
+        });
+      } catch (err) {
+        setModalError(messageOf(err, 'Failed to start the target build'));
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [modal, projectId, packId, runCredentialedAction, refreshBuildStatus],
+  );
+
+  const handleApproveAllReconciled = useCallback(async () => {
+    if (busyId) return;
+    setBusyId('approve-all-reconciled');
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await approveAllReconciledDbMigrationPackTranslations(
+        projectId,
+        packId,
+      );
+      if (result.emission) handleEmission(result.emission);
+      const parts = [
+        `Approved ${result.approvedCount} of ${result.eligibleCount} reconciled routine(s).`,
+      ];
+      if (result.failed.length > 0) {
+        parts.push(
+          `${result.failed.length} refused: ` +
+            result.failed
+              .slice(0, 3)
+              .map((f) => `${f.routine} (${f.reason})`)
+              .join('; ') +
+            (result.failed.length > 3 ? ` (+${result.failed.length - 3} more)` : ''),
+        );
+      }
+      setNotice(parts.join(' '));
+      await loadTranslations();
+    } catch (err) {
+      setError(messageOf(err, 'Approve all reconciled failed'));
+    } finally {
+      setBusyId(null);
+    }
+  }, [busyId, projectId, packId, loadTranslations, handleEmission]);
+
+  const handleWaive = useCallback(
+    async (
+      translationId: string,
+      scope: DbMigrationPackWaiverScope,
+      scenario: string | null,
+      reason: string,
+    ) => {
+      if (busyId) return;
+      setBusyId(translationId);
+      setError(null);
+      setNotice(null);
+      try {
+        const result = await waiveDbMigrationPackTranslation(
+          projectId,
+          packId,
+          translationId,
+          { scope, scenario, reason },
+        );
+        setNotice(
+          `Waiver recorded for ${result.target ?? scope} — reason: ${reason}. ` +
+            'The routine counts as reconciled WITH WAIVERS, never fully reconciled.',
+        );
+        await loadTranslations();
+        if (reviewerId === translationId) {
+          await loadEvidence(translationId);
+        }
+      } catch (err) {
+        setError(messageOf(err, 'Failed to record the waiver'));
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [busyId, projectId, packId, reviewerId, loadTranslations, loadEvidence],
+  );
+
+  // --- header copy --------------------------------------------------------------
+
+  const targetStatusText = useMemo(() => {
+    if (buildStatus?.inFlight) {
+      return `building: ${buildStatus.inFlight.phase ?? 'starting'}`;
+    }
+    const latest = buildStatus?.latest;
+    if (!latest || !latest.status) return 'not built';
+    if (latest.status === 'succeeded') {
+      return `built ${formatClock(latest.endedAt ?? latest.startedAt)} from pack ${
+        latest.packVersion ? `v${latest.packVersion}` : '(version unknown)'
+      }`;
+    }
+    if (latest.status === 'failed') {
+      return `last build FAILED${latest.error ? ` — ${latest.error}` : ''}`;
+    }
+    return `last build ${latest.status}`;
+  }, [buildStatus]);
+
+  const baselineStatusText = useMemo(() => {
+    if (!baseline) return 'reading…';
+    if (!baseline.pinned) return 'no pinned proc baseline — capture first';
+    return `pinned, ${baseline.scenarios} scenarios across ${baseline.routines} routines`;
+  }, [baseline]);
+
+  const exhaustedResults = useMemo(
+    () => (loop?.results ?? []).filter((r) => r.finalStatus === 'exhausted'),
+    [loop],
+  );
+
+  const actionsLocked = busyId !== null || buildInFlight || loopInFlight;
+
   // -------------------------------------------------------------------------------
 
   if (loading) {
@@ -443,8 +1028,119 @@ export const DbMigrationPackTranslationsTab: React.FC<
     );
   }
 
+  const renderDispositionCell = (row: DbMigrationPackTranslationDto) => {
+    const inDropEntry = Object.prototype.hasOwnProperty.call(dropDrafts, row.id);
+    return (
+      <>
+        <select
+          className={styles.filterSelect}
+          value={inDropEntry ? 'drop' : row.disposition}
+          onChange={(e) => handleDispositionChange(row, e.target.value)}
+          disabled={busyId !== null}
+          data-testid={`db-pack-translation-disposition-${row.id}`}
+        >
+          <option value="translate">translate</option>
+          <option value="rewrite_in_app">rewrite in app</option>
+          <option value="drop">drop</option>
+        </select>
+        {inDropEntry && (
+          <div className={styles.inlineResolve}>
+            <input
+              type="text"
+              className={styles.filterInput}
+              placeholder="Reason (required)"
+              value={dropDrafts[row.id]}
+              onChange={(e) =>
+                setDropDrafts((prev) => ({ ...prev, [row.id]: e.target.value }))
+              }
+              data-testid={`db-pack-translation-drop-reason-${row.id}`}
+            />
+            <button
+              type="button"
+              className={styles.actionButton}
+              onClick={() => confirmDrop(row)}
+              disabled={busyId !== null}
+              data-testid={`db-pack-translation-drop-confirm-${row.id}`}
+            >
+              Drop
+            </button>
+            <button
+              type="button"
+              className={styles.actionButton}
+              onClick={() =>
+                setDropDrafts((prev) => {
+                  const next = { ...prev };
+                  delete next[row.id];
+                  return next;
+                })
+              }
+              data-testid={`db-pack-translation-drop-cancel-${row.id}`}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+        {row.disposition === 'drop' && row.drop_reason && (
+          <p className={styles.manifestNote}>{row.drop_reason}</p>
+        )}
+      </>
+    );
+  };
+
   return (
     <div className={styles.translationsTab} data-testid="db-pack-translations-tab">
+      {/* Workbench header ------------------------------------------------------ */}
+      <div className={styles.manifestSection} data-testid="db-pack-wb-header">
+        <div className={styles.actionsBar}>
+          <span
+            className={styles.manifestNote}
+            data-testid="db-pack-wb-target-status"
+          >
+            Target DB: {targetStatusText}
+          </span>
+          <button
+            type="button"
+            className={styles.actionButton}
+            onClick={() => {
+              setModalError(null);
+              setModal({ variant: 'build', purpose: null, pending: null });
+            }}
+            disabled={busyId !== null || buildInFlight}
+            title="Builds the target database from this pack: schema, data, then the approved translations"
+            data-testid="db-pack-wb-build-target"
+          >
+            {buildInFlight ? 'Building…' : 'Build target…'}
+          </button>
+        </div>
+        {buildStatus?.latest && (
+          <p className={styles.manifestNote} data-testid="db-pack-wb-build-phases">
+            {['schema', 'data', 'translations']
+              .map((name) => {
+                const phase = buildStatus.latest?.phases?.[name];
+                const detail = phase?.error ?? phase?.detail ?? '';
+                return `${name}: ${phase?.status ?? 'pending'}${
+                  detail ? ` (${detail})` : ''
+                }`;
+              })
+              .join(' · ')}
+          </p>
+        )}
+        <p
+          className={styles.manifestNote}
+          data-testid="db-pack-wb-baseline-status"
+        >
+          Proc baseline: {baselineStatusText}
+        </p>
+        <p className={styles.manifestNote} data-testid="db-pack-wb-attempt-cap">
+          Attempt cap: {DB_PACK_TRANSLATION_ATTEMPT_CAP}
+        </p>
+        {headerNote && (
+          <p className={styles.manifestNote} data-testid="db-pack-wb-header-note">
+            {headerNote}
+          </p>
+        )}
+      </div>
+
       {/* Coverage-summary chips ------------------------------------------------ */}
       {coverage && (
         <div
@@ -501,6 +1197,117 @@ export const DbMigrationPackTranslationsTab: React.FC<
         </div>
       )}
 
+      {/* Loop status ------------------------------------------------------------ */}
+      {loop && (loop.inFlight || loop.results !== null || loop.error) && (
+        <div
+          className={loop.inFlight ? styles.noticeBanner : styles.manifestSection}
+          data-testid="db-pack-wb-loop-status"
+        >
+          {loop.inFlight ? (
+            <p className={styles.manifestNote}>
+              Loop running{loop.phase ? ` — ${loop.phase}` : ''}: {loop.done} of{' '}
+              {loop.routines} routine(s) done.
+            </p>
+          ) : (
+            <p className={styles.manifestNote}>
+              Loop finished — {(loop.results ?? []).length} routine(s) reached a
+              terminal state.
+            </p>
+          )}
+          {loop.error && (
+            <div className={styles.errorBanner}>Loop error: {loop.error}</div>
+          )}
+          {exhaustedResults.length > 0 && (
+            <div
+              className={styles.errorBanner}
+              data-testid="db-pack-wb-loop-exhausted"
+            >
+              {exhaustedResults.length} routine(s) hit the attempt cap of{' '}
+              {DB_PACK_TRANSLATION_ATTEMPT_CAP} and are NOT reconciled:{' '}
+              {exhaustedResults
+                .map(
+                  (r) =>
+                    `${r.routine ?? r.translationId ?? 'unknown'}` +
+                    (r.bestAttemptNo ? ` (best attempt ${r.bestAttemptNo})` : ''),
+                )
+                .join(', ')}
+              . Open each one to read the surviving failure signatures, then
+              use Guidance & retry or record a waiver with a reason.
+            </div>
+          )}
+          {loop.events.length > 0 && (
+            <ul className={styles.orderedList} data-testid="db-pack-wb-loop-events">
+              {loop.events.slice(-6).map((event, index) => (
+                <li key={`event-${index}`}>
+                  {event.at ? `${event.at} · ` : ''}
+                  {event.routine ?? '—'} · {event.phase ?? '—'}
+                  {event.detail ? ` — ${event.detail}` : ''}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {/* Workbench actions + filter --------------------------------------------- */}
+      <div className={styles.actionsBar}>
+        <button
+          type="button"
+          className={`${styles.actionButton} ${styles.actionButtonPrimary}`}
+          onClick={() =>
+            withTargetDb('Translate & reconcile all', {
+              kind: 'translate-reconcile',
+            })
+          }
+          disabled={actionsLocked}
+          title="Runs the AUTOMATIC loop over every translate-dispositioned routine: translate, apply, reconcile, re-translate with evidence, until reconciled or the attempt cap"
+          data-testid="db-pack-wb-translate-reconcile"
+        >
+          {busyId === 'translate-reconcile' || loopInFlight
+            ? 'Loop running…'
+            : 'Translate & reconcile all'}
+        </button>
+        <button
+          type="button"
+          className={styles.actionButton}
+          onClick={() => withTargetDb('Reconcile all', { kind: 'reconcile-all' })}
+          disabled={actionsLocked}
+          title="Re-runs proc parity for every routine against the pinned baseline without re-translating"
+          data-testid="db-pack-wb-reconcile-all"
+        >
+          {busyId === 'reconcile-all' ? 'Reconciling…' : 'Reconcile all'}
+        </button>
+        <button
+          type="button"
+          className={styles.actionButton}
+          onClick={() => void handleApproveAllReconciled()}
+          disabled={actionsLocked}
+          title="Approves every routine the server accepts as reconciled (or waiver-covered) — approval is evidence-gated"
+          data-testid="db-pack-wb-approve-all-reconciled"
+        >
+          {busyId === 'approve-all-reconciled'
+            ? 'Approving…'
+            : `Approve all reconciled (${reconciledCount})`}
+        </button>
+        <label className={styles.filterGroup}>
+          <span className={styles.filterLabel}>Filter</span>
+          <select
+            className={styles.filterSelect}
+            value={filter}
+            onChange={(e) =>
+              setFilter(e.target.value as DbMigrationPackWorkbenchFilter)
+            }
+            data-testid="db-pack-wb-filter"
+          >
+            {WORKBENCH_FILTERS.map((entry) => (
+              <option key={entry.value} value={entry.value}>
+                {entry.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
       {/* Bulk action (product rule: never individual-only actions). */}
       <div className={styles.actionsBar}>
         <button
@@ -529,12 +1336,134 @@ export const DbMigrationPackTranslationsTab: React.FC<
         </span>
       </div>
 
-      {/* Object list ------------------------------------------------------------ */}
+      {/* Routine workbench table ------------------------------------------------ */}
+      {workbenchRows.length > 0 && (
+        <div className={styles.tableScroll} data-testid="db-pack-wb-table">
+          <table className={styles.dataTable}>
+            <thead>
+              <tr>
+                <th>Routine</th>
+                <th>Kind</th>
+                <th>Scenarios</th>
+                <th>Attempts</th>
+                <th>Loop status</th>
+                <th>Verdict</th>
+                <th>Review</th>
+                <th>Disposition</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {workbenchRows.map((row) => {
+                const state = reviewState(row);
+                const reason = approveReasons[row.id];
+                return (
+                  <tr key={row.id} data-testid={`db-pack-wb-row-${row.id}`}>
+                    <td>
+                      <button
+                        type="button"
+                        className={styles.actionLink}
+                        onClick={() => setReviewerId(row.id)}
+                        data-testid={`db-pack-wb-open-${row.id}`}
+                      >
+                        {row.object_ref}
+                      </button>
+                    </td>
+                    <td>
+                      <span className={styles.badge}>{routineKindLabel(row)}</span>
+                    </td>
+                    <td>{scenariosLabel(row)}</td>
+                    <td>{attemptsLabel(row)}</td>
+                    <td>
+                      <span
+                        className={loopStatusBadgeClass(String(row.loop_status ?? ''))}
+                      >
+                        {loopStatusLabel(row)}
+                      </span>
+                    </td>
+                    <td>{verdictLabel(row)}</td>
+                    <td>
+                      {state === 'approve' ? (
+                        <button
+                          type="button"
+                          className={styles.actionButton}
+                          onClick={() => void runReview(row.id, 'approve', '')}
+                          disabled={busyId !== null}
+                          data-testid={`db-pack-wb-approve-${row.id}`}
+                        >
+                          Approve
+                        </button>
+                      ) : (
+                        <span
+                          className={
+                            state === 'approved'
+                              ? styles.badgeResolved
+                              : state === 'needs-you'
+                                ? styles.badgeMissing
+                                : styles.badge
+                          }
+                        >
+                          {REVIEW_STATE_LABEL[state]}
+                        </span>
+                      )}
+                      {reason && (
+                        <p
+                          className={styles.manifestNote}
+                          data-testid={`db-pack-wb-approve-reason-${row.id}`}
+                        >
+                          Approve refused: {reason}
+                        </p>
+                      )}
+                    </td>
+                    <td>{renderDispositionCell(row)}</td>
+                    <td>
+                      <div className={styles.actionsBar}>
+                        <button
+                          type="button"
+                          className={styles.actionButton}
+                          onClick={() =>
+                            withTargetDb('Reconcile', {
+                              kind: 'reconcile-one',
+                              translationId: row.id,
+                            })
+                          }
+                          disabled={actionsLocked}
+                          data-testid={`db-pack-wb-reconcile-${row.id}`}
+                        >
+                          Reconcile
+                        </button>
+                        <button
+                          type="button"
+                          className={styles.actionButton}
+                          onClick={() => setReviewerId(row.id)}
+                          data-testid={`db-pack-translation-review-${row.id}`}
+                        >
+                          Review
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Object list (views / jobs / check constraints — unchanged) ------------- */}
       {rows.length === 0 ? (
         <div className={styles.emptyMessage} data-testid="db-pack-translations-empty">
           No objects require translation in this pack.
         </div>
-      ) : (
+      ) : plainRows.length === 0 && workbenchRows.length === 0 ? (
+        <div
+          className={styles.emptyMessage}
+          data-testid="db-pack-translations-filtered-empty"
+        >
+          No rows match the {WORKBENCH_FILTERS.find((f) => f.value === filter)?.label}{' '}
+          filter. Nothing is hidden permanently — switch to All to see every row.
+        </div>
+      ) : plainRows.length === 0 ? null : (
         <div className={styles.tableScroll}>
           <table className={styles.dataTable}>
             <thead>
@@ -551,11 +1480,7 @@ export const DbMigrationPackTranslationsTab: React.FC<
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => {
-                const inDropEntry = Object.prototype.hasOwnProperty.call(
-                  dropDrafts,
-                  row.id,
-                );
+              {plainRows.map((row) => {
                 const confidence = row.judge_verdict_json?.confidence;
                 const translatable =
                   row.disposition === 'translate' &&
@@ -567,62 +1492,7 @@ export const DbMigrationPackTranslationsTab: React.FC<
                       <span className={styles.badge}>{row.kind}</span>
                     </td>
                     <td>{formatBodySize(row.source_body)}</td>
-                    <td>
-                      <select
-                        className={styles.filterSelect}
-                        value={inDropEntry ? 'drop' : row.disposition}
-                        onChange={(e) => handleDispositionChange(row, e.target.value)}
-                        disabled={busyId !== null}
-                        data-testid={`db-pack-translation-disposition-${row.id}`}
-                      >
-                        <option value="translate">translate</option>
-                        <option value="rewrite_in_app">rewrite in app</option>
-                        <option value="drop">drop</option>
-                      </select>
-                      {inDropEntry && (
-                        <div className={styles.inlineResolve}>
-                          <input
-                            type="text"
-                            className={styles.filterInput}
-                            placeholder="Reason (required)"
-                            value={dropDrafts[row.id]}
-                            onChange={(e) =>
-                              setDropDrafts((prev) => ({
-                                ...prev,
-                                [row.id]: e.target.value,
-                              }))
-                            }
-                            data-testid={`db-pack-translation-drop-reason-${row.id}`}
-                          />
-                          <button
-                            type="button"
-                            className={styles.actionButton}
-                            onClick={() => confirmDrop(row)}
-                            disabled={busyId !== null}
-                            data-testid={`db-pack-translation-drop-confirm-${row.id}`}
-                          >
-                            Drop
-                          </button>
-                          <button
-                            type="button"
-                            className={styles.actionButton}
-                            onClick={() =>
-                              setDropDrafts((prev) => {
-                                const next = { ...prev };
-                                delete next[row.id];
-                                return next;
-                              })
-                            }
-                            data-testid={`db-pack-translation-drop-cancel-${row.id}`}
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      )}
-                      {row.disposition === 'drop' && row.drop_reason && (
-                        <p className={styles.manifestNote}>{row.drop_reason}</p>
-                      )}
-                    </td>
+                    <td>{renderDispositionCell(row)}</td>
                     <td>
                       <span className={pipelineStateBadgeClass(row.pipeline_state)}>
                         {row.pipeline_state === 'translating'
@@ -725,6 +1595,40 @@ export const DbMigrationPackTranslationsTab: React.FC<
           onReview={(action, notes) => void handleReview(action, notes)}
           onClose={() => setReviewerId(null)}
           onSupplyBody={(sourceBody) => void handleSupplyBody(sourceBody)}
+          workbench={
+            isWorkbenchRow(reviewerRow)
+              ? {
+                  attempts,
+                  parityReport,
+                  evidenceLoading,
+                  evidenceError,
+                  approveReason: approveReasons[reviewerRow.id] ?? null,
+                  onGuidanceRetry: (guidance) =>
+                    withTargetDb('Guidance & retry', {
+                      kind: 'retry-loop',
+                      translationId: reviewerRow.id,
+                      guidance,
+                    }),
+                  onWaive: (scope, scenario, reason) =>
+                    void handleWaive(reviewerRow.id, scope, scenario, reason),
+                }
+              : undefined
+          }
+        />
+      )}
+
+      {/* Build target / target credentials modal -------------------------------- */}
+      {modal && (
+        <DbMigrationPackTargetBuildModal
+          variant={modal.variant}
+          busy={busyId === 'target-build'}
+          error={modalError}
+          purpose={modal.purpose}
+          onSubmit={(payload) => void handleModalSubmit(payload)}
+          onClose={() => {
+            setModal(null);
+            setModalError(null);
+          }}
         />
       )}
     </div>

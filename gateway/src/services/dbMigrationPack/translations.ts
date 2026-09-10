@@ -104,6 +104,13 @@ export interface TranslationRow {
   reviewed_at?: string | null;
   /** Spec 1 (2026-09-09): the routine-catalog row the body came from, when one exists. */
   routine_id?: string | null;
+  /** Workbench loop fields (Spec 4, 2026-09-09; AMS changeset 231). */
+  loop_status?: string | null;
+  current_attempt_no?: number | null;
+  best_attempt_no?: number | null;
+  verdict_json?: Record<string, unknown> | null;
+  parity_report_id?: string | null;
+  stale_reason?: string | null;
 }
 
 /** Sparse PATCH body — omitted fields are untouched AMS-side. */
@@ -115,6 +122,13 @@ export interface TranslationPatch {
   drop_reason?: string;
   review_status?: TranslationReviewStatus;
   reviewer_notes?: string;
+  /** Workbench loop fields (Spec 4, 2026-09-09; AMS changeset 231). */
+  loop_status?: string;
+  current_attempt_no?: number;
+  best_attempt_no?: number | null;
+  verdict_json?: Record<string, unknown> | null;
+  parity_report_id?: string | null;
+  stale_reason?: string | null;
   /**
    * Supply-body path (2026-08-07): a TRUNCATED capture used to be a terminal
    * needs_manual dead-end. The operator can now paste the full source body;
@@ -917,6 +931,13 @@ export function buildTranslationPrompt(args: {
   contract?: string | null;
   /** Spec 2: header mismatches from a previous draft (one automatic re-prompt). */
   contractViolations?: string[] | null;
+  /**
+   * Spec 4 (2026-09-09): the evidence rung — failing tests rendered as a
+   * bug report against the fixed spec. NEVER present on the first attempt.
+   */
+  evidence?: string | null;
+  /** Spec 4: reviewer guidance steering the next attempt (the amend pattern). */
+  guidance?: string | null;
 }): { systemPrompt: string; userPrompt: string } {
   const systemPrompt = [
     'You are a database migration engineer translating Sybase ASE T-SQL objects into PostgreSQL.',
@@ -941,6 +962,15 @@ export function buildTranslationPrompt(args: {
     lines.push('');
     lines.push('Your previous draft violated the contract — fix ONLY these, keep everything else:');
     for (const v of args.contractViolations) lines.push(`- ${v}`);
+  }
+  if (args.guidance && args.guidance.trim().length > 0) {
+    lines.push('');
+    lines.push('Reviewer guidance for this attempt (authoritative about intent, never about specific input values):');
+    lines.push(args.guidance.trim());
+  }
+  if (args.evidence && args.evidence.trim().length > 0) {
+    lines.push('');
+    lines.push(args.evidence.trim());
   }
   lines.push('');
   lines.push('Schema context:');
@@ -1401,6 +1431,111 @@ export interface RoutineContract {
   text: string;
 }
 
+/**
+ * ONE draft + judge pass for one object (shared by the pipeline and the
+ * Spec 4 workbench loop, which supplies the evidence rung + guidance and
+ * persists the outcome itself). Pre-pass → translate (one retry) → contract
+ * header check with ONE automatic re-prompt → judge (one retry). Throws
+ * `abi_mismatch: ...` when the second header check fails.
+ */
+export async function draftAndJudgeObject(args: {
+  projectId: string;
+  packId: string;
+  row: TranslationRow;
+  manifest: Record<string, unknown> | null;
+  contract: RoutineContract | null;
+  callLlm: LlmCallerFn;
+  llmPool: LlmConcurrencyPool;
+  evidence?: string | null;
+  guidance?: string | null;
+}): Promise<{ draft: TranslationDraftResponse; verdict: JudgeVerdict; abiViolations: string[] }> {
+  const { projectId, packId, row, contract } = args;
+  const prePass = runDeterministicPrePass(row.source_body ?? '');
+  const schemaContext = buildSchemaContext(args.manifest, row.source_body ?? '');
+
+  logger.info(
+    `[diag-gateway] db_translation stage=translate packId=${packId} key=${row.translation_key}` +
+      `${args.evidence ? ' evidence=yes' : ''}${args.guidance ? ' guidance=yes' : ''}`
+  );
+  const translatePrompt = buildTranslationPrompt({
+    kind: row.kind,
+    objectRef: row.object_ref,
+    prePass,
+    schemaContext,
+    contract: contract?.text ?? null,
+    evidence: args.evidence ?? null,
+    guidance: args.guidance ?? null,
+  });
+  let draft: TranslationDraftResponse = await callWithRetry({
+    label: `translate ${row.translation_key}`,
+    projectId,
+    systemPrompt: translatePrompt.systemPrompt,
+    userPrompt: translatePrompt.userPrompt,
+    callLlm: args.callLlm,
+    llmPool: args.llmPool,
+    validate: validateTranslationResponse,
+  });
+
+  // Spec 2 (2026-09-09): the draft header must match the descriptor. One
+  // automatic re-prompt naming the violations; a second mismatch fails the
+  // object loudly as `abi_mismatch` (retryable, never a silent drift).
+  let abiViolations: string[] = [];
+  if (contract) {
+    let check = validateDraftAgainstDescriptor(draft.draftSql, contract.descriptor);
+    if (!check.ok) {
+      logger.info(
+        `[diag-gateway] db_translation stage=abi-reprompt packId=${packId} key=${row.translation_key} ` +
+          `violations=${check.violations.length}`
+      );
+      abiViolations = check.violations;
+      const rePrompt = buildTranslationPrompt({
+        kind: row.kind,
+        objectRef: row.object_ref,
+        prePass,
+        schemaContext,
+        contract: contract.text,
+        contractViolations: check.violations,
+        evidence: args.evidence ?? null,
+        guidance: args.guidance ?? null,
+      });
+      draft = await callWithRetry({
+        label: `translate(abi) ${row.translation_key}`,
+        projectId,
+        systemPrompt: rePrompt.systemPrompt,
+        userPrompt: rePrompt.userPrompt,
+        callLlm: args.callLlm,
+        llmPool: args.llmPool,
+        validate: validateTranslationResponse,
+      });
+      check = validateDraftAgainstDescriptor(draft.draftSql, contract.descriptor);
+      if (!check.ok) {
+        throw new Error(`abi_mismatch: ${check.violations.join('; ')}`);
+      }
+    }
+  }
+
+  logger.info(
+    `[diag-gateway] db_translation stage=judge packId=${packId} key=${row.translation_key}`
+  );
+  const judgePrompt = buildJudgePrompt({
+    kind: row.kind,
+    objectRef: row.object_ref,
+    sourceBody: row.source_body ?? '',
+    draftSql: draft.draftSql,
+    schemaContext,
+  });
+  const verdict: JudgeVerdict = await callWithRetry({
+    label: `judge ${row.translation_key}`,
+    projectId,
+    systemPrompt: judgePrompt.systemPrompt,
+    userPrompt: judgePrompt.userPrompt,
+    callLlm: args.callLlm,
+    llmPool: args.llmPool,
+    validate: validateJudgeVerdict,
+  });
+  return { draft, verdict, abiViolations };
+}
+
 async function translateOneObject(args: {
   projectId: string;
   packId: string;
@@ -1428,82 +1563,15 @@ async function translateOneObject(args: {
     logger.info(
       `[diag-gateway] db_translation stage=prepass packId=${packId} key=${row.translation_key}`
     );
-    const prePass = runDeterministicPrePass(row.source_body ?? '');
-    const schemaContext = buildSchemaContext(args.manifest, row.source_body ?? '');
-
-    logger.info(
-      `[diag-gateway] db_translation stage=translate packId=${packId} key=${row.translation_key}`
-    );
     const contract = args.contract ?? null;
-    const translatePrompt = buildTranslationPrompt({
-      kind: row.kind,
-      objectRef: row.object_ref,
-      prePass,
-      schemaContext,
-      contract: contract?.text ?? null,
-    });
-    let draft: TranslationDraftResponse = await callWithRetry({
-      label: `translate ${row.translation_key}`,
+    const { draft, verdict } = await draftAndJudgeObject({
       projectId,
-      systemPrompt: translatePrompt.systemPrompt,
-      userPrompt: translatePrompt.userPrompt,
+      packId,
+      row,
+      manifest: args.manifest,
+      contract,
       callLlm: args.callLlm,
       llmPool: args.llmPool,
-      validate: validateTranslationResponse,
-    });
-
-    // Spec 2 (2026-09-09): the draft header must match the descriptor. One
-    // automatic re-prompt naming the violations; a second mismatch fails the
-    // object loudly as `abi_mismatch` (retryable, never a silent drift).
-    if (contract) {
-      let check = validateDraftAgainstDescriptor(draft.draftSql, contract.descriptor);
-      if (!check.ok) {
-        logger.info(
-          `[diag-gateway] db_translation stage=abi-reprompt packId=${packId} key=${row.translation_key} ` +
-            `violations=${check.violations.length}`
-        );
-        const rePrompt = buildTranslationPrompt({
-          kind: row.kind,
-          objectRef: row.object_ref,
-          prePass,
-          schemaContext,
-          contract: contract.text,
-          contractViolations: check.violations,
-        });
-        draft = await callWithRetry({
-          label: `translate(abi) ${row.translation_key}`,
-          projectId,
-          systemPrompt: rePrompt.systemPrompt,
-          userPrompt: rePrompt.userPrompt,
-          callLlm: args.callLlm,
-          llmPool: args.llmPool,
-          validate: validateTranslationResponse,
-        });
-        check = validateDraftAgainstDescriptor(draft.draftSql, contract.descriptor);
-        if (!check.ok) {
-          throw new Error(`abi_mismatch: ${check.violations.join('; ')}`);
-        }
-      }
-    }
-
-    logger.info(
-      `[diag-gateway] db_translation stage=judge packId=${packId} key=${row.translation_key}`
-    );
-    const judgePrompt = buildJudgePrompt({
-      kind: row.kind,
-      objectRef: row.object_ref,
-      sourceBody: row.source_body ?? '',
-      draftSql: draft.draftSql,
-      schemaContext,
-    });
-    const verdict: JudgeVerdict = await callWithRetry({
-      label: `judge ${row.translation_key}`,
-      projectId,
-      systemPrompt: judgePrompt.systemPrompt,
-      userPrompt: judgePrompt.userPrompt,
-      callLlm: args.callLlm,
-      llmPool: args.llmPool,
-      validate: validateJudgeVerdict,
     });
 
     // ONE persist: draft + verdict land together as `drafted`; a fresh judge

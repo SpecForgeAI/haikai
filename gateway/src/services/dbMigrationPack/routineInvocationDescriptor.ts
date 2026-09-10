@@ -53,6 +53,11 @@ export interface RoutineCatalogRow {
   writes_closure_json?: string[] | null;
   reads_closure_json?: string[] | null;
   trigger_expanded_writes_json?: string[] | null;
+  reads_json?: string[] | null;
+  writes_json?: string[] | null;
+  /** Bare lower-case routine names this body calls (callee-first ordering). */
+  proc_calls_json?: string[] | null;
+  body_hash?: string | null;
   signature_parsed?: boolean;
   full_body?: string;
 }

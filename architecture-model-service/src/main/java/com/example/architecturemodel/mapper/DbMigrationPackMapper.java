@@ -135,7 +135,14 @@ public final class DbMigrationPackMapper {
             entity.getReviewerNotes(),
             entity.getCreatedAt() != null ? entity.getCreatedAt().toString() : null,
             entity.getTranslatedAt() != null ? entity.getTranslatedAt().toString() : null,
-            entity.getReviewedAt() != null ? entity.getReviewedAt().toString() : null
+            entity.getReviewedAt() != null ? entity.getReviewedAt().toString() : null,
+            // Workbench loop (changeset 231, Spec 4, 2026-09-09).
+            entity.getLoopStatus(),
+            entity.getCurrentAttemptNo(),
+            entity.getBestAttemptNo(),
+            entity.getVerdictJson(),
+            entity.getParityReportId(),
+            entity.getStaleReason()
         );
     }
 }

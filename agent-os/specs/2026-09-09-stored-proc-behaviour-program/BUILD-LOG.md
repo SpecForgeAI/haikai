@@ -222,3 +222,80 @@ is reachable straight after the target conversation — the design's
 pack-before-plan assumption holds without a change. The proc capture's
 quiet-window gap defaults to 120s (PROC_CAPTURE_QUIET_WINDOW_SECONDS, or
 `capture_tuning_json.quiet_window_seconds`; 0 skips).
+
+#### Spec 4 — Translation workbench loop (BUILT 2026-09-10)
+
+As built:
+- gateway `dbMigrationPack/evidenceLadder.ts`: the four rungs (attempt 1 =
+  source + contract, ZERO scenarios; 2 = one failing scenario; 3 = one per
+  failure signature; 4 = all failing), `clusterBySignature`,
+  `findSpecialCasedLiterals` (overfit guard: captured input literals that
+  appear in the draft but not the source), knobs from env
+  (`PROC_TRANSLATE_ATTEMPT_CAP` default 4, `PROC_TRANSLATE_CONCURRENCY` 3).
+- gateway `dbMigrationPack/translationReconcileLoop.ts`: the automatic
+  translate → apply → reconcile → re-translate engine (`runTranslationReconcileLoop`):
+  callee-first groups (Tarjan SCC; cycles loop as a group), `blocked_by_callee`
+  for callers whose callee is not reconciled, best attempt kept as the draft
+  on exhaustion, overfit = divergence for the ladder, evidence-gated
+  `reconciled`; `verdict_json` carries `status / attempt_no / attempts (cap) /
+  attempts_made / scenarios / scenarios_failing / signatures / blocked_by /
+  apply_error`. Every attempt persists (AMS 231) with its evidence rung.
+- gateway `dbMigrationPack/procWorkbench.ts` + `procWorkbenchClients.ts` +
+  `targetBuild.ts`: the loop's real deps (LLM draft+judge via the extracted
+  `draftAndJudgeObject`, AMVS apply + parity, AMS attempts/reports/builds,
+  comparison-waiver rows with `dimension='proc-parity'` and targets
+  `<routine>` / `<routine>::<scenario>`); target build = schema → data →
+  post-load against the DECLARED target binding; `rebuild` is refused
+  honestly (`rebuild_unsupported`) because the schema-apply runner has no
+  drop-all — drop/recreate the database, then build.
+- gateway `routes/dbMigrationPackWorkbench.ts` (base
+  `/api/v1/projects/:p/db-migration-packs/:packId`): `POST/GET target/build[/status]`,
+  `POST translations/translate-and-reconcile` (202) + `GET loop-status`,
+  `POST translations/:id/retry-loop {guidance}`, `POST translations/:id/reconcile`,
+  `POST translations/:id/waive {scope, scenario?, reason}` (reason mandatory),
+  `POST translations/approve-all-reconciled`, `GET translations/baseline-status`,
+  `GET translations/:id/attempts`, `GET translations/:id/parity-report`.
+  The pack review route now answers 409 when a routine-linked stored
+  procedure is approved without `loop_status=reconciled` or a routine
+  waiver (evidence-gated approval); emission orders approved routines
+  callee-first.
+- AMVS `services/procParity/` (comparator: outcome / return_status /
+  output_params / result_sets strict with rule-cited tolerance only;
+  messages + update_counts advisory; state_delta only when both sides
+  exist; signature = `dimension:first_divergence`; runner replays every
+  pinned item, `unverifiable` on no descriptor / stale items / replay
+  failure) + `services/db/postgresRoutineApply.ts` (drop-then-create in one
+  transaction) + routes `POST /api/routine-apply/run`,
+  `POST /api/proc-parity/run` (descriptors keyed by BARE routine name; one
+  persisted report per routine; PROC.APPLY.01 / PROC.REC.01).
+- AMS 231 (subagent): `db_migration_pack_translation_attempts`,
+  `db_migration_pack_target_builds`, `proc_parity_reports`; translation
+  rows gain `loop_status / current_attempt_no / best_attempt_no /
+  verdict_json / parity_report_id / stale_reason` (DTO components APPENDED
+  at the end, prefix unchanged); routes under the pack base
+  (`translations/{id}/attempts`, `translation-attempts`, `target-builds[/latest|/{id}]`)
+  and `/api/projects/{p}/architectures/{a}/proc-parity-reports`
+  (`POST`, `GET /{id}`, `GET /latest?routine_id=`, `GET /latest-by-routine`).
+- frontend (subagent): Translations tab = the WORKBENCH (target build +
+  pinned baseline + cap header; Translate & reconcile all / Reconcile all /
+  Approve all reconciled; filter Needs you | Reconciled | Blocked |
+  Unverified | All — default All so nothing hides on first paint; routine
+  rows with loop status / verdict / attempts; loud exhaustion banner);
+  reviewer gains the behaviour verdict, failing scenarios (expected vs
+  actual per dimension), attempt history with diff-vs-previous, guidance
+  textarea + Guidance & retry, Waive dialog, inline 409 reason on Approve;
+  `DbMigrationPackTargetBuildModal` collects per-invocation credentials
+  (memory only). NO draft-editing affordance exists (owner ruling).
+  "Reconcile all" iterates the per-routine route (no bulk route by design).
+
+Verification: gateway `translationReconcileLoop` 10/10,
+`dbMigrationPackWorkbenchRoutes` 6/6, all DB-pack suites green, tsc clean;
+AMVS `procParity` 10/10 + `procParityRun` 4/4, tsc clean; AMS full suite
+2483 run / 0 failures (231 controller + service tests, translation service
+5/5); frontend 13 new + 7 existing (folder 26 files / 203 tests).
+
+Notes: the evidence ladder starts at ZERO scenarios by owner ruling (the
+LLMs over-weighted runtime evidence in spec generation); a first attempt
+that cites scenarios is a PROC.LOOP.01 finding. Waivers never break
+reconciliation: a waived routine is "reconciled with waivers" in every
+count. The workbench needs no plan, book or service plane.

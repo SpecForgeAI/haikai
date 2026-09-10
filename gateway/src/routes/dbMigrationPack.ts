@@ -89,6 +89,7 @@ import {
 } from '../services/dbMigrationPack/translations';
 import { runTranslationEmission } from '../services/dbMigrationPack/translationEmission';
 import { findSybaseSystemReferences } from '../services/dbMigrationPack/sybaseSystemObjects';
+import { listProcParityWaivers, toRunnerWaivers } from '../services/dbMigrationPack/procWorkbenchClients';
 import {
   StructuralDispositionRow,
   resolveStructuralFindingStates,
@@ -887,6 +888,27 @@ dbMigrationPackRouter.post(
               `${systemRefs.join(', ')} — these can never exist on Postgres. Rework the ` +
               `draft against pg_catalog/information_schema, or disposition rewrite-in-app.`
           );
+        }
+      }
+      // Evidence-gated approval (Spec 4, 2026-09-09): a routine with a
+      // catalog row is approved only when the workbench loop RECONCILED it
+      // against the pinned proc baseline, or a recorded waiver covers the
+      // routine. Never a dead button: the 409 names the remedy.
+      if (newStatus === 'approved' && row.kind === 'stored_procedure' && row.routine_id) {
+        const loopStatus = row.loop_status ?? 'idle';
+        if (loopStatus !== 'reconciled') {
+          const routineName = (row.object_ref.split('.').pop() ?? row.object_ref).toLowerCase();
+          const waived = toRunnerWaivers(await listProcParityWaivers(projectId)).some(
+            (w) => w.scope === 'routine' && w.routine === routineName
+          );
+          if (!waived) {
+            throw new TranslationActionError(
+              409,
+              `${row.translation_key} is not behaviour-reconciled (loop status '${loopStatus}'). ` +
+                'Run Translate & reconcile (or Reconcile) against the built target, fix the failing ' +
+                'scenarios, or record a routine waiver with a reason before approving.'
+            );
+          }
         }
       }
       const patch: TranslationPatch = { review_status: newStatus };
