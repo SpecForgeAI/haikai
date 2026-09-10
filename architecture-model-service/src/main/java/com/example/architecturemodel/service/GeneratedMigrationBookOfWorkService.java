@@ -460,7 +460,8 @@ public class GeneratedMigrationBookOfWorkService {
 
         int savedCount = 0;
         int failedCount = 0;
-        int skippedAlreadySavedCount = 0;
+        int skippedAlreadySavedCount = 0;
+        int refreshedExistingCount = 0;
         int skippedNotAdmittedCount = 0;
         // Addition B (spec 2026-05-19): count items that received a fresh
         // workItemId stamp in this invocation so the structured log can
@@ -482,13 +483,27 @@ public class GeneratedMigrationBookOfWorkService {
                 log.info(
                     "[diag-ams] book_of_work stage=save_item_skip_already_saved draftId={} itemId={}",
                     bookId, itemId);
-                // Capture existing workItemId so child resolution still finds it.
                 Object existing = item.get("workItemId");
                 if (existing instanceof String s) {
                     try {
-                        savedIdMap.put(itemId, UUID.fromString(s));
+                        UUID existingId = UUID.fromString(s);
+                        savedIdMap.put(itemId, existingId);
+                        // REFRESH EXISTING (2026-09-10). Skipping a saved item is
+                        // idempotent by design, but after a post-save
+                        // re-expansion (48f5fc09) the blob story may carry NEW
+                        // text under the SAME identity, and nothing pushed that
+                        // text to the work_item row -- execution and spec
+                        // generation read the blob, so behaviour was right, but
+                        // the backlog showed the old title. Combined with the
+                        // planner reorder that was read on the work machine as
+                        // "43 of 49 specs attached to the wrong stories". Title
+                        // and description are refreshed IN PLACE from the blob;
+                        // identity, hierarchy, status and every other column
+                        // are untouched.
+                        if (refreshSavedWorkItemText(existingId, item, bookId, itemId, request)) {
+                            refreshedExistingCount++;
+                        }
                     } catch (IllegalArgumentException ignore) {
-                        // legacy non-UUID workItemId on the blob -- ignore for resolution
                     }
                 }
                 continue;
@@ -648,6 +663,7 @@ public class GeneratedMigrationBookOfWorkService {
         countsTotal.put("saved", savedCount);
         countsTotal.put("failed", failedCount);
         countsTotal.put("skipped_already_saved", skippedAlreadySavedCount);
+        countsTotal.put("refreshed_existing", refreshedExistingCount);
         countsTotal.put("skipped_not_admitted", skippedNotAdmittedCount);
         countsTotal.put("admitted", admittedTotal);
         countsTotal.put("superseded_work_items_deleted", supersededWorkItemsDeleted);
@@ -2129,6 +2145,52 @@ public class GeneratedMigrationBookOfWorkService {
         return null;
     }
 
+    /**
+     * Refresh an already-saved work item's title + description from its blob
+     * item when they differ (2026-09-10). Returns true when a row was changed.
+     * Best-effort: a missing row (deleted out of band) is logged, never thrown.
+     */
+    private boolean refreshSavedWorkItemText(
+        UUID workItemId, Map<String, Object> item, UUID bookId, String itemId,
+        SaveGeneratedMigrationBookOfWorkRequest request
+    ) {
+        String title = stringField(item, "title");
+        // Compare against what the saver PERSISTS (description + optional
+        // acceptance criteria etc.), not the raw blob field, so an unchanged
+        // item is a no-op on every re-run rather than a spurious rewrite.
+        String description = GeneratedMigrationBookOfWorkItemSaver.buildDescription(item, request);
+        if (title == null && description == null) {
+            return false;
+        }
+        Optional<WorkItemEntity> opt = workItemRepository.findById(workItemId);
+        if (opt.isEmpty()) {
+            log.warn(
+                "[diag-ams] book_of_work stage=save_item_refresh_missing_row draftId={} itemId={} "
+                    + "workItemId={} -- the blob points at a work item that no longer exists",
+                bookId, itemId, workItemId);
+            return false;
+        }
+        WorkItemEntity entity = opt.get();
+        boolean changed = false;
+        if (title != null && !title.equals(entity.getTitle())) {
+            entity.setTitle(title);
+            changed = true;
+        }
+        if (description != null && !description.equals(entity.getDescription())) {
+            entity.setDescription(description);
+            changed = true;
+        }
+        if (!changed) {
+            return false;
+        }
+        entity.setUpdatedAt(Instant.now());
+        workItemRepository.save(entity);
+        log.info(
+            "[diag-ams] book_of_work stage=save_item_refreshed_existing draftId={} itemId={} workItemId={}",
+            bookId, itemId, workItemId);
+        return true;
+    }
+
     private static String stringField(Map<String, Object> m, String key) {
         Object v = m.get(key);
         return v instanceof String ? (String) v : null;
@@ -2452,7 +2514,7 @@ public class GeneratedMigrationBookOfWorkService {
          * vs hand-edited content.
          */
         @SuppressWarnings("unchecked")
-        private static String buildDescription(
+        static String buildDescription(
             Map<String, Object> draftItem, SaveGeneratedMigrationBookOfWorkRequest request) {
             StringBuilder sb = new StringBuilder();
             String desc = stringField(draftItem, "description");
