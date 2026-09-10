@@ -19,6 +19,7 @@ import {
   MigrationStorySpecGenerationDto,
 } from '../services/migrationShapeSpecGenerationHandler';
 import { TargetStateCapturedDecision } from '../services/targetStateCapturedDecisionsClient';
+import { classifyUnresolvedTarget } from '../services/sclSpecCarriage';
 
 const GET_ORDER = 'com.app.OrdersController#getOrder(String)';
 const DAO = 'com.app.dao.OrderDao';
@@ -478,5 +479,48 @@ describe('contract sufficiency at render time (2026-09-09)', () => {
     const missing = row.missingInputsJson as Array<{ input: string; missingKeys?: string[] }>;
     expect(missing[0].input).toBe('scl_contracts_unimplementable');
     expect(missing[0].missingKeys).toEqual(['Q-TOKEN']);
+  });
+});
+
+describe('unresolved callee classification (2026-09-10)', () => {
+  function tableCalling(targetSymbol: string): SclContractDto {
+    const base = table([]);
+    (base.body_json as { rows: Array<Record<string, unknown>> }).rows = [
+      { index: 0, kind: 'dispatch', conditionVerbatim: '—', outcome: { type: 'call', targetKey: null, targetSymbol } },
+    ];
+    return base;
+  }
+  const render = (contracts: SclContractDto[]) =>
+    runSclSpecCarriage({
+      story: story(null),
+      baseRow: baseRow(),
+      contracts,
+      decisions: [decision()],
+      wireFactsSectionText: null,
+      targetStackSectionText: null,
+    });
+
+  it('classifies JDK/library callees and unattributable chain breaks as outside the corpus; named in-project callees as unmined', () => {
+    expect(classifyUnresolvedTarget('java.lang.StringBuilder#append(String)')).toBe('outside_corpus');
+    expect(classifyUnresolvedTarget('org.springframework.util.StringUtils#hasText(String)')).toBe('outside_corpus');
+    expect(classifyUnresolvedTarget('?#append(?)')).toBe('outside_corpus');
+    expect(classifyUnresolvedTarget('com.app.criteria.Criteria#match(T)')).toBe('in_project_unmined');
+    // A chain break whose method name SOME corpus contract carries is in-project.
+    const corpus = new Map<string, SclContractDto>([['T-GET', table([])]]);
+    expect(classifyUnresolvedTarget('?#getOrder(?)', corpus)).toBe('in_project_unmined');
+    expect(classifyUnresolvedTarget('?#isAssignableFrom(?)', corpus)).toBe('outside_corpus');
+  });
+
+  it('an outside-corpus callee is rendered as external and NOT warned; an in-project unmined callee still warns', () => {
+    const external = render([tableCalling('java.lang.StringBuilder#append(String)')]);
+    expect(external.status).toBe('generated');
+    expect(external.generatedSpecText).toContain('external — outside the corpus boundary, no contract by design');
+    expect(JSON.stringify(external.warningsJson ?? [])).not.toContain('UNRESOLVED_REFERENCE');
+
+    const unmined = render([tableCalling('com.app.criteria.Criteria#match(T)')]);
+    expect(unmined.status).toBe('generated_with_warnings');
+    expect(unmined.generatedSpecText).toContain('UNRESOLVED — in-project callee with no corpus contract');
+    const warnings = unmined.warningsJson as Array<{ code: string; message: string }>;
+    expect(warnings.some((w) => w.code === 'UNRESOLVED_REFERENCE' && w.message.includes('IN-PROJECT callee'))).toBe(true);
   });
 });
