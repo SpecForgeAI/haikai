@@ -549,7 +549,7 @@ describe('runSclSpecCarriage — unresolved call reference', () => {
       warnings.find((w) => w.code === 'UNRESOLVED_REFERENCE')?.targetSymbol
     ).toBe('com.app.LegacyHelper#mystery()');
     expect(row.generatedSpecText).toContain(
-      'call → (UNRESOLVED — no corpus contract) com.app.LegacyHelper#mystery()'
+      'call → (UNRESOLVED — in-project callee with no corpus contract) com.app.LegacyHelper#mystery()'
     );
   });
 });

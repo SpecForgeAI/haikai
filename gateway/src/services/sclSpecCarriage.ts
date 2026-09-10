@@ -387,6 +387,49 @@ function foundationObjective(
 // Contract-block rendering
 // ---------------------------------------------------------------------------
 
+/**
+ * Where an unresolved callee sits relative to the corpus (2026-09-10).
+ *
+ * Every low-scoring corpus spec carried the same UNRESOLVED_REFERENCE warning,
+ * and two very different things were being penalised identically: an
+ * in-project callee the scan did not mine (a real gap -- one unmined contract
+ * was dragging down three specs across two layers) and a call OUTSIDE the
+ * corpus boundary by nature (a JDK/library method such as a StringBuilder
+ * append or a Class check, or a chain-break `?#name(?)` whose method name no
+ * corpus contract carries). The latter will never have a contract, so warning
+ * on it is noise that costs real quality points; it is now rendered as an
+ * external call and NOT warned.
+ */
+export type UnresolvedTargetClass = 'outside_corpus' | 'in_project_unmined';
+
+const OUTSIDE_CORPUS_PREFIXES = [
+  'java.', 'javax.', 'jakarta.', 'kotlin.', 'scala.', 'sun.', 'jdk.',
+  'org.springframework.', 'org.slf4j.', 'org.apache.', 'org.hibernate.', 'org.junit.',
+  'com.google.', 'com.fasterxml.', 'lombok.', 'io.micrometer.', 'org.aspectj.', 'reactor.',
+];
+
+export function classifyUnresolvedTarget(
+  targetSymbol: string,
+  corpusByKey?: ReadonlyMap<string, SclContractDto>
+): UnresolvedTargetClass {
+  const hash = targetSymbol.indexOf('#');
+  const cls = hash >= 0 ? targetSymbol.slice(0, hash) : targetSymbol;
+  const method = hash >= 0 ? targetSymbol.slice(hash + 1).replace(/\(.*$/, '') : '';
+  if (OUTSIDE_CORPUS_PREFIXES.some((p) => cls.startsWith(p))) return 'outside_corpus';
+  if (cls === '?' || cls === '') {
+    // Unknown receiver (chain break). In-project only if SOME corpus contract
+    // carries a method of that name; otherwise nothing in the scan could ever
+    // have resolved it and it is treated as external.
+    if (!corpusByKey || !method) return 'outside_corpus';
+    for (const c of corpusByKey.values()) {
+      const sym = asString(bodyOf(c).symbol) ?? c.source_symbol ?? '';
+      if (sym.includes(`#${method}(`)) return 'in_project_unmined';
+    }
+    return 'outside_corpus';
+  }
+  return 'in_project_unmined';
+}
+
 interface RenderState {
   warnings: Array<Record<string, unknown>>;
   /** Key -> contract for the whole corpus (2026-09-03); empty = legacy bare keys. */
@@ -458,16 +501,22 @@ function renderOutcome(
       );
     }
     if (!targetKey) {
+      if (classifyUnresolvedTarget(targetSymbol, state.corpusByKey) === 'outside_corpus') {
+        // A JDK/library call, or a chain break no corpus contract could ever
+        // resolve: outside the corpus boundary by nature. Rendered, not warned.
+        return `call → (external — outside the corpus boundary, no contract by design) ${targetSymbol}${argsSuffix}`;
+      }
       state.warnings.push({
         code: 'UNRESOLVED_REFERENCE',
         contractKey,
         targetSymbol,
         message:
           `Behaviour table ${contractKey} delegates to '${targetSymbol}' but the callee ` +
-          `has no contract key in the corpus (targetKey null) — the row is carried with ` +
-          `an UNRESOLVED marker; verify against the reachability report.`,
+          `has no contract key in the corpus (targetKey null) — an IN-PROJECT callee the ` +
+          `scan did not mine; the row is carried with an UNRESOLVED marker. Re-scan with ` +
+          `that source in scope, or verify against the reachability report.`,
       });
-      return `call → (UNRESOLVED — no corpus contract) ${targetSymbol}${argsSuffix}`;
+      return `call → (UNRESOLVED — in-project callee with no corpus contract) ${targetSymbol}${argsSuffix}`;
     }
     return `call → [${targetKey}] ${targetSymbol}${argsSuffix}`;
   }
