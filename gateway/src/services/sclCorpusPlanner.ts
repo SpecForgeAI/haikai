@@ -65,6 +65,16 @@ export interface SclPlannedStory {
   contractKeys: string[];
   /** Total behaviour-table rows carried by this story (0 for shape layers). */
   rowCount: number;
+  /**
+   * Predicted rendered size of this story's spec in characters (2026-09-10):
+   * verbatim character volume of the carried contracts plus per-row/op/field
+   * overhead. The SIZE budget splits on this; the row/operation budget stays
+   * as the secondary guard (see `DEFAULT_SCL_STORY_SIZE_BUDGET_CHARS`).
+   */
+  predictedChars?: number;
+  /** Dominant package of the carried contracts (2026-09-10): the cluster key the
+   *  expansion promotes to a feature for the cross-cutting fragments layer. */
+  clusterKey?: string;
   /** ['scl', 'scl:foundation:<layer>' | 'scl:endpoint:external|internal']. */
   tags: string[];
   /** Declaring legacy controller class (endpoint groups only). */
@@ -138,6 +148,10 @@ export interface SclCorpusPlanStats {
    * visible before an implementer discovers it as a NOT CAPTURED throw.
    */
   unimplementableContracts?: string[];
+  /** The rendered-size budget applied alongside the row/operation budget (2026-09-10). */
+  sizeBudgetChars?: number;
+  /** Stories whose PREDICTED rendered size still exceeds the size budget (unsplittable single unit). */
+  overSizeStories?: string[];
 }
 
 export interface SclCorpusPlan {
@@ -561,6 +575,7 @@ function buildEndpointGroups(args: {
   resolve: (ref: string) => SclContractDto | undefined;
   kind: 'external' | 'internal';
   rowBudget: number;
+  sizeBudgetChars?: number;
   onSplit: () => void;
   onController: () => void;
 }): SclPlannedStory[] {
@@ -589,7 +604,9 @@ function buildEndpointGroups(args: {
       };
     });
     const total = costs.reduce((sum, c) => sum + c.ownRows + c.residueRows, 0);
-    if (total <= rowBudget) {
+    const sizeBudget = args.sizeBudgetChars ?? Number.POSITIVE_INFINITY;
+    const totalChars = costs.reduce((sum, c) => sum + predictedRenderedChars(c.contract), 0);
+    if (total <= rowBudget && totalChars <= sizeBudget) {
       stories.push(endpointGroupStory({ cls, kind, slice: costs, part: null }));
       continue;
     }
@@ -600,15 +617,24 @@ function buildEndpointGroups(args: {
     const slices: MethodCost[][] = [];
     let current: MethodCost[] = [];
     let currentRows = 0;
+    let currentChars = 0;
     for (const cost of costs) {
       const methodRows = cost.ownRows + cost.residueRows;
-      if (current.length > 0 && currentRows + methodRows > rowBudget) {
+      // Size term counts the endpoint method's OWN contract; vertical residue is
+      // small by construction (fan_in < 2 helpers) and stays on the row term.
+      const methodChars = predictedRenderedChars(cost.contract);
+      if (
+        current.length > 0 &&
+        (currentRows + methodRows > rowBudget || currentChars + methodChars > sizeBudget)
+      ) {
         slices.push(current);
         current = [];
         currentRows = 0;
+        currentChars = 0;
       }
       current.push(cost);
       currentRows += methodRows;
+      currentChars += methodChars;
     }
     if (current.length > 0) slices.push(current);
     slices.forEach((slice, i) =>
@@ -777,6 +803,78 @@ export function topologicalContractOrder(
  * unbounded.</p>
  */
 /**
+ * Rendered-SIZE budget (2026-09-10). One row budget of 40 governed all six
+ * layers while rendered specs varied 17K..80K chars -- a 4.6x spread the
+ * budget could not see, because row counts are wildly uneven per symbol (one
+ * provider method carried 39 rows; eight domain accessors carried 8 rows
+ * between them). Cost is now ALSO a function of what actually lands in the
+ * spec: verbatim character volume plus per-unit rendering overhead. The
+ * default band is calibrated on the two proven-implementable data-access
+ * parts (~62-66K chars, both built and passed); the row/operation budget is
+ * KEPT as the secondary guard -- it is what protects data-access, where every
+ * operation renders a verbatim SQL block (MECH-05), and dropping it would
+ * recreate the single 85K spec that budget was built to break up.
+ */
+export const DEFAULT_SCL_STORY_SIZE_BUDGET_CHARS = 55_000;
+
+const RENDER_OVERHEAD_PER_ROW = 80;
+const RENDER_OVERHEAD_PER_OPERATION = 120;
+const RENDER_OVERHEAD_PER_FIELD = 60;
+const RENDER_OVERHEAD_PER_CONTRACT = 400;
+
+function verbatimLen(value: unknown): number {
+  return typeof value === 'string' ? value.length : 0;
+}
+
+/** Predicted rendered characters for ONE contract's section of a spec. */
+export function predictedRenderedChars(contract: SclContractDto): number {
+  const body = bodyOf(contract) as Record<string, unknown>;
+  let chars = RENDER_OVERHEAD_PER_CONTRACT;
+  if (isBoundary(contract)) {
+    const ops = Array.isArray(body.operations) ? body.operations : [];
+    for (const raw of ops) {
+      const op = (raw ?? {}) as Record<string, unknown>;
+      chars += RENDER_OVERHEAD_PER_OPERATION + verbatimLen(op.sqlVerbatim ?? op.sql);
+    }
+    return chars;
+  }
+  if (contract.kind === 'shape') {
+    const fields = Array.isArray(body.fields) ? body.fields : [];
+    return chars + fields.length * RENDER_OVERHEAD_PER_FIELD;
+  }
+  const rows = Array.isArray(body.rows) ? body.rows : [];
+  for (const raw of rows) {
+    const row = (raw ?? {}) as Record<string, unknown>;
+    const outcome = (row.outcome ?? {}) as Record<string, unknown>;
+    chars +=
+      RENDER_OVERHEAD_PER_ROW +
+      verbatimLen(row.conditionVerbatim) +
+      verbatimLen(outcome.verbatim) +
+      verbatimLen(outcome.targetSymbol) +
+      verbatimLen(outcome.outcomeLabel);
+  }
+  return chars;
+}
+
+/** Dominant package of a slice (most contracts; tie -> alphabetical). */
+function dominantPackage(contracts: SclContractDto[]): string | undefined {
+  const counts = new Map<string, number>();
+  for (const c of contracts) {
+    const pkg = packageOf(c);
+    counts.set(pkg, (counts.get(pkg) ?? 0) + 1);
+  }
+  let best: string | undefined;
+  let bestCount = -1;
+  for (const [pkg, count] of [...counts.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+    if (count > bestCount) {
+      best = pkg;
+      bestCount = count;
+    }
+  }
+  return best && best.length > 0 ? best : undefined;
+}
+
+/**
  * A contract with a signature and NOTHING to build from (2026-09-09).
  *
  * Live shape: a data-access contract whose own gloss said "the boundary
@@ -844,6 +942,8 @@ function planFoundationLayer(args: {
   contracts: SclContractDto[];
   countRows: boolean;
   rowBudget: number;
+  /** Rendered-size budget in chars (2026-09-10); omitted = no size term (tests of the row rule). */
+  sizeBudgetChars?: number;
   onSplit: () => void;
   /**
    * Intra-corpus dependency edges (2026-09-07). When supplied, the layer is
@@ -880,24 +980,34 @@ function planFoundationLayer(args: {
             : ''),
     contractKeys: slice.map(keyOf),
     rowCount: args.countRows ? slice.reduce((sum, c) => sum + rowCountOf(c), 0) : 0,
+    predictedChars: slice.reduce((sum, c) => sum + predictedRenderedChars(c), 0),
+    clusterKey: dominantPackage(slice),
     tags: ['scl', `scl:foundation:${args.layer}`],
   });
 
-  if (total <= args.rowBudget) return [mk(sorted, null, 1)];
+  const sizeBudget = args.sizeBudgetChars ?? Number.POSITIVE_INFINITY;
+  const totalChars = sorted.reduce((sum, c) => sum + predictedRenderedChars(c), 0);
+  if (total <= args.rowBudget && totalChars <= sizeBudget) return [mk(sorted, null, 1)];
 
   args.onSplit();
   const slices: SclContractDto[][] = [];
   let current: SclContractDto[] = [];
   let currentCost = 0;
+  let currentChars = 0;
   for (const contract of sorted) {
     const cost = contractCostOf(contract);
-    if (current.length > 0 && currentCost + cost > args.rowBudget) {
+    const chars = predictedRenderedChars(contract);
+    // Either budget trips a split: the size term is the primary shape of a
+    // part; the row/operation term is the secondary guard (MECH-05).
+    if (current.length > 0 && (currentCost + cost > args.rowBudget || currentChars + chars > sizeBudget)) {
       slices.push(current);
       current = [];
       currentCost = 0;
+      currentChars = 0;
     }
     current.push(contract);
     currentCost += cost;
+    currentChars += chars;
   }
   if (current.length > 0) slices.push(current);
   return slices.map((slice, i) => mk(slice, i + 1, slices.length));
@@ -940,13 +1050,18 @@ export function foundationForwardReferences(
  */
 export function deriveCorpusPlan(
   contracts: SclContractDto[],
-  options?: { rowBudget?: number }
+  options?: { rowBudget?: number; sizeBudgetChars?: number }
 ): SclCorpusPlan {
   const rawBudget = options?.rowBudget;
   const rowBudget =
     typeof rawBudget === 'number' && Number.isFinite(rawBudget) && Math.floor(rawBudget) >= 1
       ? Math.floor(rawBudget)
       : DEFAULT_SCL_STORY_ROW_BUDGET;
+  const rawSize = options?.sizeBudgetChars;
+  const sizeBudgetChars =
+    typeof rawSize === 'number' && Number.isFinite(rawSize) && Math.floor(rawSize) >= 1000
+      ? Math.floor(rawSize)
+      : DEFAULT_SCL_STORY_SIZE_BUDGET_CHARS;
 
   const boundaries = contracts.filter(isBoundary);
   const shapes = contracts.filter((c) => !isBoundary(c) && c.kind === 'shape');
@@ -1052,6 +1167,7 @@ export function deriveCorpusPlan(
         countRows: false,
         rowBudget,
         onSplit: onFoundationSplit,
+        sizeBudgetChars,
         deps: contractDeps,
         onCycle,
       })
@@ -1072,6 +1188,7 @@ export function deriveCorpusPlan(
         countRows: false,
         rowBudget,
         onSplit: onFoundationSplit,
+        sizeBudgetChars,
         deps: contractDeps,
         onCycle,
       })
@@ -1104,6 +1221,7 @@ export function deriveCorpusPlan(
         countRows: true,
         rowBudget,
         onSplit: onFoundationSplit,
+        sizeBudgetChars,
         deps: contractDeps,
         onCycle,
       })
@@ -1122,6 +1240,7 @@ export function deriveCorpusPlan(
         countRows: false,
         rowBudget,
         onSplit: onFoundationSplit,
+        sizeBudgetChars,
         deps: contractDeps,
         onCycle,
       })
@@ -1144,6 +1263,7 @@ export function deriveCorpusPlan(
         countRows: true,
         rowBudget,
         onSplit: onFoundationSplit,
+        sizeBudgetChars,
         deps: contractDeps,
         onCycle,
       })
@@ -1163,6 +1283,7 @@ export function deriveCorpusPlan(
         countRows: false,
         rowBudget,
         onSplit: onFoundationSplit,
+        sizeBudgetChars,
         deps: contractDeps,
         onCycle,
       })
@@ -1186,6 +1307,7 @@ export function deriveCorpusPlan(
     splitCount: 0,
     foundationSplitCount,
     rowBudget,
+    sizeBudgetChars,
     constantsEvicted: evictedFromConstants,
     dependencyCycles,
     forwardReferences: foundationForwardReferences(foundationStories, contractDeps),
@@ -1206,6 +1328,7 @@ export function deriveCorpusPlan(
     resolve,
     kind: 'external',
     rowBudget,
+    sizeBudgetChars,
     onSplit,
     onController,
   });
@@ -1214,6 +1337,7 @@ export function deriveCorpusPlan(
     resolve,
     kind: 'internal',
     rowBudget,
+    sizeBudgetChars,
     onSplit,
     onController,
   });
@@ -1234,6 +1358,9 @@ export function deriveCorpusPlan(
   // endpoint groups AND foundation layers alike; anything still over budget
   // is named rather than silently accepted.
   stats.clusteringRule = 'row_budget';
+  stats.overSizeStories = [...planned.foundationStories, ...planned.externalEndpointGroups, ...planned.internalEndpointGroups]
+    .filter((s) => (s.predictedChars ?? 0) > sizeBudgetChars)
+    .map((s) => s.title);
   stats.overBudgetStories = [
     ...planned.externalEndpointGroups,
     ...planned.internalEndpointGroups,

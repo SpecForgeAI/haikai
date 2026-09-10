@@ -262,6 +262,8 @@ describe('deriveCorpusPlan — endpoint groups', () => {
       dependencyCycles: [],
       forwardReferences: [],
       unimplementableContracts: [], // every fixture contract has rows, SQL, or fields
+      sizeBudgetChars: 55_000, // rendered-size budget (2026-09-10); fixture specs are far under it
+      overSizeStories: [],
     });
   });
 });

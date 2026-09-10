@@ -15,6 +15,7 @@ import {
   buildContractDependencies,
   contractIsUnimplementable,
   deriveCorpusPlan,
+  predictedRenderedChars,
   foundationForwardReferences,
   SclContractDto,
   SclPlannedStory,
@@ -259,5 +260,68 @@ describe('package as the ordering key within a topological level (2026-09-10)', 
     ];
     const ordered = topologicalContractOrder(contracts, buildContractDependencies(contracts));
     expect(ordered.map((c) => c.contract_key)).toEqual(['S-ZA', 'S-AB']);
+  });
+});
+
+describe('packing outcome: package is a soft boundary (2026-09-10)', () => {
+  function frag(key: string, symbol: string, rows: number): SclContractDto {
+    return table({ key, symbol, rows, fanIn: 2 });
+  }
+  it('small packages pack together into one coherent part; only the large package splits', () => {
+    const contracts = [
+      frag('T-SSO', 'com.app.sso.SsoInfo#load()', 10),
+      frag('T-UTIL', 'com.app.util.Dates#parse()', 16),
+      frag('T-DOM', 'com.app.domain.Attr#forValue()', 8),
+      frag('T-CRIT', 'com.app.criteria.Matcher#match()', 4),
+      frag('T-REQ', 'com.app.request.Ctx#of()', 4),
+      frag('T-CFG', 'com.app.config.Core#init()', 2),
+      frag('T-SVC1', 'com.app.zzzservices.Provider#a()', 20),
+      frag('T-SVC2', 'com.app.zzzservices.Provider#b()', 20),
+      frag('T-SVC3', 'com.app.zzzservices.Provider#c()', 20),
+    ];
+    const plan = deriveCorpusPlan(contracts, { rowBudget: 50 });
+    const parts = plan.foundationStories.filter((s) => s.layer === 'cross-cutting-fragments');
+    expect(parts[0].contractKeys.sort()).toEqual(['T-CFG', 'T-CRIT', 'T-DOM', 'T-REQ', 'T-SSO', 'T-UTIL']);
+    expect(parts.slice(1).flatMap((p) => p.contractKeys).sort()).toEqual(['T-SVC1', 'T-SVC2', 'T-SVC3']);
+    expect(parts[1].clusterKey).toBe('com.app.zzzservices');
+  });
+});
+
+describe('rendered-size budget (2026-09-10)', () => {
+  function heavyTable(key: string, symbol: string, rows: number, charsPerRow: number): SclContractDto {
+    const t = table({ key, symbol, rows, fanIn: 2 });
+    (t.body_json as { rows: Array<Record<string, unknown>> }).rows.forEach((r) => {
+      r.conditionVerbatim = 'x'.repeat(charsPerRow);
+    });
+    return t;
+  }
+  it('splits a layer whose rows fit the row budget but whose predicted size exceeds the size budget', () => {
+    const contracts = [
+      heavyTable('T-A', 'com.app.a.A#a()', 5, 6_000),
+      heavyTable('T-B', 'com.app.a.B#b()', 5, 6_000),
+      heavyTable('T-C', 'com.app.a.C#c()', 5, 6_000),
+    ];
+    expect(predictedRenderedChars(contracts[0])).toBeGreaterThan(30_000);
+    const plan = deriveCorpusPlan(contracts, { rowBudget: 40, sizeBudgetChars: 55_000 });
+    const parts = plan.foundationStories.filter((s) => s.layer === 'cross-cutting-fragments');
+    expect(parts.length).toBe(3);
+    expect(parts.every((p) => (p.predictedChars ?? 0) <= 55_000)).toBe(true);
+    expect(plan.stats.sizeBudgetChars).toBe(55_000);
+    expect(plan.stats.overSizeStories).toEqual([]);
+    const rowsOnly = deriveCorpusPlan(contracts, { rowBudget: 40, sizeBudgetChars: 10_000_000 });
+    expect(rowsOnly.foundationStories.filter((s) => s.layer === 'cross-cutting-fragments').length).toBe(1);
+  });
+
+  it('keeps the row/operation guard: a heavy data-access layer still splits by operations, and shapes still cost 1', () => {
+    const boundary = (key: string, ops: number): SclContractDto => ({
+      contract_key: key, kind: 'boundary', source_path: 'src/x.java', source_symbol: `com.app.Dao#${key}()`, fan_in: 1,
+      roots_json: { roots: [] },
+      body_json: { symbol: `com.app.Dao#${key}()`, operations: Array.from({ length: ops }, (_, i) => ({ name: `op${i}`, sqlVerbatim: 'select 1' })) },
+    });
+    const plan = deriveCorpusPlan([boundary('Q-1', 4), boundary('Q-2', 4), boundary('Q-3', 4)], { rowBudget: 5 });
+    expect(plan.foundationStories.filter((s) => s.layer === 'data-access').length).toBe(3);
+    const shapes = Array.from({ length: 20 }, (_, i) => shape({ key: `S-${i}`, symbol: `com.app.S${i}` }));
+    const shapePlan = deriveCorpusPlan(shapes, { rowBudget: 40 });
+    expect(shapePlan.foundationStories.filter((s) => s.layer === 'dto-shapes').length).toBe(1);
   });
 });

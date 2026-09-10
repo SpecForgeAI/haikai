@@ -62,3 +62,35 @@ describe('buildCorpusFoundationItems identity', () => {
     expect(new Set(after.map((i) => i.id)).size).toBe(after.length);
   });
 });
+
+describe('cluster features for the fragments layer (2026-09-10)', () => {
+  it('promotes multi-part fragments into content-derived cluster features; other layers stay under the main feature', () => {
+    const items = buildCorpusFoundationItems({
+      epic: EPIC, stream: 'api_migration', startSequence: 0,
+      plan: plan([
+        planned('dto-shapes', 'DTO & domain shapes'),
+        { ...planned('cross-cutting-fragments', 'Cross-cutting shared fragments (part 1)'), clusterKey: 'com.app.services' },
+        { ...planned('cross-cutting-fragments', 'Cross-cutting shared fragments (part 2)'), clusterKey: 'com.app.services' },
+        { ...planned('cross-cutting-fragments', 'Cross-cutting shared fragments (part 3)'), clusterKey: 'com.app.factory' },
+      ]),
+    });
+    const features = items.filter((i) => i.type === 'feature');
+    expect(features.map((f) => f.id)).toEqual([
+      'api:E1-corpus-foundations',
+      'api:E1-corpus-foundations-com-app-services',
+      'api:E1-corpus-foundations-com-app-factory',
+    ]);
+    const byTitle = new Map(items.filter((i) => i.type === 'story').map((s) => [s.title, s.parentId]));
+    expect(byTitle.get('DTO & domain shapes')).toBe('api:E1-corpus-foundations');
+    expect(byTitle.get('Cross-cutting shared fragments (part 1)')).toBe('api:E1-corpus-foundations-com-app-services');
+    expect(byTitle.get('Cross-cutting shared fragments (part 3)')).toBe('api:E1-corpus-foundations-com-app-factory');
+  });
+
+  it('a single fragments story is NOT promoted (no cluster of one)', () => {
+    const items = buildCorpusFoundationItems({
+      epic: EPIC, stream: 'api_migration', startSequence: 0,
+      plan: plan([{ ...planned('cross-cutting-fragments', 'Cross-cutting shared fragments'), clusterKey: 'com.app.services' }]),
+    });
+    expect(items.filter((i) => i.type === 'feature')).toHaveLength(1);
+  });
+});

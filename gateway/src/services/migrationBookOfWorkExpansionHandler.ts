@@ -2197,12 +2197,55 @@ export function buildCorpusFoundationItems(args: {
   );
 
   const seenIds = new Set<string>();
+  // Cluster features (2026-09-10). A single "Corpus-derived foundations"
+  // feature carrying 44 stories is unreadable in the book, and "part 17 of
+  // 31" never reads as a considered decision. The cross-cutting fragments
+  // layer -- the only layer that grows into dozens of parts -- is promoted
+  // into one sub-feature per dominant package cluster (the planner's
+  // `clusterKey`), so "16 specs for the provider cluster" is legible. Only
+  // when the layer has more than one part: a single fragments story does not
+  // need a cluster of its own. Feature ids are content-derived
+  // (`<feature>-<cluster-slug>`) for the same reason story ids are (a
+  // reorder must not move identities). Presentation and traceability only:
+  // no story content changes.
+  const fragmentStories = plan.foundationStories.filter((s) => s.layer === 'cross-cutting-fragments');
+  const clusterFeaturesEnabled = fragmentStories.length > 1;
+  const clusterFeatureIds = new Map<string, string>();
+  const clusterFeatureFor = (planned: SclPlannedStory): string => {
+    if (!clusterFeaturesEnabled || planned.layer !== 'cross-cutting-fragments' || !planned.clusterKey) {
+      return featureId;
+    }
+    const slug = planned.clusterKey.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    const existing = clusterFeatureIds.get(slug);
+    if (existing) return existing;
+    const id = `${featureId}-${slug}`;
+    clusterFeatureIds.set(slug, id);
+    items.push(
+      corpusItem({
+        id,
+        type: 'feature',
+        parentId: featureId,
+        title: `${CORPUS_FOUNDATIONS_FEATURE_TITLE} — ${planned.clusterKey}`,
+        description:
+          `Cross-cutting shared fragments whose dominant package is \`${planned.clusterKey}\`. ` +
+          `A named cluster of the corpus foundations, promoted from the fragments layer so the ` +
+          `book reads as decisions rather than numbered parts.`,
+        workstream: ws,
+        sequenceOrder: ++seq,
+        tags: [CODE_PROVENANCE_TAG, `stream:${stream}`, SCL_CORPUS_PROVENANCE_TAG, 'scl', 'scl:cluster'],
+        recommendedNextAction: 'Generate the focused shape-spec for each fragment story in this cluster, in order.',
+        traceabilitySummary: 'Derived deterministically from the SCL corpus (dominant package of the carried contracts).',
+        extras: { codeFeatureKind: 'corpus-foundations-cluster', scl_cluster_key: planned.clusterKey },
+      })
+    );
+    return id;
+  };
   plan.foundationStories.forEach((planned, i) => {
     items.push(
       corpusItem({
         id: uniqueCorpusStoryId(corpusStoryId(featureId, planned), seenIds, i + 1),
         type: 'story',
-        parentId: featureId,
+        parentId: clusterFeatureFor(planned),
         title: planned.title,
         description: planned.description,
         workstream: ws,
@@ -2219,6 +2262,8 @@ export function buildCorpusFoundationItems(args: {
           scl_contract_keys: planned.contractKeys,
           scl_boundary_keys: planned.boundaryKeys ?? [],
           scl_row_count: planned.rowCount,
+          scl_predicted_chars: planned.predictedChars ?? null,
+          scl_cluster_key: planned.clusterKey ?? null,
         },
       })
     );
@@ -2400,6 +2445,8 @@ export function buildCorpusEndpointGroupItems(args: {
               scl_contract_keys: planned.contractKeys,
               scl_boundary_keys: planned.boundaryKeys ?? [],
               scl_row_count: planned.rowCount,
+          scl_predicted_chars: planned.predictedChars ?? null,
+          scl_cluster_key: planned.clusterKey ?? null,
               scl_controller_class: controller,
               scl_declared_routes: (planned.httpRoutes ?? []).map(
                 (r) => `${r.verb ?? 'ANY'} ${r.path ?? '(no path)'}`
