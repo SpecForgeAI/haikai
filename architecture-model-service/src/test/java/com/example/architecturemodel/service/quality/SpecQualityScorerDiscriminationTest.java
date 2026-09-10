@@ -211,4 +211,36 @@ class SpecQualityScorerDiscriminationTest {
         SpecQualityScorer.Output asLlm = scorer.score(input(CODE_SPEC_HEALTHY, SpecArchetype.LLM_SHAPE));
         assertThat(dim(asLlm, SpecQualityScorer.DIMENSION_COMPLETENESS)).isLessThan(50);
     }
+
+    @Test
+    @DisplayName("the tool's own template acceptance criteria are measurable (2026-09-10): the reworded shipped-suite sentences score high, the old one-signal sentence scored low")
+    void templateAcceptanceCriteriaAreMeasurable() {
+        String head = String.join("\n",
+            "# Implement OrdersController (1 endpoints)",
+            "",
+            "## Behaviour",
+            "",
+            "| # | condition | outcome |",
+            "|---|-----------|---------|",
+            "| 0 | `id == null` | throws `IllegalArgumentException` |",
+            "");
+        String newAcs = String.join("\n",
+            "## Acceptance criteria",
+            "",
+            "1. The shipped test suite (committed to this branch BEFORE implementation) is GREEN: the repository's test runner MUST exit 0 and its reports MUST show 0 failures, 0 errors and 0 wholly-skipped test classes (skipped is not passed).",
+            "2. NO shipped test file was modified: `git diff` over the shipped file set MUST report 0 changed lines. A test you believe is wrong must be CONTESTED — never edited.",
+            "");
+        String oldAcs = String.join("\n",
+            "## Acceptance criteria",
+            "",
+            "1. The shipped test suite (committed to this branch BEFORE implementation) is GREEN.",
+            "2. NO shipped test file was modified. A test you believe is wrong must be CONTESTED — never edited.",
+            "");
+        SpecQualityScorer.Output reworded = scorer.score(input(head + newAcs, SpecArchetype.SCL_CARRIAGE));
+        SpecQualityScorer.Output old = scorer.score(input(head + oldAcs, SpecArchetype.SCL_CARRIAGE));
+        assertThat(dim(reworded, SpecQualityScorer.DIMENSION_AC_MEASURABILITY)).isGreaterThanOrEqualTo(75);
+        assertThat(dim(old, SpecQualityScorer.DIMENSION_AC_MEASURABILITY))
+            .isLessThan(dim(reworded, SpecQualityScorer.DIMENSION_AC_MEASURABILITY));
+    }
+
 }

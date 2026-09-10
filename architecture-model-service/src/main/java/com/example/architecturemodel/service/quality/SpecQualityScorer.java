@@ -334,8 +334,11 @@ public class SpecQualityScorer {
      */
     private static final Pattern AC_NAMED_ENTITY = Pattern.compile(
         "(?:`[^`]+`|\\b[A-Z][a-zA-Z0-9]{2,}\\b|\\b[a-z]+(?:[A-Z][a-zA-Z0-9]+)+\\b)");
+    // 2026-09-10: verbs the tool's own template criteria use ("passes",
+    // "exits 0", "reports 0 changed lines") joined the list; before that the
+    // fixed shipped-suite sentence scored one signal in four on every spec.
     private static final Pattern AC_MEASURABLE_VERB = Pattern.compile(
-        "\\b(validates|asserts|equals|contains|matches|throws|emits)\\b",
+        "\\b(validates|asserts|equals|contains|matches|throws|emits|passes|fails|exits|reports|remains|survives)\\b",
         Pattern.CASE_INSENSITIVE);
 
     // -----------------------------------------------------------------------

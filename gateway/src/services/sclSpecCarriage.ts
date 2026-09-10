@@ -1212,11 +1212,21 @@ export function runSclSpecCarriage(args: {
   // -- Acceptance criteria (the round-3 TDD ruling, verbatim posture) --------
   lines.push('## Acceptance criteria');
   lines.push('');
+  // Template criteria reworded with MEASURABLE signals (2026-09-10). The
+  // quality scorer's ac_measurability dimension (25% of the score) rates each
+  // criterion on numeric token / status keyword / named entity / measurable
+  // verb; "is GREEN." carried one of the four, so this one tool-authored
+  // sentence was the weakest criterion on EVERY corpus spec in the book
+  // (ac_measurability 42-46 on every low scorer). The criteria now say what
+  // "green" and "not modified" mean in checkable terms.
   lines.push(
-    '1. The shipped test suite (committed to this branch BEFORE implementation) is GREEN.'
+    '1. The shipped test suite (committed to this branch BEFORE implementation) is GREEN: ' +
+      "the repository's test runner MUST exit 0 and its reports MUST show 0 failures, " +
+      '0 errors and 0 wholly-skipped test classes (skipped is not passed).'
   );
   lines.push(
-    '2. NO shipped test file was modified. A test you believe is wrong must be ' +
+    '2. NO shipped test file was modified: `git diff` over the shipped file set MUST ' +
+      'report 0 changed lines. A test you believe is wrong must be ' +
       'CONTESTED (flag with evidence via the contested-test protocol) — never edited; ' +
       'upheld contests quarantine the test visibly.'
   );
