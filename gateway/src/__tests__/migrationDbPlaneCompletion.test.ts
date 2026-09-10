@@ -10,6 +10,15 @@
 jest.mock('../services/logger', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
+// Spec 5 (proc behaviour program): the final-plane findings leg reads the
+// graduated gate; its matrix lives in its own suite — here it is a controllable
+// stub (default: nothing to report).
+jest.mock('../services/migrationProcParityGate', () => ({
+  evaluateProcParityReadiness: jest.fn().mockResolvedValue({
+    ok: true, reasons: [], warnings: [], counts: {}, findings: [], states: [],
+  }),
+}));
+import { evaluateProcParityReadiness } from '../services/migrationProcParityGate';
 
 import {
   createDbPlaneCompletionRunner,
@@ -72,6 +81,7 @@ function driverDeps(run: MigrationExecutionRun): MigrationDriverDeps {
     patchMigrationExecutionRun: jest.fn().mockResolvedValue({}),
     patchMigrationExecutionRunItem: jest.fn().mockResolvedValue({}),
     triggerDataParityReconcile: jest.fn().mockResolvedValue(undefined),
+    triggerProcParityReconcile: jest.fn().mockResolvedValue(undefined),
   } as unknown as MigrationDriverDeps;
 }
 
@@ -329,5 +339,71 @@ describe('defaultApplySchema response integrity (2026-08-01)', () => {
 
     const result = await defaultApplySchema(args as never);
     expect(result).toEqual({ ok: true, applied: 3, skipped: 1 });
+  });
+});
+
+// ----------------------------------------------------------------------------
+// Spec 5 (Stored Proc & Function Behaviour Program, 2026-09-09): step 6 —
+// the proc-parity re-check fires after data parity (fail-open), and on the
+// FINAL plane the run completes DEPLOYED with a `proc_parity_findings`
+// decision-log entry when routines are not reconciled (never a block).
+// ----------------------------------------------------------------------------
+describe('createDbPlaneCompletionRunner — proc parity (Spec 5)', () => {
+  it('fires the proc-parity re-check once, after the data-parity reconcile, and a failure never halts the chain', async () => {
+    const run = makeRun();
+    const deps = driverDeps(run);
+    (deps.triggerProcParityReconcile as jest.Mock).mockRejectedValueOnce(new Error('amvs down'));
+    const { subDeps } = wiring();
+
+    await createDbPlaneCompletionRunner(subDeps)(scope, run, run.items![1], deps);
+
+    expect(deps.triggerProcParityReconcile).toHaveBeenCalledTimes(1);
+    const dataOrder = (deps.triggerDataParityReconcile as jest.Mock).mock.invocationCallOrder[0];
+    const procOrder = (deps.triggerProcParityReconcile as jest.Mock).mock.invocationCallOrder[0];
+    expect(procOrder).toBeGreaterThan(dataOrder);
+    expect(runPatches(deps)).toContainEqual({ status: RUN_STATUS.DEPLOYED });
+    expect(runPatches(deps)).not.toContainEqual({ status: RUN_STATUS.HALTED });
+  });
+
+  it('final plane with findings: DEPLOYED plus a proc_parity_findings decision-log entry listing the routines', async () => {
+    (evaluateProcParityReadiness as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      reasons: [],
+      warnings: ['2 stored routine(s) divergent (dbo.fn_ledger_total, dbo.sp_archive_old) — recorded as findings on the run; nothing blocks.'],
+      counts: { routines: 3, reconciled: 1, divergent: 2 },
+      findings: [
+        { routine: 'dbo.fn_ledger_total', state: 'divergent', detail: 'workbench loop exhausted', dependent: false },
+        { routine: 'dbo.sp_archive_old', state: 'divergent', detail: 'parity execution report divergent', dependent: false },
+      ],
+      states: [],
+    });
+    const run = makeRun({ decision_log_json: [{ type: 'earlier', at: 'x' }] });
+    const deps = driverDeps(run);
+    const { subDeps } = wiring();
+
+    await createDbPlaneCompletionRunner(subDeps)(scope, run, run.items![1], deps);
+
+    expect(evaluateProcParityReadiness).toHaveBeenCalledWith(expect.objectContaining({ architectureId: 'arch-1', nextPlane: null }));
+    const findingsPatch = runPatches(deps).find((p) => Array.isArray(p.decision_log_json));
+    expect(findingsPatch).toBeTruthy();
+    const log = findingsPatch!.decision_log_json as Array<Record<string, unknown>>;
+    expect(log[0]).toEqual({ type: 'earlier', at: 'x' });
+    expect(log[1]).toMatchObject({ type: 'proc_parity_findings', routines: [expect.objectContaining({ routine: 'dbo.fn_ledger_total' }), expect.objectContaining({ routine: 'dbo.sp_archive_old' })] });
+    expect(runPatches(deps)).toContainEqual({ status: RUN_STATUS.DEPLOYED });
+  });
+
+  it('a paused run (pending later plane) records no findings entry — the gate runs at the plane boundary instead', async () => {
+    (evaluateProcParityReadiness as jest.Mock).mockClear();
+    const run = makeRun({
+      items: [
+        ...makeRun().items!,
+        { id: 'ri-2', run_id: 'run-abc123', sequence_position: 2, spec_name: 'svc', status: RUN_ITEM_STATUS.PENDING, job_id: null, deploy_on_complete: true } as MigrationExecutionRunItem,
+      ],
+    });
+    const deps = driverDeps(run);
+    const { subDeps } = wiring();
+    await createDbPlaneCompletionRunner(subDeps)(scope, run, run.items![1], deps);
+    expect(evaluateProcParityReadiness).not.toHaveBeenCalled();
+    expect(runPatches(deps)).toContainEqual({ status: RUN_STATUS.AWAITING_APPROVAL });
   });
 });

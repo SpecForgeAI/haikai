@@ -58,6 +58,7 @@ import type { MigrateScope, MigrationDriverDeps } from './migrationExecutionDriv
 // Long-running DB-plane wiring (2026-08-10): 6h cap + undici agent with
 // per-request timeouts disabled — a bare fetch dies at 300s (headersTimeout).
 import { longRunningPostJson } from './longRunningFetch';
+import { evaluateProcParityReadiness } from './migrationProcParityGate';
 
 const trace = createTracer('gateway');
 
@@ -511,7 +512,24 @@ export function createDbPlaneCompletionRunner(subDeps: DbPlaneCompletionSubDeps 
         });
       }
 
-      // ---- 6. finalize --------------------------------------------------
+      // ---- 6. proc parity re-check (Spec 5; report is the outcome) ------
+      phase = 'proc-parity';
+      const procReconcile = deps.triggerProcParityReconcile;
+      if (procReconcile) {
+        await procReconcile(scope, runId, deps).catch((error: unknown) => {
+          logger.error('[diag-gateway] db_plane_completion proc_parity_failed', {
+            projectId,
+            runId,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
+          trace.warn(
+            'proc-parity re-check errored — no execution report; the graduated gate reads the workbench verdicts instead',
+            corr
+          );
+        });
+      }
+
+      // ---- 7. finalize --------------------------------------------------
       phase = 'finalize';
       const fresh = await deps.getMigrationExecutionRun(projectId, runId).catch(() => null);
       const items = fresh?.items ?? run.items ?? [];
@@ -533,6 +551,41 @@ export function createDbPlaneCompletionRunner(subDeps: DbPlaneCompletionSubDeps 
       const hasPendingLater = items.some(
         (i) => i.id !== itemId && i.status === RUN_ITEM_STATUS.PENDING
       );
+      // Spec 5 graduated gate, FINAL-plane leg: when nothing comes after the
+      // DB plane (a DB-only migration included) the run completes DEPLOYED and
+      // every non-reconciled routine is recorded as a FINDING on the run's
+      // decision log (`proc_parity_findings`) — never a block. (A dedicated
+      // `completed_with_findings` run status would re-block the next plane's
+      // precedence check and every status consumer, so the findings entry IS
+      // the with-findings marker.)
+      let findingsNote = '';
+      if (!hasPendingLater) {
+        const procGate = await evaluateProcParityReadiness({
+          projectId,
+          architectureId,
+          nextPlane: null,
+          reads: deps.procParityGateReads,
+        });
+        if (procGate.findings.length > 0) {
+          findingsNote = ` WITH FINDINGS — ${procGate.findings.length} stored routine(s) not reconciled`;
+          await safePatchRun(deps, projectId, runId, {
+            decision_log_json: [
+              ...(fresh?.decision_log_json ?? run.decision_log_json ?? []),
+              {
+                type: 'proc_parity_findings',
+                at: new Date().toISOString(),
+                routines: procGate.findings.map((f) => ({ routine: f.routine, state: f.state, detail: f.detail })),
+                counts: procGate.counts,
+                note:
+                  'DB plane completed with findings: these stored routines are not reconciled ' +
+                  '(divergent / unverified / not captured / not migrated). Nothing blocks — ' +
+                  'resolve them from the pack workbench (loop, guidance & retry, or waive with a reason).',
+              },
+            ],
+          });
+          for (const line of procGate.warnings) trace.warn(line, corr);
+        }
+      }
       await safePatchRun(deps, projectId, runId, {
         status: hasPendingLater ? RUN_STATUS.AWAITING_APPROVAL : RUN_STATUS.DEPLOYED,
       });
@@ -542,11 +595,12 @@ export function createDbPlaneCompletionRunner(subDeps: DbPlaneCompletionSubDeps 
         branch: assembledBranch,
         mrUrl,
         pausedForApproval: hasPendingLater,
+        procParityFindings: findingsNote.length > 0,
       });
       trace.ok(
         hasPendingLater
-          ? 'DB plane complete — run PAUSED for approval (review the parity report, then approve & continue)'
-          : 'DB plane complete — run DEPLOYED (review the parity report before starting the next stage)',
+          ? 'DB plane complete — run PAUSED for approval (review the parity reports, then approve & continue)'
+          : `DB plane complete — run DEPLOYED${findingsNote} (review the parity reports before starting the next stage)`,
         corr
       );
     } catch (error) {

@@ -62,6 +62,7 @@ class DbSurfaceInventoryServiceTest {
     @Mock private EndpointDataEffectRepository endpointDataEffectRepository;
     @Mock private DbMigrationPackRepository dbMigrationPackRepository;
     @Mock private DbMigrationPackTranslationRepository dbMigrationPackTranslationRepository;
+    @Mock private com.example.architecturemodel.repository.entity.DbRoutineRepository dbRoutineRepository;
 
     private DbSurfaceInventoryService service;
 
@@ -74,7 +75,12 @@ class DbSurfaceInventoryServiceTest {
             dataEntityPointRepository,
             endpointDataEffectRepository,
             dbMigrationPackRepository,
-            dbMigrationPackTranslationRepository);
+            dbMigrationPackTranslationRepository,
+            dbRoutineRepository);
+        // Spec 1 (2026-09-09): no routine catalog in these fixtures — the
+        // pre-catalog surface must be byte-identical.
+        when(dbRoutineRepository.findByArchitectureIdOrderBySchemaNameAscRoutineNameAsc(ARCH))
+            .thenReturn(java.util.List.of());
 
         ModelFileEntity modelFile = mock(ModelFileEntity.class);
         when(modelFile.getId()).thenReturn("mf-1");

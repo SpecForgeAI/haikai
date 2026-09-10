@@ -47,6 +47,14 @@ import java.util.UUID;
  * @param createdAt ISO-8601 creation timestamp.
  * @param translatedAt ISO-8601 timestamp of the last persisted draft (nullable).
  * @param reviewedAt ISO-8601 timestamp of the last review action (nullable).
+ * @param loopStatus Workbench loop state: {@code idle | queued | translating |
+ *     applying | reconciling | reconciled | exhausted | apply_failed |
+ *     unverified | stale | blocked_by_callee | dispositioned} (changeset 231).
+ * @param currentAttemptNo Attempt the loop is currently on; 0 = never attempted.
+ * @param bestAttemptNo On exhaustion, the attempt with the fewest failing scenarios.
+ * @param verdictJson Rolled-up loop verdict for the row.
+ * @param parityReportId {@code proc_parity_reports.id} backing the current verdict.
+ * @param staleReason Why the row went stale.
  */
 public record DbMigrationPackTranslationDto(
     @JsonProperty("id")
@@ -85,6 +93,9 @@ public record DbMigrationPackTranslationDto(
     @JsonProperty("legacy_redacted")
     Boolean legacyRedacted,
 
+    @JsonProperty("routine_id")
+    UUID routineId,
+
     @JsonProperty("draft_content")
     String draftContent,
 
@@ -104,5 +115,28 @@ public record DbMigrationPackTranslationDto(
     String translatedAt,
 
     @JsonProperty("reviewed_at")
-    String reviewedAt
+    String reviewedAt,
+
+    // --- Workbench loop (changeset 231, Spec 4, 2026-09-09) -----------------
+    // Appended at the END of the record so every existing positional
+    // construction keeps its prefix; loop fields ride the same sparse
+    // upsert/PATCH discipline as the rest.
+
+    @JsonProperty("loop_status")
+    String loopStatus,
+
+    @JsonProperty("current_attempt_no")
+    Integer currentAttemptNo,
+
+    @JsonProperty("best_attempt_no")
+    Integer bestAttemptNo,
+
+    @JsonProperty("verdict_json")
+    Map<String, Object> verdictJson,
+
+    @JsonProperty("parity_report_id")
+    UUID parityReportId,
+
+    @JsonProperty("stale_reason")
+    String staleReason
 ) {}

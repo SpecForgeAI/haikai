@@ -915,6 +915,30 @@ export const DiscoveryRunDetailPage: React.FC = () => {
     };
   })();
 
+  // Routine catalog (Stored Proc & Function Behaviour Program, Spec 1,
+  // 2026-09-09): the DB scan profiles every harvested proc / function /
+  // trigger and saves the catalog to AMS at completion, recording the
+  // outcome in steps_payload.database.routineCatalog. Surface it as a row
+  // beside S0 — "were the routines catalogued?" is answerable from the scan.
+  const routineCatalog = ((): {
+    status: string;
+    profiled: number | null;
+    unparsed: number | null;
+    detail: string | null;
+  } | null => {
+    const db = selectedRun?.steps_payload?.['database'];
+    if (!db || typeof db !== 'object') return null;
+    const raw = (db as Record<string, unknown>)['routineCatalog'];
+    if (!raw || typeof raw !== 'object') return null;
+    const rec = raw as Record<string, unknown>;
+    return {
+      status: typeof rec.status === 'string' ? rec.status : 'unknown',
+      profiled: typeof rec.profiled === 'number' ? rec.profiled : null,
+      unparsed: typeof rec.unparsed === 'number' ? rec.unparsed : null,
+      detail: typeof rec.detail === 'string' ? rec.detail : null,
+    };
+  })();
+
   const selectedTier = selectedRun?.tier ?? null;
   const showWarningsBanner =
     (selectedTier === 'B' || selectedTier === 'C') &&
@@ -1383,6 +1407,51 @@ export const DiscoveryRunDetailPage: React.FC = () => {
                   <span data-testid="run-candidate-count">
                     {candidateCount}
                   </span>
+                </div>
+              )}
+
+              {routineCatalog && (
+                <div
+                  className={styles.runDetailRow}
+                  data-testid="routine-catalog-row"
+                >
+                  <span className={styles.runDetailLabel}>Routine catalog:</span>
+                  <span
+                    className={`${styles.statusBadge} ${
+                      routineCatalog.status === 'saved'
+                        ? routineCatalog.unparsed
+                          ? styles.statusRunning
+                          : styles.statusCompleted
+                        : routineCatalog.status === 'failed'
+                          ? styles.statusFailed
+                          : styles.statusCancelled
+                    }`}
+                    data-testid={`routine-catalog-status-${routineCatalog.status}`}
+                  >
+                    {routineCatalog.status === 'saved'
+                      ? `${routineCatalog.profiled ?? 0} profiled`
+                      : routineCatalog.status === 'failed'
+                        ? 'FAILED'
+                        : 'Skipped'}
+                  </span>
+                  {routineCatalog.status === 'saved' &&
+                    (routineCatalog.unparsed ?? 0) > 0 && (
+                      <span
+                        className={styles.phaseValue}
+                        data-testid="routine-catalog-unparsed"
+                      >
+                        {routineCatalog.unparsed} signature
+                        {routineCatalog.unparsed === 1 ? '' : 's'} unparsed
+                      </span>
+                    )}
+                  {routineCatalog.status === 'failed' && routineCatalog.detail && (
+                    <span
+                      className={styles.phaseValue}
+                      data-testid="routine-catalog-detail"
+                    >
+                      {routineCatalog.detail}
+                    </span>
+                  )}
                 </div>
               )}
 

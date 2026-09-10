@@ -3,6 +3,7 @@ package com.example.architecturemodel.model.dto;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Sparse PATCH body for one translation row. Snake_case wire per the AMS
@@ -37,6 +38,13 @@ import java.util.Map;
  * @param dropReason Mandatory rationale when disposition is {@code drop}; blank clears.
  * @param reviewStatus One of {@code unreviewed | approved | rejected | needs_rework}.
  * @param reviewerNotes Reviewer notes; blank clears.
+ * @param loopStatus Workbench loop state (validated against
+ *     {@code chk_dmpt_loop_status}); changeset 231.
+ * @param currentAttemptNo Attempt the loop is currently on.
+ * @param bestAttemptNo The best attempt so far (fewest failing scenarios).
+ * @param verdictJson Rolled-up loop verdict for the row.
+ * @param parityReportId The parity report backing the current verdict.
+ * @param staleReason Why the row went stale; blank clears.
  */
 public record UpdateDbMigrationPackTranslationRequest(
     @JsonProperty("pipeline_state")
@@ -58,5 +66,25 @@ public record UpdateDbMigrationPackTranslationRequest(
     String reviewStatus,
 
     @JsonProperty("reviewer_notes")
-    String reviewerNotes
+    String reviewerNotes,
+
+    // --- Workbench loop (changeset 231, Spec 4, 2026-09-09) -----------------
+
+    @JsonProperty("loop_status")
+    String loopStatus,
+
+    @JsonProperty("current_attempt_no")
+    Integer currentAttemptNo,
+
+    @JsonProperty("best_attempt_no")
+    Integer bestAttemptNo,
+
+    @JsonProperty("verdict_json")
+    Map<String, Object> verdictJson,
+
+    @JsonProperty("parity_report_id")
+    UUID parityReportId,
+
+    @JsonProperty("stale_reason")
+    String staleReason
 ) {}

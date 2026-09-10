@@ -184,3 +184,29 @@ describe('createDataParityReconcileTrigger', () => {
     expect(runReconcile).not.toHaveBeenCalled();
   });
 });
+
+// ----------------------------------------------------------------------------
+// Spec 5 (Stored Proc & Function Behaviour Program, 2026-09-09): views ride
+// the table comparator — every APPROVED translate view is appended as a
+// KEYLESS relation (never keyed), after the manifest tables, de-duplicated.
+// ----------------------------------------------------------------------------
+describe('defaultResolveDataParityTables — views (Spec 5)', () => {
+  it('appends approved translate views keyless and skips unapproved / dropped ones', async () => {
+    const fetchPackView = async () => ({
+      packId: 'pack-1',
+      manifest: { bulk_load: { table_order: ['dbo.ledger'] }, expected_schema: { keysAndIndexes: [] }, parity_keys: [], audit_sink_tables: [] },
+      decisions: [],
+      translations: [
+        { kind: 'view', object_ref: 'dbo.v_ledger_open', disposition: 'translate', review_status: 'approved' },
+        { kind: 'view', object_ref: 'dbo.v_ledger_open', disposition: 'translate', review_status: 'approved' },
+        { kind: 'view', object_ref: 'v_bare', disposition: 'translate', review_status: 'approved' },
+        { kind: 'view', object_ref: 'dbo.v_pending', disposition: 'translate', review_status: 'unreviewed' },
+        { kind: 'view', object_ref: 'dbo.v_dead', disposition: 'drop', review_status: 'approved' },
+        { kind: 'stored_procedure', object_ref: 'dbo.upd_ledger_roll', disposition: 'translate', review_status: 'approved' },
+      ],
+    });
+    const tables = await defaultResolveDataParityTables('p1', 'arch-1', fetchPackView as never);
+    expect(tables.map((t) => `${t.schema ?? ''}.${t.table}`)).toEqual(['dbo.ledger', 'dbo.v_ledger_open', '.v_bare']);
+    expect(tables.slice(1).every((t) => t.primaryKey === undefined)).toBe(true);
+  });
+});

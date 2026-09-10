@@ -3,6 +3,7 @@ package com.example.architecturemodel.controller.discovery;
 import com.example.architecturemodel.mapper.discovery.EndpointDataEffectMapper;
 import com.example.architecturemodel.model.dto.discovery.EndpointDataEffectDto;
 import com.example.architecturemodel.repository.discovery.EndpointDataEffectRepository;
+import com.example.architecturemodel.repository.ModelFileRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -52,6 +53,34 @@ import java.util.UUID;
 public class EndpointDataEffectController {
 
     private final EndpointDataEffectRepository repository;
+    private final ModelFileRepository modelFileRepository;
+
+    /**
+     * GET /api/model/projects/{p}/architectures/{a}/endpoint-data-effects/proc-calls
+     *
+     * <p>Every stored-proc CALL effect of the architecture (Stored Proc &amp;
+     * Function Behaviour Program, Spec 2, 2026-09-09): the rows the code scan
+     * minted with {@code path_metadata_json.proc_name}. Bounded by nature
+     * (one row per endpoint→routine pair), so an architecture-wide read is
+     * the right shape here — unlike the unfiltered table/entity dump the
+     * general query refuses. 404 when the architecture has no model file.</p>
+     */
+    @GetMapping("/endpoint-data-effects/proc-calls")
+    public ResponseEntity<List<EndpointDataEffectDto>> procCalls(
+            @PathVariable UUID projectId,
+            @PathVariable UUID architectureId) {
+        return modelFileRepository.findByProjectIdAndArchitectureId(projectId, architectureId)
+            .map(modelFile -> repository.findByModelFileId(modelFile.getId()).stream()
+                .filter(e -> {
+                    var meta = e.getPathMetadataJson();
+                    Object procName = meta == null ? null : meta.get("proc_name");
+                    return procName instanceof String s && !s.isBlank();
+                })
+                .map(EndpointDataEffectMapper::toDto)
+                .toList())
+            .map(ResponseEntity::ok)
+            .orElseGet(() -> ResponseEntity.notFound().build());
+    }
 
     /**
      * GET /api/model/projects/{p}/architectures/{a}/endpoint-data-effects

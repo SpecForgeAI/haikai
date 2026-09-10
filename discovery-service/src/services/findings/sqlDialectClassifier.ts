@@ -343,7 +343,10 @@ export function extractProcCallNames(text: string | null | undefined): string[] 
     out.push(trimmed);
   };
 
-  const execRe = /(?<![A-Za-z0-9_])exec(?:ute)?\s+([A-Za-z_[][\w.$[\]]*)/gi;
+  // The exec arm tolerates the Sybase RETURN-STATUS form `exec @rc = proc`
+  // (Spec 1, 2026-09-09 — mirrors the SCL emitter's PROC_CALL_RE; without
+  // it `proc_call_unmatched` under-reported on exactly that idiom).
+  const execRe = /(?<![A-Za-z0-9_])exec(?:ute)?\s+(?:@[A-Za-z0-9_]+\s*=\s*)?([A-Za-z_[][\w.$[\]]*)/gi;
   let match: RegExpExecArray | null;
   while ((match = execRe.exec(input)) !== null) push(match[1]);
 

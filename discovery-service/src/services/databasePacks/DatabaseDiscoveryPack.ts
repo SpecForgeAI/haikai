@@ -223,6 +223,18 @@ export interface DatabaseDiscoveryPack {
   ): Promise<import('../../scl/sqlProcHarvester').LiveProcSource[]>;
 
   /**
+   * OPTIONAL capability (Stored Proc & Function Behaviour Program, Spec 1,
+   * 2026-09-09): profile ONE harvested routine source (proc / function /
+   * trigger) into the engine-neutral `RoutineRecord` — parsed signature,
+   * static profile (exit outcomes, result-producing SELECTs, constructs,
+   * volatility, non-compensatable reasons) and body-level read / write /
+   * call sets. Pure and synchronous (dialect knowledge lives in the pack);
+   * the orchestrator builds the closures and the run saves the catalog to
+   * AMS as first-class `db_routines` facts.
+   */
+  profileRoutine?: import('./routineTypes').RoutineProfiler;
+
+  /**
    * OPTIONAL capability (2026-08-23, Oracle Nine item 2): read the rows of a
    * detected sequence-generator table (name + current value). Read-only.
    */

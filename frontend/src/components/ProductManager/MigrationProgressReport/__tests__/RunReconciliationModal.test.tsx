@@ -75,6 +75,7 @@ describe('RunReconciliationModal', () => {
 
     expect(startFn).toHaveBeenCalledWith('proj-1', 'arch-1', 'book-1', {
       run_data_parity: true,
+      run_proc_parity: true,
       run_api_reconcile: true,
       source_db: {
         dbType: 'sybase',
@@ -114,6 +115,7 @@ describe('RunReconciliationModal', () => {
     await waitFor(() => expect(startFn).toHaveBeenCalled());
     expect(startFn).toHaveBeenCalledWith('proj-1', 'arch-1', 'book-1', {
       run_data_parity: true,
+      run_proc_parity: true,
       run_api_reconcile: false,
     });
   });
@@ -171,6 +173,7 @@ describe('RunReconciliationModal', () => {
     await waitFor(() => expect(startFn).toHaveBeenCalled());
     expect(startFn).toHaveBeenCalledWith('proj-1', 'arch-1', 'book-1', {
       run_data_parity: false,
+      run_proc_parity: true,
       run_api_reconcile: true,
       api: { type: 'custom_header', headerName: 'ssoToken', headerValue: 'tok-123' },
     });
@@ -198,18 +201,103 @@ describe('RunReconciliationModal', () => {
     await waitFor(() => expect(startFn).toHaveBeenCalled());
     expect(startFn).toHaveBeenCalledWith('proj-1', 'arch-1', 'book-1', {
       run_data_parity: false,
+      run_proc_parity: true,
       run_api_reconcile: true,
       api: { type: 'none' },
       supersede_open_breaks: true,
     });
   });
 
-  it('disables an out-of-scope reconciliation', () => {
+  // --------------------------------------------------------------------
+  // Spec 5 (2026-09-09): proc parity + the DB-only migration
+  // --------------------------------------------------------------------
+
+  it('DB-ONLY: the whole service group is absent, not merely disabled', () => {
     renderModal(
-      { dataParity: null, apiReconcile: null },
+      { dataParity: null, apiReconcile: null, procParity: null },
       { db: true, service: false },
     );
-    expect((screen.getByTestId('rrm-check-api') as HTMLInputElement).disabled).toBe(true);
+    // The service plane does not exist for this book -> nothing about it renders.
+    expect(screen.queryByTestId('rrm-check-api')).toBeNull();
+    expect(screen.queryByTestId('rrm-check-log-replay')).toBeNull();
+    expect(screen.queryByTestId('rrm-api-fields')).toBeNull();
+    // Both DB engines stay offered and pre-ticked.
     expect((screen.getByTestId('rrm-check-db') as HTMLInputElement).disabled).toBe(false);
+    expect((screen.getByTestId('rrm-check-proc') as HTMLInputElement).checked).toBe(true);
+  });
+
+  it('proc parity alone posts run_proc_parity with the TARGET block only', async () => {
+    const { startFn } = renderModal(
+      {
+        dataParity: null,
+        apiReconcile: null,
+        procParity: { status: 'started', detail: 'Replaying 12 routine(s).' },
+      },
+      { db: true, service: false },
+    );
+    fireEvent.click(screen.getByTestId('rrm-check-db')); // data parity off
+
+    // The SOURCE block is gone (the oracle is the pinned baseline); the TARGET
+    // block stays because proc parity connects to the migrated database.
+    expect(screen.getByTestId('rrm-db-fields')).toBeTruthy();
+    expect(screen.queryByTestId('rrm-source-db-host')).toBeNull();
+    setInput('rrm-target-db-host', 'tgt-host');
+    setInput('rrm-target-db-port', '5432');
+    setInput('rrm-target-db-database', 'migrated');
+    setInput('rrm-target-db-username', 'pg');
+    setInput('rrm-target-db-password', 'pw2');
+
+    fireEvent.click(screen.getByTestId('rrm-run'));
+    await waitFor(() => expect(startFn).toHaveBeenCalled());
+    expect(startFn).toHaveBeenCalledWith('proj-1', 'arch-1', 'book-1', {
+      run_data_parity: false,
+      run_proc_parity: true,
+      run_api_reconcile: false,
+      target_db: {
+        dbType: 'postgres',
+        host: 'tgt-host',
+        port: 5432,
+        database: 'migrated',
+        schema: null,
+        username: 'pg',
+        password: 'pw2',
+      },
+    });
+
+    // Third result row, in the existing started/blocked style.
+    await waitFor(() => expect(screen.getByTestId('rrm-result-proc')).toBeTruthy());
+    expect(screen.getByTestId('rrm-result-proc').textContent).toContain('Stored procs');
+    expect(screen.getByTestId('rrm-result-proc').textContent).toContain('Replaying 12 routine(s).');
+  });
+
+  it('renders a BLOCKED proc-parity precondition as its own result row', async () => {
+    const { onClose } = renderModal(
+      {
+        dataParity: null,
+        apiReconcile: null,
+        procParity: { status: 'blocked', reason: 'No pinned proc behaviour baseline.' },
+      },
+      { db: true, service: false },
+    );
+    fireEvent.click(screen.getByTestId('rrm-check-db')); // proc parity only
+    fireEvent.click(screen.getByTestId('rrm-run'));
+    await waitFor(() => expect(screen.getByTestId('rrm-result-proc')).toBeTruthy());
+    expect(screen.getByTestId('rrm-result-proc').textContent).toContain('blocked');
+    expect(screen.getByTestId('rrm-result-proc').textContent).toContain('No pinned proc behaviour baseline.');
+    fireEvent.click(screen.getByTestId('rrm-close'));
+    expect(onClose).toHaveBeenCalledWith(false);
+  });
+
+  it('requires at least one reconciliation to be selected', async () => {
+    const { startFn } = renderModal(
+      { dataParity: null, apiReconcile: null, procParity: null },
+      { db: true, service: false },
+    );
+    fireEvent.click(screen.getByTestId('rrm-check-db'));
+    fireEvent.click(screen.getByTestId('rrm-check-proc'));
+    fireEvent.click(screen.getByTestId('rrm-run'));
+    await waitFor(() => expect(screen.getByTestId('rrm-error')).toBeTruthy());
+    expect(screen.getByTestId('rrm-error').textContent).toContain('at least one');
+    expect(startFn).not.toHaveBeenCalled();
   });
 });

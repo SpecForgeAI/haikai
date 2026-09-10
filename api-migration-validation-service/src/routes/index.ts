@@ -8,6 +8,8 @@ import { dataMigrationRunRouter } from './dataMigrationRun';
 import { schemaApplyRunRouter, schemaDriftRouter } from './schemaApplyRun';
 import { s0SnapshotRouter } from './s0Snapshot';
 import { logReplayRunRouter } from './logReplayRun';
+import { procCaptureSessionActionsRouter } from './procCaptureSessionActions';
+import { procParityRunRouter } from './procParityRun';
 
 /**
  * API Migration Validation Routes Barrel
@@ -80,5 +82,12 @@ apiMigrationValidationRouter.use(s0SnapshotRouter);
 // `log_replay` baseline at S0; phase B rides the headless reconcile with
 // that baseline as its source. Credentials request-scoped only.
 apiMigrationValidationRouter.use(logReplayRunRouter);
+// Proc behaviour capture (Stored Proc & Function Behaviour Program, Spec 3,
+// 2026-09-09): LLM-generated routine scenarios fired at S0 inside the
+// compensation bracket; DB-native, independent of the API capture path.
+apiMigrationValidationRouter.use(procCaptureSessionActionsRouter);
+// Proc parity replay + routine apply (Spec 4, 2026-09-09): the workbench
+// loop's executable oracle. Credentials request-scoped only.
+apiMigrationValidationRouter.use(procParityRunRouter);
 
 export { apiMigrationValidationRouter };

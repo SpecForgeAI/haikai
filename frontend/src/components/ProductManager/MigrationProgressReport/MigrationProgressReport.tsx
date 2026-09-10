@@ -144,15 +144,26 @@ export function MigrationProgressReport({
     );
   }
 
+  // DB-ONLY (Spec 5, 2026-09-09): a book with no service plane must render as
+  // a complete report, not a half-empty one. `.page` is a single-column flex,
+  // so an absent service section leaves NO blank column or gap — the DB
+  // section spans the full width on its own. `data-layout` states which shape
+  // rendered so the layout is asserted, never assumed.
+  const serviceSectionRenders = summary.service !== null && summary.scope.service;
+
   return (
-    <div className={styles.page} data-testid="mpr-page">
+    <div
+      className={styles.page}
+      data-testid="mpr-page"
+      data-layout={serviceSectionRenders ? 'db-and-service' : 'db-only'}
+    >
       <Banner
         summary={summary}
         productName={productName}
         onRunReconciliation={() => setReconciliationOpen(true)}
       />
       {summary.db && summary.scope.db && <DbSectionView db={summary.db} />}
-      {summary.service && summary.scope.service && (
+      {serviceSectionRenders && summary.service && (
         <ServiceSectionView service={summary.service} />
       )}
       {summary.warnings.length > 0 && (
@@ -333,18 +344,33 @@ function FactsPanelRow({
 // Bucket cells (worst -> best strips)
 // ============================================================================
 
+/** `82%` / `1.7%` — the same one-decimal-below-10 convention the cells use. */
+function formatPercent(pct: number): string {
+  return `${pct >= 10 ? pct.toFixed(0) : pct.toFixed(1)}%`;
+}
+
 function BucketCell({
   label,
   value,
   total,
   kind,
   testId,
+  pct,
+  pctTestId,
 }: {
   label: string;
   value: number | null;
   total: number | null;
   kind: 'undesired' | 'reconciled';
   testId: string;
+  /**
+   * Spec 5 (2026-09-09): a server-PRE-COMPUTED percentage. When `pctTestId` is
+   * given the value renders in the same `X of Y (Z%)` shape but the `(Z%)`
+   * half is its own addressable span — so the cell shows the server's number
+   * (the authority on the denominator) rather than a second derivation.
+   */
+  pct?: number | null;
+  pctTestId?: string;
 }) {
   if (value === null) {
     return (
@@ -355,10 +381,26 @@ function BucketCell({
     );
   }
   const tier = kind === 'undesired' ? undesiredTier(value, total) : reconciledTier(value, total);
+  const hasDenominator = total !== null && total > 0;
   return (
     <div className={`${styles.bucketCell} ${tierClass(tier)}`} data-testid={testId} data-tier={tier}>
       <span className={styles.bucketLabel}>{label}:</span>
-      <span className={styles.bucketValue}>{formatCountOfTotal(value, total)}</span>
+      {pctTestId ? (
+        <span className={styles.bucketValue}>
+          {hasDenominator
+            ? `${value.toLocaleString()} of ${(total as number).toLocaleString()} `
+            : `${value.toLocaleString()} `}
+          <span className={styles.bucketPct} data-testid={pctTestId}>
+            {pct !== null && pct !== undefined
+              ? `(${formatPercent(pct)})`
+              : hasDenominator
+                ? `(${formatPercent((value / (total as number)) * 100)})`
+                : '(n/a)'}
+          </span>
+        </span>
+      ) : (
+        <span className={styles.bucketValue}>{formatCountOfTotal(value, total)}</span>
+      )}
     </div>
   );
 }
@@ -374,8 +416,20 @@ function DbSectionView({ db }: { db: DbSectionDto }) {
     { key: 'rows', label: 'Total rows', current: db.current.rows, target: db.target?.rows ?? null, targetBlockTbc: targetTbc },
     { key: 'views', label: 'Total views', current: db.current.views, target: db.target?.views ?? null, targetBlockTbc: targetTbc },
     { key: 'procs', label: 'Total stored procs', current: db.current.procs, target: db.target?.procs ?? null, targetBlockTbc: targetTbc },
+    // Spec 5 (2026-09-09): the CATALOG routine count. Target = the RECONCILED
+    // routines, so Matching? reads "every routine the target owes is proven".
+    { key: 'routines', label: 'Stored procs & functions (catalog)', current: db.current.routines ?? null, target: db.target?.routines ?? null, targetBlockTbc: targetTbc },
   ];
   const total = db.current.tables;
+  // Spec 5: RECONCILED is the bar, not "migrated". The old `procsMigrated` /
+  // `current.procs` pair is the one-release fallback for an older gateway.
+  const procRec = db.procsMigratedReconciled ?? null;
+  const procValue = procRec ? procRec.reconciled : db.procsMigrated;
+  const procTotal = procRec ? procRec.total : db.current.procs;
+  const procBuckets = db.procBuckets ?? null;
+  const outOfScope = procBuckets
+    ? { movedToCode: procBuckets.movedToCode, dropped: procBuckets.dropped }
+    : null;
   return (
     <section className={styles.section} data-testid="mpr-db-section">
       <div className={styles.sectionTitle}>DATABASE RECONCILIATION</div>
@@ -405,8 +459,41 @@ function DbSectionView({ db }: { db: DbSectionDto }) {
           (fully-reconciled) colour ladder — 100% is medium green. */}
       <div className={`${styles.bucketRow} ${styles.bucketRow2}`}>
         <BucketCell label="Views migrated" value={db.viewsMigrated} total={db.current.views} kind="reconciled" testId="mpr-db-views-migrated" />
-        <BucketCell label="Stored procs migrated" value={db.procsMigrated} total={db.current.procs} kind="reconciled" testId="mpr-db-procs-migrated" />
+        <BucketCell
+          label={procRec ? 'Stored procs migrated/reconciled' : 'Stored procs migrated'}
+          value={procValue}
+          total={procTotal}
+          kind="reconciled"
+          testId="mpr-db-procs-migrated"
+          pct={procRec ? procRec.pct : undefined}
+          pctTestId="mpr-db-procs-reconciled-pct"
+        />
       </div>
+      {/* Stored procs & functions, worst -> best (Spec 5, 2026-09-09). The six
+          in-scope buckets partition the same denominator as the cell above;
+          dispositioned routines (moved to code / dropped) sit OUTSIDE it as a
+          named aside so nothing goes silently missing. */}
+      {procBuckets && (
+        <>
+          <div className={styles.stripTitle}>
+            Stored procs — worst to best
+            {procTotal !== null ? ` (sums to the ${formatNumber(procTotal)} in-scope routines)` : ''}
+          </div>
+          <div className={`${styles.bucketRow} ${styles.bucketRow6}`}>
+            <BucketCell label="Not captured" value={procBuckets.notCaptured} total={procTotal} kind="undesired" testId="mpr-db-proc-bucket-not-captured" />
+            <BucketCell label="Divergent" value={procBuckets.divergent} total={procTotal} kind="undesired" testId="mpr-db-proc-bucket-divergent" />
+            <BucketCell label="Unverified" value={procBuckets.unverified} total={procTotal} kind="undesired" testId="mpr-db-proc-bucket-unverified" />
+            <BucketCell label="Not migrated" value={procBuckets.notMigrated} total={procTotal} kind="undesired" testId="mpr-db-proc-bucket-not-migrated" />
+            <BucketCell label="Reconciled with waivers" value={procBuckets.reconciledWithWaivers} total={procTotal} kind="reconciled" testId="mpr-db-proc-bucket-waived" />
+            <BucketCell label="Fully reconciled" value={procBuckets.fullyReconciled} total={procTotal} kind="reconciled" testId="mpr-db-proc-bucket-reconciled" />
+          </div>
+          {outOfScope && (outOfScope.movedToCode > 0 || outOfScope.dropped > 0) && (
+            <div className={styles.outOfScopeLine} data-testid="mpr-db-proc-out-of-scope">
+              {`Moved to code: ${formatNumber(outOfScope.movedToCode)} · Dropped: ${formatNumber(outOfScope.dropped)}`}
+            </div>
+          )}
+        </>
+      )}
     </section>
   );
 }

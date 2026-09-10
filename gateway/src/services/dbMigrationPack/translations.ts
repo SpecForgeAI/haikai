@@ -38,6 +38,14 @@ import { logger } from '../logger';
 import type { LlmCallerFn } from '../migrationBookOfWorkHandler';
 import { LlmConcurrencyPool, getMigrationPlanLlmPool } from '../llmConcurrencyPool';
 import type { RawDiscoveryFinding } from './inputs';
+import { loadPairRuleset, type MigrationPairRuleset } from '../../migrationPairRules';
+import {
+  deriveRoutineDescriptor,
+  renderRoutineContract,
+  type RoutineCatalogRow,
+  type RoutineDescriptor,
+} from './routineInvocationDescriptor';
+import { validateDraftAgainstDescriptor } from './descriptorValidator';
 import {
   JudgeVerdict,
   TranslationDraftResponse,
@@ -94,6 +102,15 @@ export interface TranslationRow {
   created_at?: string | null;
   translated_at?: string | null;
   reviewed_at?: string | null;
+  /** Spec 1 (2026-09-09): the routine-catalog row the body came from, when one exists. */
+  routine_id?: string | null;
+  /** Workbench loop fields (Spec 4, 2026-09-09; AMS changeset 231). */
+  loop_status?: string | null;
+  current_attempt_no?: number | null;
+  best_attempt_no?: number | null;
+  verdict_json?: Record<string, unknown> | null;
+  parity_report_id?: string | null;
+  stale_reason?: string | null;
 }
 
 /** Sparse PATCH body — omitted fields are untouched AMS-side. */
@@ -105,6 +122,13 @@ export interface TranslationPatch {
   drop_reason?: string;
   review_status?: TranslationReviewStatus;
   reviewer_notes?: string;
+  /** Workbench loop fields (Spec 4, 2026-09-09; AMS changeset 231). */
+  loop_status?: string;
+  current_attempt_no?: number;
+  best_attempt_no?: number | null;
+  verdict_json?: Record<string, unknown> | null;
+  parity_report_id?: string | null;
+  stale_reason?: string | null;
   /**
    * Supply-body path (2026-08-07): a TRUNCATED capture used to be a terminal
    * needs_manual dead-end. The operator can now paste the full source body;
@@ -129,6 +153,21 @@ export interface TranslationUpsertRow {
   pipeline_state?: TranslationPipelineState;
   review_status?: TranslationReviewStatus;
   reviewer_notes?: string;
+  /** Spec 1 (2026-09-09): the `db_routines` row the body came from, when one exists. */
+  routine_id?: string | null;
+}
+
+/**
+ * A `db_routines` row as the AMS routine catalog serves it (Spec 1,
+ * 2026-09-09). Only the fields the seed resolver needs: the FULL body is the
+ * source of record (never truncated, never redacted), keyed by kind + name.
+ */
+export interface RoutineBodySource {
+  id: string;
+  schema_name: string;
+  routine_name: string;
+  routine_kind: 'procedure' | 'function' | 'trigger';
+  full_body: string;
 }
 
 /** A `requires_translation_spec_2` manifest entry (Spec-1 shape). */
@@ -223,6 +262,34 @@ export interface SeedSource {
   legacy_redacted: boolean;
   /** TRUE when no body could be resolved OR the body is truncated — terminal. */
   terminal_needs_manual: boolean;
+  /** The routine-catalog row the body came from (Spec 1); null = finding body. */
+  routine_id?: string | null;
+}
+
+/** Routine kinds a translation kind can be sourced from the routine catalog. */
+const ROUTINE_KINDS_BY_TRANSLATION_KIND: Partial<Record<TranslationKind, Array<RoutineBodySource['routine_kind']>>> = {
+  stored_procedure: ['procedure', 'function'],
+  trigger: ['trigger'],
+};
+
+/** Bare lower-case tail of an object ref (`dbo.upd_x` -> `upd_x`). */
+function objectRefTail(ref: string): string {
+  const cleaned = ref.replace(/[[\]"]/g, '').trim();
+  return (cleaned.split('.').pop() ?? cleaned).toLowerCase();
+}
+
+/**
+ * Index routine-catalog rows by `<kind>:<bare name>` for the seed resolver.
+ * Procedures and functions share the `stored_procedure` translation kind.
+ */
+export function indexRoutineBodies(routines: RoutineBodySource[]): Map<string, RoutineBodySource> {
+  const index = new Map<string, RoutineBodySource>();
+  for (const r of routines) {
+    if (typeof r.full_body !== 'string' || r.full_body.length === 0) continue;
+    const key = `${r.routine_kind}:${r.routine_name.toLowerCase()}`;
+    if (!index.has(key)) index.set(key, r);
+  }
+  return index;
 }
 
 const FINDING_TYPE_BY_KIND: Record<TranslationKind, string> = {
@@ -244,13 +311,38 @@ const FINDING_TYPE_BY_KIND: Record<TranslationKind, string> = {
  */
 export function resolveSeedSources(
   entries: RequiresTranslationEntry[],
-  findings: RawDiscoveryFinding[]
+  findings: RawDiscoveryFinding[],
+  routines: RoutineBodySource[] = []
 ): SeedSource[] {
   const findingsById = new Map(findings.map((f) => [f.id, f]));
+  const routineIndex = indexRoutineBodies(routines);
   const seeds: SeedSource[] = [];
   for (const entry of entries) {
     if (!(TRANSLATION_KINDS as readonly string[]).includes(entry.kind)) continue;
     const kind = entry.kind as TranslationKind;
+    // ROUTINE CATALOG body (Spec 1, 2026-09-09): when the DB scan profiled
+    // this object, its FULL body is the source of record — never truncated,
+    // never legacy-redacted — and the row is linked by routine_id. The
+    // finding-snippet path below stays as the fallback for pre-catalog runs.
+    const routineKinds = ROUTINE_KINDS_BY_TRANSLATION_KIND[kind] ?? [];
+    const tail = objectRefTail(entry.object_ref);
+    const routine = routineKinds
+      .map((rk) => routineIndex.get(`${rk}:${tail}`))
+      .find((r): r is RoutineBodySource => r !== undefined);
+    if (routine) {
+      seeds.push({
+        translation_key: translationKey(kind, entry.object_ref),
+        kind,
+        object_ref: entry.object_ref,
+        source_body: routine.full_body,
+        source_body_hash: computeSourceBodyHash(routine.full_body),
+        truncated: false,
+        legacy_redacted: false,
+        terminal_needs_manual: false,
+        routine_id: routine.id,
+      });
+      continue;
+    }
     // DIRECT source body (2026-08-07): the entry carries its own body (check
     // constraints — the expression lives in the pack IR, not a finding).
     // Full fidelity by construction.
@@ -374,6 +466,7 @@ export function buildTranslationUpsertBatch(
       truncated: seed.truncated,
       legacy_redacted: seed.legacy_redacted,
     };
+    if (seed.routine_id) row.routine_id = seed.routine_id;
     const prior = existingByKey.get(seed.translation_key);
     if (!prior) {
       row.pipeline_state = seed.terminal_needs_manual ? 'needs_manual' : 'pending';
@@ -482,9 +575,36 @@ export const defaultFetchPackRow: FetchPackRowFn = (projectId, packId) =>
 // syncPackTranslations — the seeding + re-link/demote pass (3.2)
 // ---------------------------------------------------------------------------
 
+export type FetchRoutinesFn = (
+  projectId: string,
+  architectureId: string
+) => Promise<RoutineBodySource[]>;
+
+/**
+ * Routine catalog read (Spec 1, 2026-09-09): the AMS `db_routines` list for
+ * the architecture. FAIL-SOFT: a missing catalog (pre-Spec-1 AMS, no DB scan
+ * yet) yields [] and the finding-snippet path seeds as before — loudly logged.
+ */
+export const defaultFetchRoutines: FetchRoutinesFn = async (projectId, architectureId) => {
+  try {
+    return await amsRequest<RoutineBodySource[]>(
+      `${getConfig().architectureModelServiceBaseUrl}/api/projects/${encodeURIComponent(projectId)}` +
+        `/architectures/${encodeURIComponent(architectureId)}/db-routines`,
+      { headers: { Accept: 'application/json' } }
+    );
+  } catch (error) {
+    logger.warn(
+      `[diag-gateway] db_translation stage=routine-catalog-unavailable projectId=${projectId} ` +
+        `architectureId=${architectureId} reason=${error instanceof Error ? error.message : String(error)}`
+    );
+    return [];
+  }
+};
+
 export interface TranslationSyncDeps {
   fetchTranslations?: FetchTranslationsFn;
   upsertTranslations?: UpsertTranslationsFn;
+  fetchRoutines?: FetchRoutinesFn;
 }
 
 export interface TranslationSyncResult {
@@ -504,18 +624,29 @@ export async function syncPackTranslations(
     packId: string;
     entries: RequiresTranslationEntry[];
     findings: RawDiscoveryFinding[];
+    /** Spec 1: when supplied, the routine catalog is consulted for full bodies. */
+    architectureId?: string | null;
   },
   deps: TranslationSyncDeps = {}
 ): Promise<TranslationSyncResult> {
   const fetchTranslations = deps.fetchTranslations ?? defaultFetchTranslations;
   const upsertTranslations = deps.upsertTranslations ?? defaultUpsertTranslations;
+  const fetchRoutines = deps.fetchRoutines ?? defaultFetchRoutines;
 
   logger.info(
     `[diag-gateway] db_translation stage=seed projectId=${args.projectId} packId=${args.packId} ` +
       `entries=${args.entries.length}`
   );
   const existing = await fetchTranslations(args.projectId, args.packId);
-  const seeds = resolveSeedSources(args.entries, args.findings);
+  const routines = args.architectureId ? await fetchRoutines(args.projectId, args.architectureId) : [];
+  const seeds = resolveSeedSources(args.entries, args.findings, routines);
+  const fromCatalog = seeds.filter((s) => s.routine_id).length;
+  if (routines.length > 0 || fromCatalog > 0) {
+    logger.info(
+      `[diag-gateway] db_translation stage=seed-routine-catalog packId=${args.packId} ` +
+        `routines=${routines.length} seeded_from_catalog=${fromCatalog}`
+    );
+  }
   const batch = buildTranslationUpsertBatch(seeds, existing);
   const rows = await upsertTranslations(args.projectId, args.packId, {
     translations: batch.translations,
@@ -759,8 +890,10 @@ export function buildSchemaContext(
 
 const KIND_INSTRUCTIONS: Record<TranslationKind, string> = {
   stored_procedure:
-    'Translate the Sybase ASE T-SQL stored procedure into ONE PostgreSQL PL/pgSQL function ' +
-    '(CREATE OR REPLACE FUNCTION ... LANGUAGE plpgsql).',
+    'Translate the Sybase ASE T-SQL stored procedure (or function) into ONE PostgreSQL PL/pgSQL function ' +
+    '(CREATE OR REPLACE FUNCTION ... LANGUAGE plpgsql). When a "Calling-convention contract" section ' +
+    'follows, the function header (name, argument names/order/types, OUT arguments, RETURNS clause) ' +
+    'MUST match it exactly — it is the contract the application and the reconciliation harness call.',
   trigger:
     'Translate the Sybase ASE T-SQL trigger into a PostgreSQL trigger function ' +
     '(CREATE OR REPLACE FUNCTION ... RETURNS trigger LANGUAGE plpgsql) PLUS the matching ' +
@@ -789,6 +922,22 @@ export function buildTranslationPrompt(args: {
   objectRef: string;
   prePass: PrePassResult;
   schemaContext: string;
+  /**
+   * Spec 2 (2026-09-09): the deterministic calling-convention contract +
+   * static profile summary for routines. STATIC inputs only — captured
+   * scenarios never enter this prompt (evidence enters through Spec 4's
+   * ladder, after a test fails).
+   */
+  contract?: string | null;
+  /** Spec 2: header mismatches from a previous draft (one automatic re-prompt). */
+  contractViolations?: string[] | null;
+  /**
+   * Spec 4 (2026-09-09): the evidence rung — failing tests rendered as a
+   * bug report against the fixed spec. NEVER present on the first attempt.
+   */
+  evidence?: string | null;
+  /** Spec 4: reviewer guidance steering the next attempt (the amend pattern). */
+  guidance?: string | null;
 }): { systemPrompt: string; userPrompt: string } {
   const systemPrompt = [
     'You are a database migration engineer translating Sybase ASE T-SQL objects into PostgreSQL.',
@@ -804,6 +953,25 @@ export function buildTranslationPrompt(args: {
   const lines: string[] = [];
   lines.push(`Object: ${args.objectRef} (kind: ${args.kind})`);
   lines.push(KIND_INSTRUCTIONS[args.kind]);
+  if (args.contract && args.contract.trim().length > 0) {
+    lines.push('');
+    lines.push('Calling-convention contract (deterministic — the header MUST match):');
+    lines.push(args.contract.trim());
+  }
+  if (args.contractViolations && args.contractViolations.length > 0) {
+    lines.push('');
+    lines.push('Your previous draft violated the contract — fix ONLY these, keep everything else:');
+    for (const v of args.contractViolations) lines.push(`- ${v}`);
+  }
+  if (args.guidance && args.guidance.trim().length > 0) {
+    lines.push('');
+    lines.push('Reviewer guidance for this attempt (authoritative about intent, never about specific input values):');
+    lines.push(args.guidance.trim());
+  }
+  if (args.evidence && args.evidence.trim().length > 0) {
+    lines.push('');
+    lines.push(args.evidence.trim());
+  }
   lines.push('');
   lines.push('Schema context:');
   lines.push(args.schemaContext);
@@ -1073,7 +1241,37 @@ export interface TranslationPipelineDeps {
   callLlm?: LlmCallerFn;
   /** Defaults to the ONE shared migration-plan pool — never a new pool. */
   llmPool?: LlmConcurrencyPool;
+  /** Spec 2 (2026-09-09): the routine catalog rows for the pack's architecture (fail-soft). */
+  fetchRoutineCatalog?: FetchRoutineCatalogFn;
+  /** Spec 2: the pair ruleset the descriptor derivation cites (null = no contract). */
+  loadRuleset?: () => MigrationPairRuleset | null;
 }
+
+export type FetchRoutineCatalogFn = (
+  projectId: string,
+  architectureId: string
+) => Promise<RoutineCatalogRow[]>;
+
+/**
+ * Routine catalog read for the translation pipeline (Spec 2). FAIL-SOFT:
+ * without a catalog every routine translates without a contract, exactly as
+ * before — loudly logged, never silent.
+ */
+export const defaultFetchRoutineCatalog: FetchRoutineCatalogFn = async (projectId, architectureId) => {
+  try {
+    return await amsRequest<RoutineCatalogRow[]>(
+      `${getConfig().architectureModelServiceBaseUrl}/api/projects/${encodeURIComponent(projectId)}` +
+        `/architectures/${encodeURIComponent(architectureId)}/db-routines`,
+      { headers: { Accept: 'application/json' } }
+    );
+  } catch (error) {
+    logger.warn(
+      `[diag-gateway] db_translation stage=routine-catalog-unavailable projectId=${projectId} ` +
+        `architectureId=${architectureId} reason=${error instanceof Error ? error.message : String(error)}`
+    );
+    return [];
+  }
+};
 
 export interface RunTranslationPipelineArgs {
   projectId: string;
@@ -1147,10 +1345,29 @@ export async function runTranslationPipeline(
   const patchTranslation = deps.patchTranslation ?? defaultPatchTranslation;
   const callLlm = deps.callLlm ?? defaultCallLlm;
   const llmPool = deps.llmPool ?? getMigrationPlanLlmPool();
+  const fetchRoutineCatalog = deps.fetchRoutineCatalog ?? defaultFetchRoutineCatalog;
+  const loadRuleset = deps.loadRuleset ?? loadPairRuleset;
   const { projectId, packId } = args;
 
   const pack = await fetchPack(projectId, packId);
   const manifest = (pack.manifest_json ?? null) as Record<string, unknown> | null;
+  // Spec 2 (2026-09-09): the calling-convention contract per routine —
+  // derived from the routine catalog + pair ruleset, cited on the prompt.
+  const packArchitectureId =
+    typeof pack.architecture_id === 'string' && pack.architecture_id.length > 0
+      ? pack.architecture_id
+      : null;
+  const ruleset = loadRuleset();
+  const routineCatalog = packArchitectureId ? await fetchRoutineCatalog(projectId, packArchitectureId) : [];
+  const routinesById = new Map(routineCatalog.map((r) => [r.id, r]));
+  const contractFor = (row: TranslationRow): RoutineContract | null => {
+    if (!ruleset || !row.routine_id) return null;
+    const routine = routinesById.get(row.routine_id);
+    if (!routine) return null;
+    if (routine.routine_kind !== 'procedure' && routine.routine_kind !== 'function') return null;
+    const descriptor = deriveRoutineDescriptor(routine, ruleset);
+    return { descriptor, text: renderRoutineContract(routine, descriptor) };
+  };
   const entries = (manifest?.['requires_translation_spec_2'] ??
     []) as RequiresTranslationEntry[];
   const rows = await fetchTranslations(projectId, packId);
@@ -1175,7 +1392,16 @@ export async function runTranslationPipeline(
 
   const outcomes = await Promise.all(
     targets.map((row) =>
-      translateOneObject({ projectId, packId, row, manifest, patchTranslation, callLlm, llmPool })
+      translateOneObject({
+        projectId,
+        packId,
+        row,
+        manifest,
+        patchTranslation,
+        callLlm,
+        llmPool,
+        contract: contractFor(row),
+      })
     )
   );
 
@@ -1198,6 +1424,118 @@ export async function runTranslationPipeline(
   return { outcomes, coverage, rows: finalRows };
 }
 
+/** The per-routine contract handed to the translator (Spec 2). */
+export interface RoutineContract {
+  descriptor: RoutineDescriptor;
+  /** Prompt-ready rendering (descriptor + signature + static profile summary). */
+  text: string;
+}
+
+/**
+ * ONE draft + judge pass for one object (shared by the pipeline and the
+ * Spec 4 workbench loop, which supplies the evidence rung + guidance and
+ * persists the outcome itself). Pre-pass → translate (one retry) → contract
+ * header check with ONE automatic re-prompt → judge (one retry). Throws
+ * `abi_mismatch: ...` when the second header check fails.
+ */
+export async function draftAndJudgeObject(args: {
+  projectId: string;
+  packId: string;
+  row: TranslationRow;
+  manifest: Record<string, unknown> | null;
+  contract: RoutineContract | null;
+  callLlm: LlmCallerFn;
+  llmPool: LlmConcurrencyPool;
+  evidence?: string | null;
+  guidance?: string | null;
+}): Promise<{ draft: TranslationDraftResponse; verdict: JudgeVerdict; abiViolations: string[] }> {
+  const { projectId, packId, row, contract } = args;
+  const prePass = runDeterministicPrePass(row.source_body ?? '');
+  const schemaContext = buildSchemaContext(args.manifest, row.source_body ?? '');
+
+  logger.info(
+    `[diag-gateway] db_translation stage=translate packId=${packId} key=${row.translation_key}` +
+      `${args.evidence ? ' evidence=yes' : ''}${args.guidance ? ' guidance=yes' : ''}`
+  );
+  const translatePrompt = buildTranslationPrompt({
+    kind: row.kind,
+    objectRef: row.object_ref,
+    prePass,
+    schemaContext,
+    contract: contract?.text ?? null,
+    evidence: args.evidence ?? null,
+    guidance: args.guidance ?? null,
+  });
+  let draft: TranslationDraftResponse = await callWithRetry({
+    label: `translate ${row.translation_key}`,
+    projectId,
+    systemPrompt: translatePrompt.systemPrompt,
+    userPrompt: translatePrompt.userPrompt,
+    callLlm: args.callLlm,
+    llmPool: args.llmPool,
+    validate: validateTranslationResponse,
+  });
+
+  // Spec 2 (2026-09-09): the draft header must match the descriptor. One
+  // automatic re-prompt naming the violations; a second mismatch fails the
+  // object loudly as `abi_mismatch` (retryable, never a silent drift).
+  let abiViolations: string[] = [];
+  if (contract) {
+    let check = validateDraftAgainstDescriptor(draft.draftSql, contract.descriptor);
+    if (!check.ok) {
+      logger.info(
+        `[diag-gateway] db_translation stage=abi-reprompt packId=${packId} key=${row.translation_key} ` +
+          `violations=${check.violations.length}`
+      );
+      abiViolations = check.violations;
+      const rePrompt = buildTranslationPrompt({
+        kind: row.kind,
+        objectRef: row.object_ref,
+        prePass,
+        schemaContext,
+        contract: contract.text,
+        contractViolations: check.violations,
+        evidence: args.evidence ?? null,
+        guidance: args.guidance ?? null,
+      });
+      draft = await callWithRetry({
+        label: `translate(abi) ${row.translation_key}`,
+        projectId,
+        systemPrompt: rePrompt.systemPrompt,
+        userPrompt: rePrompt.userPrompt,
+        callLlm: args.callLlm,
+        llmPool: args.llmPool,
+        validate: validateTranslationResponse,
+      });
+      check = validateDraftAgainstDescriptor(draft.draftSql, contract.descriptor);
+      if (!check.ok) {
+        throw new Error(`abi_mismatch: ${check.violations.join('; ')}`);
+      }
+    }
+  }
+
+  logger.info(
+    `[diag-gateway] db_translation stage=judge packId=${packId} key=${row.translation_key}`
+  );
+  const judgePrompt = buildJudgePrompt({
+    kind: row.kind,
+    objectRef: row.object_ref,
+    sourceBody: row.source_body ?? '',
+    draftSql: draft.draftSql,
+    schemaContext,
+  });
+  const verdict: JudgeVerdict = await callWithRetry({
+    label: `judge ${row.translation_key}`,
+    projectId,
+    systemPrompt: judgePrompt.systemPrompt,
+    userPrompt: judgePrompt.userPrompt,
+    callLlm: args.callLlm,
+    llmPool: args.llmPool,
+    validate: validateJudgeVerdict,
+  });
+  return { draft, verdict, abiViolations };
+}
+
 async function translateOneObject(args: {
   projectId: string;
   packId: string;
@@ -1206,6 +1544,8 @@ async function translateOneObject(args: {
   patchTranslation: PatchTranslationFn;
   callLlm: LlmCallerFn;
   llmPool: LlmConcurrencyPool;
+  /** Spec 2: null when the routine has no catalog row (pre-catalog behaviour). */
+  contract?: RoutineContract | null;
 }): Promise<TranslationOutcome> {
   const { projectId, packId, row } = args;
   const previousState = row.pipeline_state;
@@ -1223,46 +1563,15 @@ async function translateOneObject(args: {
     logger.info(
       `[diag-gateway] db_translation stage=prepass packId=${packId} key=${row.translation_key}`
     );
-    const prePass = runDeterministicPrePass(row.source_body ?? '');
-    const schemaContext = buildSchemaContext(args.manifest, row.source_body ?? '');
-
-    logger.info(
-      `[diag-gateway] db_translation stage=translate packId=${packId} key=${row.translation_key}`
-    );
-    const translatePrompt = buildTranslationPrompt({
-      kind: row.kind,
-      objectRef: row.object_ref,
-      prePass,
-      schemaContext,
-    });
-    const draft: TranslationDraftResponse = await callWithRetry({
-      label: `translate ${row.translation_key}`,
+    const contract = args.contract ?? null;
+    const { draft, verdict } = await draftAndJudgeObject({
       projectId,
-      systemPrompt: translatePrompt.systemPrompt,
-      userPrompt: translatePrompt.userPrompt,
+      packId,
+      row,
+      manifest: args.manifest,
+      contract,
       callLlm: args.callLlm,
       llmPool: args.llmPool,
-      validate: validateTranslationResponse,
-    });
-
-    logger.info(
-      `[diag-gateway] db_translation stage=judge packId=${packId} key=${row.translation_key}`
-    );
-    const judgePrompt = buildJudgePrompt({
-      kind: row.kind,
-      objectRef: row.object_ref,
-      sourceBody: row.source_body ?? '',
-      draftSql: draft.draftSql,
-      schemaContext,
-    });
-    const verdict: JudgeVerdict = await callWithRetry({
-      label: `judge ${row.translation_key}`,
-      projectId,
-      systemPrompt: judgePrompt.systemPrompt,
-      userPrompt: judgePrompt.userPrompt,
-      callLlm: args.callLlm,
-      llmPool: args.llmPool,
-      validate: validateJudgeVerdict,
     });
 
     // ONE persist: draft + verdict land together as `drafted`; a fresh judge
@@ -1278,6 +1587,19 @@ async function translateOneObject(args: {
         confidence: verdict.confidence,
         flags: verdict.flags,
         ...(draft.notes.length > 0 ? { translator_notes: draft.notes } : {}),
+        // Spec 2: the contract the draft was held to (shape + confidence +
+        // cited rules) rides the verdict so the reviewer and the replayer
+        // see the same convention.
+        ...(contract
+          ? {
+              invocation_descriptor: {
+                shape: contract.descriptor.shape,
+                pg_function: `${contract.descriptor.pg_schema}.${contract.descriptor.pg_function}`,
+                confidence: contract.descriptor.confidence,
+                rules_cited: contract.descriptor.rules_cited,
+              },
+            }
+          : {}),
       },
       review_status: 'unreviewed',
     });

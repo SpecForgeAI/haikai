@@ -15,6 +15,12 @@
  *   - `/projects/:p/architectures/:a/api-behaviour/sessions/:sessionId`
  *   - `/projects/:p/architectures/:a/api-behaviour/baselines/:baselineId`
  *
+ * 2026-09-09 (Stored Proc & Function Behaviour Program, Spec 3): the page
+ * becomes the Live behaviour surface with a tab per behaviour KIND — "API
+ * behaviour" (the two lists above, the default tab) and "Stored procs and
+ * functions" (`ProcBehaviour/ProcBaselinesTab`). The proc kind is DB-native
+ * and shares nothing with the API capture path but the stylesheet.
+ *
  * Mirrors the discovery sibling-page pattern (no filters, no bulk actions
  * in v1). The new "Capture target API behaviour" button lives in the
  * page header and opens `StartTargetReplayWizard` pre-bound to the active
@@ -31,16 +37,27 @@ import { CaptureSessionsList } from './CaptureSessionsList';
 import { BaselinesList } from './BaselinesList';
 import { StartTargetReplayWizard } from '../ApiBehaviour/StartTargetReplayWizard';
 import { EffectMapBackfillModal } from './EffectMapBackfillModal';
+import { ProcBaselinesTab } from '../ProcBehaviour/ProcBaselinesTab';
 import {
   ApiBehaviourCaptureSessionDto,
   listBaselines,
 } from '../../api/apiBehaviourClient';
 import styles from './ApiBaselinesListPage.module.css';
 
+/**
+ * Live behaviour kinds. The API behaviour baseline is the original surface;
+ * "Stored procs and functions" (Stored Proc & Function Behaviour Program,
+ * Spec 3, decision 19) is the SECOND kind on the same surface — DB-native and
+ * independent of the API capture path, so it gets its own tab rather than
+ * being folded into the API lists.
+ */
+type BehaviourTab = 'api' | 'proc';
+
 export const ApiBaselinesListPage: React.FC = () => {
   const project = useProject();
   const architectureId = useActiveArchitectureId();
   const navigate = useNavigate();
+  const [tab, setTab] = useState<BehaviourTab>('api');
 
   // ---- Target-replay wizard launcher state ---------------------------
   const [targetWizardOpen, setTargetWizardOpen] = useState(false);
@@ -145,6 +162,34 @@ export const ApiBaselinesListPage: React.FC = () => {
 
   return (
     <div className={styles.container} data-testid="api-baselines-list-page">
+      <div className={styles.tabsNav} role="tablist" data-testid="live-behaviour-tabs">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'api'}
+          className={tab === 'api' ? `${styles.tabButton} ${styles.tabButtonActive}` : styles.tabButton}
+          onClick={() => setTab('api')}
+          data-testid="live-behaviour-tab-api"
+        >
+          API behaviour
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'proc'}
+          className={tab === 'proc' ? `${styles.tabButton} ${styles.tabButtonActive}` : styles.tabButton}
+          onClick={() => setTab('proc')}
+          data-testid="live-behaviour-tab-proc"
+        >
+          Stored procs and functions
+        </button>
+      </div>
+      {tab === 'proc' && (
+        <ProcBaselinesTab projectId={project.id} architectureId={architectureId} />
+      )}
+      {/* API behaviour panel. Kept MOUNTED and merely hidden on the proc tab
+          so its two lists (and their in-flight loads) survive a tab switch. */}
+      <div hidden={tab !== 'api'}>
       <div className={styles.header}>
         <h2>API Behaviour Baselines</h2>
         <div className={styles.headerActions}>
@@ -197,6 +242,7 @@ export const ApiBaselinesListPage: React.FC = () => {
           onClose={() => setBackfillModalOpen(false)}
         />
       )}
+      </div>
     </div>
   );
 };

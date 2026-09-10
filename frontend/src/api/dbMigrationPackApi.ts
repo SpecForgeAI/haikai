@@ -348,14 +348,55 @@ function extractGatewayErrorMessage(errorBody: unknown): string {
   return '';
 }
 
+/**
+ * Error carrying the HTTP status alongside the parsed gateway message.
+ *
+ * Extends `Error`, so every existing `err instanceof Error ? err.message`
+ * consumer is unchanged. Added for the translation workbench (2026-09-09
+ * Spec 4): the evidence-gated approve route answers **409** with a readable
+ * reason that must render inline next to Approve rather than in the generic
+ * error banner — callers discriminate on `.status`.
+ */
+export class DbMigrationPackHttpError extends Error {
+  readonly status: number;
+  /** Machine code from the gateway envelope when one was supplied. */
+  readonly code: string | null;
+
+  constructor(message: string, status: number, code: string | null = null) {
+    super(message);
+    this.name = 'DbMigrationPackHttpError';
+    this.status = status;
+    this.code = code;
+  }
+}
+
+/** Read `{ code }` / `{ error: { code } }` from a gateway error body. */
+function extractGatewayErrorCode(errorBody: unknown): string | null {
+  if (!errorBody || typeof errorBody !== 'object') return null;
+  const top = errorBody as { code?: unknown; error?: unknown };
+  if (typeof top.code === 'string' && top.code) return top.code;
+  if (top.error && typeof top.error === 'object') {
+    const nested = top.error as { code?: unknown };
+    if (typeof nested.code === 'string' && nested.code) return nested.code;
+  }
+  return null;
+}
+
 async function throwGatewayError(res: Response, fallback: string): Promise<never> {
   let serverMessage = '';
+  let code: string | null = null;
   try {
-    serverMessage = extractGatewayErrorMessage(await res.json());
+    const body: unknown = await res.json();
+    serverMessage = extractGatewayErrorMessage(body);
+    code = extractGatewayErrorCode(body);
   } catch {
     // Ignore JSON parse failure — fall through to the generic message.
   }
-  throw new Error(serverMessage || `${fallback}: ${res.status} ${res.statusText}`);
+  throw new DbMigrationPackHttpError(
+    serverMessage || `${fallback}: ${res.status} ${res.statusText}`,
+    res.status,
+    code,
+  );
 }
 
 function packsBase(projectId: string): string {
@@ -685,6 +726,22 @@ export interface DbMigrationPackJudgeVerdict {
   verdict?: string;
   confidence?: number;
   flags?: DbMigrationPackJudgeFlag[];
+  /**
+   * Stored Proc & Function Behaviour Program Spec 2/4 (2026-09-09): the
+   * shape-adaptive calling-convention descriptor stamped per routine.
+   */
+  invocation_descriptor?: DbMigrationPackInvocationDescriptor | null;
+  [key: string]: unknown;
+}
+
+/** `judge_verdict_json.invocation_descriptor` (shape-adaptive convention). */
+export interface DbMigrationPackInvocationDescriptor {
+  /** return_status | single_result_set | out_params | rich. */
+  shape?: string;
+  pg_function?: string;
+  /** static | capture_refined. */
+  confidence?: string;
+  rules_cited?: string[];
   [key: string]: unknown;
 }
 
@@ -712,6 +769,20 @@ export interface DbMigrationPackTranslationDto {
   created_at?: string | null;
   translated_at?: string | null;
   reviewed_at?: string | null;
+
+  // --- Translation workbench loop (2026-09-09 Spec 4) ------------------------
+  // Present ONLY for routine rows the workbench manages (stored procedures /
+  // functions carried by the pinned proc baseline). Every other row (views,
+  // jobs, check constraints) keeps the pre-workbench rendering, so these stay
+  // optional and absent rather than defaulted.
+  /** Routine catalog identity (Spec 1) — the workbench-managed marker. */
+  routine_id?: string | null;
+  loop_status?: DbMigrationPackTranslationLoopStatus | string | null;
+  current_attempt_no?: number | null;
+  best_attempt_no?: number | null;
+  verdict_json?: DbMigrationPackTranslationVerdict | null;
+  parity_report_id?: string | null;
+  stale_reason?: string | null;
 }
 
 /** Deterministic per-bucket counts (gateway `computeCoverageSummary`). */
@@ -1486,4 +1557,728 @@ export async function addManualGapProposal(
     );
   }
   return (await res.json()) as AddManualDbGapProposalResponse;
+}
+
+// ============================================================================
+// Translation WORKBENCH loop (Stored Proc & Function Behaviour Program,
+// Spec 4 — 2026-09-09)
+//
+// The Translations tab becomes a workbench: build the target database from
+// the pack, then drive every translate-dispositioned routine through the
+// AUTOMATIC loop translate -> apply -> reconcile -> re-translate-with-evidence
+// until it reconciles or the attempt cap (4) is reached. Approval is
+// evidence-gated; human intervention is "guidance & retry" only (decision 16:
+// no direct draft editing, no manual-step loop).
+//
+// Gateway routes (all under the pack base):
+//   GET  /target/build/status                  — in-flight + latest build.
+//   POST /target/build                         — 202; 409 SOURCE_DB_MISSING |
+//                                                BUILD_IN_FLIGHT.
+//   GET  /translations/baseline-status         — pinned proc baseline.
+//   POST /translations/translate-and-reconcile — 202; 409 LOOP_IN_FLIGHT.
+//   GET  /translations/loop-status             — poll every 3s in flight.
+//   POST /translations/:id/retry-loop          — {guidance} -> 202.
+//   POST /translations/:id/reconcile           — reconcile only.
+//   POST /translations/:id/waive               — {scope, scenario?, reason}.
+//   POST /translations/approve-all-reconciled  — bulk evidence-gated approve.
+//   GET  /translations/:id/attempts            — attempt history.
+//   GET  /translations/:id/parity-report       — latest proc-parity report.
+//
+// WIRE CASE: request bodies are snake_case at the top level with camelCase
+// connection fields (`{ target_db: { dbType, host, port, database, ... } }`)
+// exactly as the gateway declares them. Responses are read through the
+// dual-accept `coerce(snake, camel)` idiom (CLAUDE.md forward pointer) so a
+// future global naming flip cannot break this client — the PUBLIC types below
+// are camelCase and are the only shape components ever see.
+// ============================================================================
+
+export type DbMigrationPackTranslationLoopStatus =
+  | 'idle'
+  | 'queued'
+  | 'translating'
+  | 'applying'
+  | 'reconciling'
+  | 'reconciled'
+  | 'exhausted'
+  | 'apply_failed'
+  | 'unverified'
+  | 'stale'
+  | 'blocked_by_callee'
+  | 'dispositioned';
+
+/** Attempt cap (`PROC_TRANSLATE_ATTEMPT_CAP`) surfaced in the header. */
+export const DB_PACK_TRANSLATION_ATTEMPT_CAP = 4;
+
+/**
+ * `db_migration_pack_translations.verdict_json` — persisted verbatim, so it
+ * is read defensively (every field optional, unknown keys tolerated).
+ */
+export interface DbMigrationPackTranslationVerdict {
+  status?: string;
+  attempt_no?: number;
+  /** Total scenarios reconciled against ("match N of N" denominator). */
+  scenarios?: number;
+  scenarios_failing?: number;
+  /** Surviving failure signatures (dimension + first divergent field). */
+  signatures?: string[];
+  /** Callee routines that are not yet reconciled (`blocked_by_callee`). */
+  blocked_by?: string[];
+  reason?: string;
+  apply_error?: string;
+  /** Attempts spent on this routine (the "N of N" denominator). */
+  attempts?: number;
+  [key: string]: unknown;
+}
+
+/** Per-invocation connection block (never stored client-side). */
+export interface DbMigrationPackDbCredentials {
+  dbType: 'postgres' | 'sybase';
+  host: string;
+  port: number;
+  database: string;
+  schema?: string | null;
+  username: string;
+  password: string;
+}
+
+export interface DbMigrationPackTargetBuildPhase {
+  status: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  detail: string | null;
+  error: string | null;
+}
+
+export interface DbMigrationPackTargetBuild {
+  id: string | null;
+  status: 'running' | 'succeeded' | 'failed' | string | null;
+  phases: Record<string, DbMigrationPackTargetBuildPhase>;
+  packVersion: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  error: string | null;
+}
+
+export interface DbMigrationPackTargetBuildStatus {
+  inFlight: {
+    phase: string | null;
+    startedAt: string | null;
+    buildId: string | null;
+  } | null;
+  latest: DbMigrationPackTargetBuild | null;
+}
+
+export interface StartDbMigrationPackTargetBuildRequest {
+  targetDb: DbMigrationPackDbCredentials;
+  sourceDb?: DbMigrationPackDbCredentials | null;
+  /**
+   * REFUSED by the server today ("drop and recreate the target database, then
+   * build") — the modal keeps the checkbox off and shows the note.
+   */
+  rebuild?: boolean;
+}
+
+export interface StartDbMigrationPackTargetBuildResponse {
+  buildId: string | null;
+  accepted: boolean;
+}
+
+export interface DbMigrationPackProcBaselineStatus {
+  pinned: boolean;
+  baselineId: string | null;
+  scenarios: number;
+  routines: number;
+}
+
+export interface DbMigrationPackLoopEvent {
+  at: string | null;
+  routine: string | null;
+  phase: string | null;
+  detail: string | null;
+}
+
+export interface DbMigrationPackLoopResult {
+  translationId: string | null;
+  routine: string | null;
+  finalStatus: string | null;
+  attempts: number | null;
+  bestAttemptNo: number | null;
+  blockedBy: string[];
+  error: string | null;
+}
+
+export interface DbMigrationPackLoopStatus {
+  inFlight: boolean;
+  phase: string | null;
+  routines: number;
+  done: number;
+  startedAt: string | null;
+  error: string | null;
+  events: DbMigrationPackLoopEvent[];
+  /** Null while the loop runs; the per-routine ledger once it terminates. */
+  results: DbMigrationPackLoopResult[] | null;
+}
+
+export interface TranslateAndReconcileRequest {
+  targetDb: DbMigrationPackDbCredentials;
+  /** Optional routine scope; omitted = every translate-dispositioned row. */
+  translationIds?: string[];
+}
+
+export interface DbMigrationPackParitySignature {
+  signature: string;
+  count: number;
+  scenarioNames: string[];
+}
+
+export interface DbMigrationPackParitySummary {
+  status: string | null;
+  divergent: number;
+  unverifiable: number;
+  scenarios: number;
+  signatures: DbMigrationPackParitySignature[];
+}
+
+export interface DbMigrationPackReconcileResponse {
+  baselineId: string | null;
+  report: {
+    routineId: string | null;
+    routineName: string | null;
+    reportId: string | null;
+    summary: DbMigrationPackParitySummary;
+  } | null;
+}
+
+export interface DbMigrationPackParityExample {
+  where: string | null;
+  expected: string | null;
+  actual: string | null;
+}
+
+export interface DbMigrationPackParityDimension {
+  dimension: string | null;
+  verdict: string | null;
+  advisory: boolean;
+  detail: string | null;
+  firstDivergence: string | null;
+  examples: DbMigrationPackParityExample[];
+}
+
+export interface DbMigrationPackParityScenario {
+  scenarioName: string | null;
+  scenarioType: string | null;
+  verdict: string | null;
+  signature: string | null;
+  unverifiableReason: string | null;
+  waived: boolean;
+  dimensions: DbMigrationPackParityDimension[];
+}
+
+export interface DbMigrationPackParityReport {
+  scenarios: DbMigrationPackParityScenario[];
+  summary: DbMigrationPackParitySummary | null;
+}
+
+export type DbMigrationPackAttemptVerdict =
+  | 'reconciled'
+  | 'divergent'
+  | 'apply_failed'
+  | 'abi_mismatch'
+  | 'overfit_suspected'
+  | 'unverified'
+  | 'failed';
+
+export interface DbMigrationPackAttemptEvidenceRungs {
+  /** none | one | cluster | full (`PROC_TRANSLATE_EVIDENCE_LADDER`). */
+  rung: string | null;
+  divergent: number | null;
+  error: string | null;
+}
+
+export interface DbMigrationPackTranslationAttempt {
+  id: string;
+  attemptNo: number;
+  verdict: DbMigrationPackAttemptVerdict | string | null;
+  draftContent: string | null;
+  judgeVerdict: DbMigrationPackJudgeVerdict | null;
+  applyResult: Record<string, unknown> | null;
+  parityReportId: string | null;
+  evidenceRungs: DbMigrationPackAttemptEvidenceRungs | null;
+  guidanceText: string | null;
+  createdAt: string | null;
+}
+
+export type DbMigrationPackWaiverScope = 'routine' | 'scenario';
+
+export interface DbMigrationPackWaiveRequest {
+  scope: DbMigrationPackWaiverScope;
+  /** Required for `scope: 'scenario'`. */
+  scenario?: string | null;
+  reason: string;
+}
+
+export interface DbMigrationPackWaiveResponse {
+  waiver: Record<string, unknown> | null;
+  target: string | null;
+}
+
+export interface DbMigrationPackApproveAllReconciledResponse {
+  approvedCount: number;
+  eligibleCount: number;
+  failed: Array<{ routine: string; reason: string }>;
+  emission: DbMigrationPackTranslationEmission | null;
+}
+
+// --- dual-accept readers (coerce(snake, camel)) -------------------------------
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+/** First non-null of `source[snake]` / `source[camel]` (the coerce idiom). */
+function pickField(source: unknown, snake: string, camel?: string): unknown {
+  const rec = asRecord(source);
+  if (!rec) return undefined;
+  const primary = rec[snake];
+  if (primary !== undefined && primary !== null) return primary;
+  if (camel) {
+    const secondary = rec[camel];
+    if (secondary !== undefined && secondary !== null) return secondary;
+  }
+  return undefined;
+}
+
+function pickString(source: unknown, snake: string, camel?: string): string | null {
+  const value = pickField(source, snake, camel);
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number') return String(value);
+  return null;
+}
+
+function pickNumber(source: unknown, snake: string, camel?: string): number | null {
+  const value = pickField(source, snake, camel);
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function pickBool(source: unknown, snake: string, camel?: string): boolean {
+  return pickField(source, snake, camel) === true;
+}
+
+function pickArray(source: unknown, snake: string, camel?: string): unknown[] {
+  const value = pickField(source, snake, camel);
+  return Array.isArray(value) ? value : [];
+}
+
+function pickStringArray(source: unknown, snake: string, camel?: string): string[] {
+  return pickArray(source, snake, camel).map((entry) => String(entry));
+}
+
+// --- mappers ------------------------------------------------------------------
+
+function mapBuildPhase(wire: unknown): DbMigrationPackTargetBuildPhase {
+  return {
+    status: pickString(wire, 'status'),
+    startedAt: pickString(wire, 'started_at', 'startedAt'),
+    endedAt: pickString(wire, 'ended_at', 'endedAt'),
+    detail: pickString(wire, 'detail'),
+    error: pickString(wire, 'error'),
+  };
+}
+
+function mapTargetBuild(wire: unknown): DbMigrationPackTargetBuild | null {
+  if (!asRecord(wire)) return null;
+  const phasesWire =
+    pickField(wire, 'phases_json', 'phasesJson') ?? pickField(wire, 'phases');
+  const phases: Record<string, DbMigrationPackTargetBuildPhase> = {};
+  const phasesRec = asRecord(phasesWire);
+  if (phasesRec) {
+    for (const [name, phase] of Object.entries(phasesRec)) {
+      phases[name] = mapBuildPhase(phase);
+    }
+  }
+  return {
+    id: pickString(wire, 'id'),
+    status: pickString(wire, 'status'),
+    phases,
+    packVersion: pickString(wire, 'pack_version', 'packVersion'),
+    startedAt: pickString(wire, 'started_at', 'startedAt'),
+    endedAt: pickString(wire, 'ended_at', 'endedAt'),
+    error: pickString(wire, 'error'),
+  };
+}
+
+function mapTargetBuildStatus(wire: unknown): DbMigrationPackTargetBuildStatus {
+  const inFlightWire = pickField(wire, 'in_flight', 'inFlight');
+  return {
+    inFlight: asRecord(inFlightWire)
+      ? {
+          phase: pickString(inFlightWire, 'phase'),
+          startedAt: pickString(inFlightWire, 'started_at', 'startedAt'),
+          buildId: pickString(inFlightWire, 'build_id', 'buildId'),
+        }
+      : null,
+    latest: mapTargetBuild(pickField(wire, 'latest')),
+  };
+}
+
+function mapBaselineStatus(wire: unknown): DbMigrationPackProcBaselineStatus {
+  return {
+    pinned: pickBool(wire, 'pinned'),
+    baselineId: pickString(wire, 'baseline_id', 'baselineId'),
+    scenarios: pickNumber(wire, 'scenarios') ?? 0,
+    routines: pickNumber(wire, 'routines') ?? 0,
+  };
+}
+
+function mapLoopStatus(wire: unknown): DbMigrationPackLoopStatus {
+  const resultsWire = pickField(wire, 'results');
+  return {
+    inFlight: pickBool(wire, 'in_flight', 'inFlight'),
+    phase: pickString(wire, 'phase'),
+    routines: pickNumber(wire, 'routines') ?? 0,
+    done: pickNumber(wire, 'done') ?? 0,
+    startedAt: pickString(wire, 'started_at', 'startedAt'),
+    error: pickString(wire, 'error'),
+    events: pickArray(wire, 'events').map((event) => ({
+      at: pickString(event, 'at'),
+      routine: pickString(event, 'routine'),
+      phase: pickString(event, 'phase'),
+      detail: pickString(event, 'detail'),
+    })),
+    results: Array.isArray(resultsWire)
+      ? resultsWire.map((result) => ({
+          translationId: pickString(result, 'translation_id', 'translationId'),
+          routine: pickString(result, 'routine'),
+          finalStatus: pickString(result, 'final_status', 'finalStatus'),
+          attempts: pickNumber(result, 'attempts'),
+          bestAttemptNo: pickNumber(result, 'best_attempt_no', 'bestAttemptNo'),
+          blockedBy: pickStringArray(result, 'blocked_by', 'blockedBy'),
+          error: pickString(result, 'error'),
+        }))
+      : null,
+  };
+}
+
+function mapParitySummary(wire: unknown): DbMigrationPackParitySummary {
+  return {
+    status: pickString(wire, 'status'),
+    divergent: pickNumber(wire, 'divergent') ?? 0,
+    unverifiable: pickNumber(wire, 'unverifiable') ?? 0,
+    scenarios: pickNumber(wire, 'scenarios') ?? 0,
+    signatures: pickArray(wire, 'signatures').map((entry) => ({
+      signature: pickString(entry, 'signature') ?? '',
+      count: pickNumber(entry, 'count') ?? 0,
+      scenarioNames: pickStringArray(entry, 'scenario_names', 'scenarioNames'),
+    })),
+  };
+}
+
+function mapParityReport(wire: unknown): DbMigrationPackParityReport | null {
+  const reportWire = pickField(wire, 'report');
+  if (!asRecord(reportWire)) return null;
+  const json = pickField(reportWire, 'report_json', 'reportJson') ?? reportWire;
+  const summaryWire = pickField(json, 'summary');
+  return {
+    scenarios: pickArray(json, 'scenarios').map((scenario) => ({
+      scenarioName: pickString(scenario, 'scenario_name', 'scenarioName'),
+      scenarioType: pickString(scenario, 'scenario_type', 'scenarioType'),
+      verdict: pickString(scenario, 'verdict'),
+      signature: pickString(scenario, 'signature'),
+      unverifiableReason: pickString(
+        scenario,
+        'unverifiable_reason',
+        'unverifiableReason',
+      ),
+      waived: pickBool(scenario, 'waived'),
+      dimensions: pickArray(scenario, 'dimensions').map((dimension) => ({
+        dimension: pickString(dimension, 'dimension'),
+        verdict: pickString(dimension, 'verdict'),
+        advisory: pickBool(dimension, 'advisory'),
+        detail: pickString(dimension, 'detail'),
+        firstDivergence: pickString(
+          dimension,
+          'first_divergence',
+          'firstDivergence',
+        ),
+        examples: pickArray(dimension, 'examples').map((example) => ({
+          where: pickString(example, 'where'),
+          expected: pickString(example, 'expected'),
+          actual: pickString(example, 'actual'),
+        })),
+      })),
+    })),
+    summary: asRecord(summaryWire) ? mapParitySummary(summaryWire) : null,
+  };
+}
+
+function mapAttempt(wire: unknown): DbMigrationPackTranslationAttempt {
+  const rungsWire = pickField(wire, 'evidence_rungs_json', 'evidenceRungsJson');
+  return {
+    id: pickString(wire, 'id') ?? '',
+    attemptNo: pickNumber(wire, 'attempt_no', 'attemptNo') ?? 0,
+    verdict: pickString(wire, 'verdict'),
+    draftContent: pickString(wire, 'draft_content', 'draftContent'),
+    judgeVerdict:
+      (asRecord(
+        pickField(wire, 'judge_verdict_json', 'judgeVerdictJson'),
+      ) as DbMigrationPackJudgeVerdict | null) ?? null,
+    applyResult: asRecord(pickField(wire, 'apply_result_json', 'applyResultJson')),
+    parityReportId: pickString(wire, 'parity_report_id', 'parityReportId'),
+    evidenceRungs: asRecord(rungsWire)
+      ? {
+          rung: pickString(rungsWire, 'rung'),
+          divergent: pickNumber(rungsWire, 'divergent'),
+          error: pickString(rungsWire, 'error'),
+        }
+      : null,
+    guidanceText: pickString(wire, 'guidance_text', 'guidanceText'),
+    createdAt: pickString(wire, 'created_at', 'createdAt'),
+  };
+}
+
+/** Serialise a credential block to the gateway camelCase connection shape. */
+function credentialsToWire(
+  creds: DbMigrationPackDbCredentials,
+): Record<string, unknown> {
+  return {
+    dbType: creds.dbType,
+    host: creds.host,
+    port: creds.port,
+    database: creds.database,
+    ...(creds.schema ? { schema: creds.schema } : {}),
+    username: creds.username,
+    password: creds.password,
+  };
+}
+
+// --- calls --------------------------------------------------------------------
+
+function packBase(projectId: string, packId: string): string {
+  return `${packsBase(projectId)}/${encodeURIComponent(packId)}`;
+}
+
+/** In-flight + latest target build (polled every 3s while in flight). */
+export async function getDbMigrationPackTargetBuildStatus(
+  projectId: string,
+  packId: string,
+): Promise<DbMigrationPackTargetBuildStatus> {
+  const wire = await getJson<unknown>(
+    `${packBase(projectId, packId)}/target/build/status`,
+    'Failed to load the target build status',
+  );
+  return mapTargetBuildStatus(wire);
+}
+
+/**
+ * Start the FULL target build (schema -> data -> translations) from the pack
+ * into the DECLARED target database (decision 11). 202; the gateway answers
+ * 409 `SOURCE_DB_MISSING` when the data phase needs source credentials and
+ * `BUILD_IN_FLIGHT` when one is already running.
+ */
+export async function startDbMigrationPackTargetBuild(
+  projectId: string,
+  packId: string,
+  request: StartDbMigrationPackTargetBuildRequest,
+): Promise<StartDbMigrationPackTargetBuildResponse> {
+  const wire = await sendJson<unknown>(
+    `${packBase(projectId, packId)}/target/build`,
+    'POST',
+    {
+      target_db: credentialsToWire(request.targetDb),
+      ...(request.sourceDb
+        ? { source_db: credentialsToWire(request.sourceDb) }
+        : {}),
+      ...(request.rebuild ? { rebuild: true } : {}),
+    },
+    'Failed to start the target build',
+  );
+  return { buildId: pickString(wire, 'build_id', 'buildId'), accepted: true };
+}
+
+/** Pinned proc-baseline status (scenario + routine counts). */
+export async function getDbMigrationPackProcBaselineStatus(
+  projectId: string,
+  packId: string,
+): Promise<DbMigrationPackProcBaselineStatus> {
+  const wire = await getJson<unknown>(
+    `${translationsBase(projectId, packId)}/baseline-status`,
+    'Failed to load the proc baseline status',
+  );
+  return mapBaselineStatus(wire);
+}
+
+/**
+ * Start the AUTOMATIC translate -> apply -> reconcile -> re-translate loop
+ * over every translate-dispositioned routine (or the supplied scope). 202;
+ * 409 `LOOP_IN_FLIGHT`.
+ */
+export async function translateAndReconcileDbMigrationPack(
+  projectId: string,
+  packId: string,
+  request: TranslateAndReconcileRequest,
+): Promise<{ accepted: boolean }> {
+  await sendJson<unknown>(
+    `${translationsBase(projectId, packId)}/translate-and-reconcile`,
+    'POST',
+    {
+      target_db: credentialsToWire(request.targetDb),
+      ...(request.translationIds && request.translationIds.length > 0
+        ? { translation_ids: request.translationIds }
+        : {}),
+    },
+    'Translate and reconcile failed to start',
+  );
+  return { accepted: true };
+}
+
+/** Loop progress (poll every 3s while `inFlight`). */
+export async function getDbMigrationPackLoopStatus(
+  projectId: string,
+  packId: string,
+): Promise<DbMigrationPackLoopStatus> {
+  const wire = await getJson<unknown>(
+    `${translationsBase(projectId, packId)}/loop-status`,
+    'Failed to load the loop status',
+  );
+  return mapLoopStatus(wire);
+}
+
+/**
+ * Human intervention (decision 16): reviewer guidance feeds the NEXT attempt.
+ * There is no direct draft editing anywhere.
+ */
+export async function retryDbMigrationPackTranslationLoop(
+  projectId: string,
+  packId: string,
+  translationId: string,
+  targetDb: DbMigrationPackDbCredentials,
+  guidance: string,
+): Promise<{ accepted: boolean }> {
+  await sendJson<unknown>(
+    `${translationsBase(projectId, packId)}/${encodeURIComponent(
+      translationId,
+    )}/retry-loop`,
+    'POST',
+    { target_db: credentialsToWire(targetDb), guidance },
+    `Guidance and retry failed for translation ${translationId}`,
+  );
+  return { accepted: true };
+}
+
+/** Reconcile ONE routine applied draft against the pinned proc baseline. */
+export async function reconcileDbMigrationPackTranslation(
+  projectId: string,
+  packId: string,
+  translationId: string,
+  targetDb: DbMigrationPackDbCredentials,
+): Promise<DbMigrationPackReconcileResponse> {
+  const wire = await sendJson<unknown>(
+    `${translationsBase(projectId, packId)}/${encodeURIComponent(
+      translationId,
+    )}/reconcile`,
+    'POST',
+    { target_db: credentialsToWire(targetDb) },
+    `Reconcile failed for translation ${translationId}`,
+  );
+  const reportWire = pickField(wire, 'report');
+  return {
+    baselineId: pickString(wire, 'baseline_id', 'baselineId'),
+    report: asRecord(reportWire)
+      ? {
+          routineId: pickString(reportWire, 'routine_id', 'routineId'),
+          routineName: pickString(reportWire, 'routine_name', 'routineName'),
+          reportId: pickString(reportWire, 'report_id', 'reportId'),
+          summary: mapParitySummary(pickField(reportWire, 'summary')),
+        }
+      : null,
+  };
+}
+
+/**
+ * Record a waiver (decision 12: scope routine OR scenario, reason mandatory —
+ * "reconciled with waivers" is its own bucket, never fully reconciled).
+ */
+export async function waiveDbMigrationPackTranslation(
+  projectId: string,
+  packId: string,
+  translationId: string,
+  request: DbMigrationPackWaiveRequest,
+): Promise<DbMigrationPackWaiveResponse> {
+  const wire = await sendJson<unknown>(
+    `${translationsBase(projectId, packId)}/${encodeURIComponent(
+      translationId,
+    )}/waive`,
+    'POST',
+    {
+      scope: request.scope,
+      ...(request.scenario ? { scenario: request.scenario } : {}),
+      reason: request.reason,
+    },
+    `Failed to record the waiver for translation ${translationId}`,
+  );
+  return {
+    waiver: asRecord(pickField(wire, 'waiver')),
+    target: pickString(wire, 'target'),
+  };
+}
+
+/** Bulk evidence-gated approve (reconciled / waiver-covered rows only). */
+export async function approveAllReconciledDbMigrationPackTranslations(
+  projectId: string,
+  packId: string,
+): Promise<DbMigrationPackApproveAllReconciledResponse> {
+  const wire = await sendJson<unknown>(
+    `${translationsBase(projectId, packId)}/approve-all-reconciled`,
+    'POST',
+    {},
+    'Approve all reconciled failed',
+  );
+  return {
+    approvedCount: pickNumber(wire, 'approved_count', 'approvedCount') ?? 0,
+    eligibleCount: pickNumber(wire, 'eligible_count', 'eligibleCount') ?? 0,
+    failed: pickArray(wire, 'failed').map((entry) => ({
+      routine:
+        pickString(entry, 'routine') ??
+        pickString(entry, 'translation_key', 'translationKey') ??
+        '(unnamed)',
+      reason: pickString(entry, 'reason') ?? 'no reason supplied',
+    })),
+    emission:
+      (asRecord(
+        pickField(wire, 'emission'),
+      ) as DbMigrationPackTranslationEmission | null) ?? null,
+  };
+}
+
+/** Attempt history for one routine (oldest attempt first). */
+export async function listDbMigrationPackTranslationAttempts(
+  projectId: string,
+  packId: string,
+  translationId: string,
+): Promise<DbMigrationPackTranslationAttempt[]> {
+  const wire = await getJson<unknown>(
+    `${translationsBase(projectId, packId)}/${encodeURIComponent(
+      translationId,
+    )}/attempts`,
+    `Failed to load the attempt history for translation ${translationId}`,
+  );
+  const rows = Array.isArray(wire) ? wire : pickArray(wire, 'attempts');
+  return rows.map(mapAttempt).sort((a, b) => a.attemptNo - b.attemptNo);
+}
+
+/** Latest proc-parity report for one routine (null before any reconcile). */
+export async function getDbMigrationPackTranslationParityReport(
+  projectId: string,
+  packId: string,
+  translationId: string,
+): Promise<DbMigrationPackParityReport | null> {
+  const wire = await getJson<unknown>(
+    `${translationsBase(projectId, packId)}/${encodeURIComponent(
+      translationId,
+    )}/parity-report`,
+    `Failed to load the parity report for translation ${translationId}`,
+  );
+  return mapParityReport(wire);
 }

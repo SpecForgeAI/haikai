@@ -24,6 +24,15 @@ import {
 } from '../services/migrationExecutionRunClient';
 import { BookOfWork } from '../services/migrationDriverAmsReads';
 
+// Spec 5 (proc behaviour program): the graduated proc-parity gate has its own
+// matrix suite; here it is a pass-through so the plane-precedence tests keep
+// exercising the data-parity gate alone.
+jest.mock('../services/migrationProcParityGate', () => ({
+  evaluateProcParityReadiness: jest.fn().mockResolvedValue({
+    ok: true, reasons: [], warnings: [], counts: {}, findings: [], states: [],
+  }),
+}));
+
 const PROJECT_ID = 'proj-1';
 
 function specGen(workItemId: string, id: string, text = 'shape-spec text') {

@@ -40,6 +40,10 @@ class EndpointDataEffectControllerTest {
     @Mock
     private EndpointDataEffectRepository repository;
 
+    /** Spec 2 (2026-09-09): the architecture-wide proc-call read resolves the model file. */
+    @Mock
+    private com.example.architecturemodel.repository.ModelFileRepository modelFileRepository;
+
     private MockMvc mockMvc;
 
     private static final UUID PROJECT_ID =
@@ -50,9 +54,43 @@ class EndpointDataEffectControllerTest {
     @BeforeEach
     void setUp() {
         mockMvc = MockMvcBuilders
-            .standaloneSetup(new EndpointDataEffectController(repository))
+            .standaloneSetup(new EndpointDataEffectController(repository, modelFileRepository))
             .setControllerAdvice(new GlobalExceptionHandler())
             .build();
+    }
+
+    @Test
+    @DisplayName("proc-calls: architecture-wide read returns only effects carrying a proc_name (Spec 2, 2026-09-09)")
+    void procCallsReturnsOnlyProcCallEffects() throws Exception {
+        com.example.architecturemodel.model.entity.ModelFileEntity modelFile =
+            org.mockito.Mockito.mock(com.example.architecturemodel.model.entity.ModelFileEntity.class);
+        when(modelFile.getId()).thenReturn("mf-1");
+        when(modelFileRepository.findByProjectIdAndArchitectureId(PROJECT_ID, ARCH_ID))
+            .thenReturn(java.util.Optional.of(modelFile));
+        EndpointDataEffectEntity procCall = effect("e-proc", "ep-1", "dep_phy_ledger");
+        procCall.setAccessMode("execute");
+        procCall.setPathMetadataJson(java.util.Map.of(
+            "proc_name", "dbo.upd_ledger_roll", "query_text", "{call upd_ledger_roll(?)}"));
+        EndpointDataEffectEntity plainWrite = effect("e-write", "ep-2", "dep_phy_ledger");
+        plainWrite.setPathMetadataJson(java.util.Map.of("query_text", "update ledger set x = 1"));
+        when(repository.findByModelFileId("mf-1")).thenReturn(List.of(procCall, plainWrite));
+
+        mockMvc.perform(get("/api/model/projects/{p}/architectures/{a}/endpoint-data-effects/proc-calls",
+                PROJECT_ID, ARCH_ID))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.length()").value(1))
+            .andExpect(jsonPath("$[0].id").value("e-proc"))
+            .andExpect(jsonPath("$[0].path_metadata_json.proc_name").value("dbo.upd_ledger_roll"));
+    }
+
+    @Test
+    @DisplayName("proc-calls: 404 when the architecture has no model file")
+    void procCallsWithoutModelFileIs404() throws Exception {
+        when(modelFileRepository.findByProjectIdAndArchitectureId(PROJECT_ID, ARCH_ID))
+            .thenReturn(java.util.Optional.empty());
+        mockMvc.perform(get("/api/model/projects/{p}/architectures/{a}/endpoint-data-effects/proc-calls",
+                PROJECT_ID, ARCH_ID))
+            .andExpect(status().isNotFound());
     }
 
     private static EndpointDataEffectEntity effect(

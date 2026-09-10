@@ -50,4 +50,11 @@ public interface DbMigrationPackTranslationRepository
      * (Spec 2026-07-02-a, Persistence-Tier Oracle Program).
      */
     long countByPackIdAndReviewStatusIn(UUID packId, Collection<String> reviewStatuses);
+
+    /**
+     * Translations linked to routine-catalog rows (Stored Proc &amp; Function
+     * Behaviour Program, Spec 5 drift): a re-scan that changes a routine's
+     * body marks these {@code stale} so the workbench re-runs the loop.
+     */
+    List<DbMigrationPackTranslationEntity> findByRoutineIdIn(Collection<UUID> routineIds);
 }

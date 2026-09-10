@@ -328,11 +328,21 @@ export function detectSequenceGeneratorIdioms(
   return out;
 }
 
+/** Closure depth cap. Spec 1 (2026-09-09) made the closure UNCAPPED by
+ *  default (0 = unlimited; cycle-safe regardless) — the old depth-3 cap
+ *  silently under-reported side-effect scope for deeper `exec` chains.
+ *  `SCL_PROC_CLOSURE_MAX_DEPTH=<n>` restores a cap for diagnosis. */
+export function procClosureMaxDepth(): number {
+  const raw = Number(process.env.SCL_PROC_CLOSURE_MAX_DEPTH ?? '0');
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 0;
+}
+
 /** name -> transitively-closed {writes, reads} (nested `exec` followed,
- *  cycle-safe, depth-capped — updateTree_roll -> updateBook_roll). */
+ *  cycle-safe, uncapped by default — updateTree_roll -> updateBook_roll). */
 export function closeProcCatalog(
   catalog: ProcCatalogEntry[],
 ): Map<string, { writes: string[]; reads: string[] }> {
+  const maxDepth = procClosureMaxDepth();
   const byName = new Map<string, ProcCatalogEntry>();
   for (const entry of catalog) if (!byName.has(entry.name)) byName.set(entry.name, entry);
   const closed = new Map<string, { writes: string[]; reads: string[] }>();
@@ -348,7 +358,7 @@ export function closeProcCatalog(
     const queue: Array<{ name: string; depth: number }> = [{ name: entry.name, depth: 0 }];
     while (queue.length > 0) {
       const { name, depth } = queue.shift() as { name: string; depth: number };
-      if (seen.has(name) || depth > 3) continue;
+      if (seen.has(name) || (maxDepth > 0 && depth > maxDepth)) continue;
       seen.add(name);
       const p = byName.get(name);
       if (!p) continue;

@@ -59,6 +59,7 @@ import {
   buildConstraintsMetadata,
 } from '../candidateStructuralFidelity';
 import { harvestLiveProcSources } from './sybaseProcHarvest';
+import { profileTsqlRoutine } from './tsqlRoutineProfiler';
 import { callSidecarQuery } from './sybaseSidecarClient';
 import {
   callSidecarIntrospect,
@@ -240,6 +241,9 @@ export class SybaseDiscoveryPack implements DatabaseDiscoveryPack {
     );
     return sources;
   }
+
+  /** T-SQL routine profiler (Spec 1, 2026-09-09) — pure, pack-owned dialect knowledge. */
+  profileRoutine = profileTsqlRoutine;
 
   /** Live uniqueness probe (2026-08-23, item 4) — read-only via /query. */
   async probeKeyCandidate(

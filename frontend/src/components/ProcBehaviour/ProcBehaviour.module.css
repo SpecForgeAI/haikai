@@ -1,0 +1,240 @@
+/*
+ * ProcBehaviour — small additive stylesheet.
+ *
+ * The page chrome (container / header / section / statusBadge / row / list /
+ * primaryButton / secondaryButton / errorBanner / emptyMessage / tabsNav) is
+ * reused verbatim from `DashboardView/ApiBaselinesListPage.module.css` — the
+ * baseline design system. This file adds ONLY what that stylesheet has no
+ * class for: the routine scope table, the coverage rows and the envelope
+ * viewer's small grids.
+ */
+
+.tableWrap {
+  max-height: 340px;
+  overflow: auto;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.table thead th {
+  position: sticky;
+  top: 0;
+  background: #fafafa;
+  text-align: left;
+  font-weight: 600;
+  color: #455a64;
+  padding: 6px 8px;
+  border-bottom: 1px solid #e0e0e0;
+  white-space: nowrap;
+}
+
+.table tbody td {
+  padding: 5px 8px;
+  border-bottom: 1px solid #f0f0f0;
+  vertical-align: top;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  word-break: break-word;
+}
+
+.flag {
+  display: inline-block;
+  padding: 1px 6px;
+  margin-right: 4px;
+  border-radius: 10px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.flagWarn {
+  background: #fff3e0;
+  color: #e65100;
+}
+
+.flagInfo {
+  background: #e1f5fe;
+  color: #0277bd;
+}
+
+.flagMuted {
+  background: #f5f5f5;
+  color: #757575;
+}
+
+.bucketVerified {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.bucketNotExercised {
+  background: #fff8e1;
+  color: #f57c00;
+}
+
+.bucketUnverifiable {
+  background: #ffebee;
+  color: #c62828;
+}
+
+.bucketExcluded {
+  background: #eceff1;
+  color: #455a64;
+}
+
+.filterRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.filterRow input[type='text'],
+.filterRow select {
+  padding: 4px 6px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.envelope {
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  padding: 8px;
+  margin-top: 6px;
+  background: #fcfcfc;
+}
+
+.envelopeLine {
+  font-size: 12px;
+  margin-bottom: 4px;
+  color: #37474f;
+}
+
+.envelopeHeading {
+  font-size: 12px;
+  font-weight: 600;
+  color: #455a64;
+  margin: 8px 0 4px;
+}
+
+.envelopeError {
+  border-left: 3px solid #c62828;
+  padding-left: 8px;
+  color: #c62828;
+  font-size: 12px;
+}
+
+.truncatedNote {
+  font-size: 11px;
+  color: #757575;
+  padding: 4px 8px;
+}
+
+.step {
+  border-left: 3px solid #b0bec5;
+  padding-left: 8px;
+  margin-top: 8px;
+}
+
+.routineGroup {
+  border: 1px solid #e8e8e8;
+  border-radius: 4px;
+  padding: 8px;
+  margin-bottom: 10px;
+  background: #fff;
+}
+
+.routineGroupHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-weight: 600;
+  font-size: 13px;
+  color: #263238;
+  margin-bottom: 6px;
+}
+
+.scenarioRow {
+  border-top: 1px solid #f0f0f0;
+  padding: 6px 0;
+  font-size: 12px;
+}
+
+.scenarioRowHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.linkButton {
+  background: none;
+  border: none;
+  color: #1565c0;
+  cursor: pointer;
+  padding: 0;
+  font-size: 12px;
+  text-decoration: underline;
+}
+
+.linkButton:disabled {
+  color: #9e9e9e;
+  cursor: default;
+}
+
+.reasonInput {
+  width: 100%;
+  min-width: 160px;
+  padding: 3px 6px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.modalWide {
+  max-width: 900px;
+  width: 90vw;
+}
+
+.hint {
+  font-size: 12px;
+  color: #666;
+  margin: 4px 0 8px;
+}
+
+/* Source-drift banner (Spec 5, 2026-09-09). Amber: drift is a SIGNAL that the
+   oracle has aged, never a lock — nothing on the page is disabled by it. */
+.driftBanner {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 4px 0 10px;
+  padding: 8px 12px;
+  border: 1px solid #ffe082;
+  border-radius: 4px;
+  background: #fff8e1;
+  color: #6d4c41;
+  font-size: 13px;
+}

@@ -166,6 +166,45 @@ export const DbMigrationPackView: React.FC<DbMigrationPackViewProps> = ({
 
   const manifest: DbMigrationPackManifest | null = pack?.manifest_json ?? null;
 
+  // Stored proc call-site compatibility (Spec 2, 2026-09-09): emitted onto
+  // the manifest by the translation emission when a routine catalog exists.
+  // Defensive read — pre-catalog packs carry no section.
+  const callSiteCompatibility = ((): {
+    compatible: number;
+    needs_change: number;
+    unknown: number;
+    rule_id: string;
+    sites: Array<{
+      endpoint_id: string;
+      routine: string;
+      pattern: string;
+      verdict: string;
+      reason: string | null;
+      shape: string | null;
+    }>;
+  } | null => {
+    const raw = (manifest as unknown as Record<string, unknown> | null)?.['call_site_compatibility'];
+    if (!raw || typeof raw !== 'object') return null;
+    const rec = raw as Record<string, unknown>;
+    const n = (k: string): number => (typeof rec[k] === 'number' ? (rec[k] as number) : 0);
+    return {
+      compatible: n('compatible'),
+      needs_change: n('needs_change'),
+      unknown: n('unknown'),
+      rule_id: typeof rec.rule_id === 'string' ? rec.rule_id : 'SYBPG.PROC.CALLSITE.001',
+      sites: Array.isArray(rec.sites)
+        ? (rec.sites as Array<Record<string, unknown>>).map((s) => ({
+            endpoint_id: String(s.endpoint_id ?? ''),
+            routine: String(s.routine ?? ''),
+            pattern: String(s.pattern ?? ''),
+            verdict: String(s.verdict ?? ''),
+            reason: typeof s.reason === 'string' ? s.reason : null,
+            shape: typeof s.shape === 'string' ? s.shape : null,
+          }))
+        : [],
+    };
+  })();
+
   const selectedFile = useMemo(
     () => files.find((f) => f.file_path === selectedFilePath) ?? null,
     [files, selectedFilePath],
@@ -605,6 +644,65 @@ export const DbMigrationPackView: React.FC<DbMigrationPackViewProps> = ({
                 <p className={styles.manifestNote}>{manifest.delete_propagation}</p>
                 <p className={styles.manifestNote}>{manifest.seed_margin_note}</p>
               </div>
+
+              {callSiteCompatibility && (
+                <div
+                  className={styles.manifestSection}
+                  data-testid="db-pack-call-site-compatibility"
+                >
+                  <h4 className={styles.manifestSectionTitle}>
+                    Stored proc call-site compatibility
+                  </h4>
+                  <p className={styles.manifestNote}>
+                    Application call sites classified against each routine&apos;s
+                    calling convention ({callSiteCompatibility.rule_id}). Compatible
+                    sites keep their code; needs-change sites carry the named change.
+                  </p>
+                  <p data-testid="db-pack-call-site-counts">
+                    <span className={styles.badge}>
+                      {callSiteCompatibility.compatible} compatible
+                    </span>{' '}
+                    <span
+                      className={
+                        callSiteCompatibility.needs_change > 0
+                          ? styles.badgeFlagged
+                          : styles.badge
+                      }
+                    >
+                      {callSiteCompatibility.needs_change} need a change
+                    </span>{' '}
+                    <span className={styles.badge}>
+                      {callSiteCompatibility.unknown} unknown
+                    </span>
+                  </p>
+                  {callSiteCompatibility.sites.filter((s) => s.verdict === 'needs_change').length > 0 && (
+                    <div className={styles.tableScroll}>
+                      <table className={styles.dataTable}>
+                        <thead>
+                          <tr>
+                            <th>Routine</th>
+                            <th>Shape</th>
+                            <th>Pattern</th>
+                            <th>Change needed</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {callSiteCompatibility.sites
+                            .filter((s) => s.verdict === 'needs_change')
+                            .map((s, idx) => (
+                              <tr key={`${s.routine}-${s.endpoint_id}-${idx}`}>
+                                <td>{s.routine}</td>
+                                <td>{s.shape ?? '—'}</td>
+                                <td>{s.pattern}</td>
+                                <td>{s.reason ?? '—'}</td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div
                 className={styles.manifestSection}

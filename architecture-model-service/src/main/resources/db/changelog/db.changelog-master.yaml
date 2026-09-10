@@ -5308,3 +5308,51 @@ databaseChangeLog:
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: true
+
+  # 229: routine catalog (Stored Proc & Function Behaviour Program, Spec 1,
+  # 2026-09-09). First-class `db_routines` facts (procs / functions /
+  # triggers with FULL unbounded bodies, parsed signatures, static profiles
+  # and closures) written by the DB scan at completion, plus a nullable
+  # `routine_id` link on db_migration_pack_translations so the translation
+  # queue seeds from the entity body instead of the 64KB finding snippet.
+  - changeSet:
+      id: 229-db-routines
+      author: architecture-tool
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/229-db-routines.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # 230: proc behaviour capture (Stored Proc & Function Behaviour Program,
+  # Spec 3, 2026-09-09). The SECOND kind of behaviour baseline: sessions,
+  # scenarios, captures, baselines + items and diagnostics for routine calls
+  # fired at S0 inside the derived compensation bracket. Mirrors the API
+  # capture posture but is DB-native -- no base URL, no API auth. One pinned
+  # baseline per (architecture, kind), enforced by ProcBehaviourService#pin.
+  - changeSet:
+      id: 230-proc-behaviour
+      author: architecture-tool
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/230-proc-behaviour.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # 231: translation workbench loop (Stored Proc & Function Behaviour Program,
+  # Spec 4, 2026-09-09). Loop columns on the translation queue (loop_status,
+  # current/best attempt, verdict, parity report, stale reason), the
+  # append-only attempt history, the target-database build rows the loop
+  # applies drafts against, and the proc-parity comparator reports
+  # (workbench | execution | manual) with the latest-per-routine read.
+  - changeSet:
+      id: 231-proc-workbench
+      author: architecture-tool
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/231-proc-workbench.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true

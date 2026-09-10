@@ -210,6 +210,43 @@ not emitted in this build (do not expect it; listed for context).
   clean parity run is a real finding; a block because no parity run
   happened yet is the gate working.
 
+### PROC — stored proc & function behaviour (services `capture-svc`, `gateway`; banners per capture session / workbench loop / plane)
+- **PROC.CAP.01** [E] — a proc capture session ran the LLM scenario loop
+  with the compensation bracket active for every mutating routine (actual
+  names routines fired / compensated / halted-on-residue). A capture that
+  ran WITHOUT the bracket on a mutating routine is a finding.
+- **PROC.CAP.02** [E] — the coverage floor was scored honestly per routine:
+  every statically-enumerated exit outcome landed in exactly one bucket
+  (verified / not_exercised / unverifiable(reason) / excluded). Unverified
+  routines are a state, never a silent pass.
+- **PROC.APPLY.01** [E] — a translated routine was applied to the declared
+  target DB (drop-then-create inside one transaction); the Postgres error
+  (SQLSTATE + message) rides the actual on failure — never a bare "failed".
+- **PROC.BUILD.01** [E] — the workbench target build ran schema → data →
+  post-load against the DECLARED target; a `rebuild` request is refused
+  honestly (`rebuild_unsupported`) rather than silently running a build.
+- **PROC.LOOP.01** [E] — the translate → apply → reconcile → re-translate
+  loop climbed the evidence ladder (attempt 1 = source + contract, ZERO
+  scenarios; then one failing scenario; then one per signature; then all)
+  and stopped at `reconciled` or the attempt cap; callee-first order held
+  (a caller waits on `blocked_by_callee`, never translates ahead). Evidence
+  in a first attempt, or a cap overrun, is a finding.
+- **PROC.REC.01** [E] — proc parity replayed EVERY pinned baseline scenario
+  of the scoped routines through the shape-adaptive ABI and judged each
+  dimension (outcome / return_status / output_params / result_sets;
+  messages + update_counts advisory) strictly, with rule-cited tolerance
+  only; stale items are `unverifiable`, never silently matched.
+- **PROC.GATE.01** [E, fires at the plane boundary after the DB plane, and
+  at DB-plane completion] — the graduated gate evaluated honestly: plan
+  START is never blocked; a block reason exists ONLY for a routine the NEXT
+  plane depends on (a call-site edge from endpoint code) that is not
+  reconciled and not waived (`proc-parity:<routine>`); every other
+  non-reconciled routine is a warning with a count; on the FINAL plane (a
+  DB-only migration included) the run completes DEPLOYED with a
+  `proc_parity_findings` decision-log entry listing the routines. A block
+  on a routine the next plane does NOT call, or a blocked plan start, is a
+  finding; a warning list on a DB-only run is the gate working.
+
 ### CAP — API behaviour baseline capture (service `capture-svc`; banners per session)
 - **CAP.OPS.01** [E] — no infra error AND ≥1 scenario persisted a capture;
   completed/attempted/errored tallies in actual. A completed-with-0-captured

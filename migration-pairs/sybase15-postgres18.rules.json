@@ -1,6 +1,6 @@
 {
   "pair_id": "sybase15-postgres18",
-  "version": 1,
+  "version": 2,
   "source": {
     "engine": "sybase",
     "version": "15",
@@ -287,6 +287,258 @@
       "scenario_seed": "Write an amount requiring rounding at the 4th decimal and assert identical rounding behaviour.",
       "severity": "value_divergence",
       "notes": "2026-08-07 (gold standard C5): the ASE date/time family previously had NO rule - textual shape differences ('13:05:09' vs '13:05:09.000', '2026-01-31' vs '2026-01-31 00:00:00') diverged falsely. Second-granularity epoch canonical form."
+    },
+    {
+      "id": "SYBPG.PROC.ABI.001",
+      "divergence_class": "calling_convention",
+      "title": "Shape-adaptive calling convention for translated procedures and functions",
+      "applies_to": {
+        "object_kinds": ["procedure", "function"]
+      },
+      "comparison": null,
+      "convention": {
+        "language": "plpgsql",
+        "function_name": "routine name, lower case, in the mapped target schema",
+        "arg_naming": "source parameter name without the @ sigil, lower case, source order",
+        "out_param_naming": "same as arg_naming; OUTPUT parameters become OUT arguments",
+        "return_status_out_name": "return_status",
+        "refcursor_prefix": "rs",
+        "shapes": {
+          "return_status": "no result set, no OUTPUT parameter: RETURNS integer (the RETURN value; 0 when the source returns nothing)",
+          "single_result_set": "exactly one result-producing SELECT and a trivial return status: RETURNS TABLE(<columns of that SELECT>) / SETOF; the existing {call}+executeQuery JDBC pattern keeps working",
+          "out_params": "OUTPUT parameters and no result set: OUT arguments (plus OUT return_status when the status is non-trivial); the registered-parameter JDBC pattern keeps working",
+          "rich": "more than one result set, or a result set combined with OUTPUT parameters or a non-trivial return status: OUT refcursor arguments rs1..rsN in source order + OUT return_status + OUT parameters; the caller must run inside a transaction and FETCH ALL from each cursor"
+        },
+        "selection": "rich when max_result_sets > 1 or (max_result_sets == 1 and (has_output_params or not return_status_trivial)); single_result_set when max_result_sets == 1; out_params when has_output_params; otherwise return_status"
+      },
+      "rewrite_guidance": "Emit EXACTLY the header the descriptor prescribes (name, argument names/order/types, OUT arguments, RETURNS clause). Keep every ORDER BY. Lower-case unquoted identifiers. Never add behaviour the source lacks.",
+      "scenario_seed": "Invoke through the descriptor's shape on the target and compare the full envelope (return status, OUT values, every result set, messages, state delta) against the captured baseline.",
+      "severity": "schema_divergence",
+      "notes": "2026-09-09 (Stored Proc & Function Behaviour Program, Spec 2): the first three shapes keep the application's existing pgjdbc call patterns working (DB-only migrations); only `rich` forces a Java-side change and no Postgres shape avoids it."
+    },
+    {
+      "id": "SYBPG.PROC.ERR.001",
+      "divergence_class": "error_carriage",
+      "title": "RAISERROR carries its source error number and severity through a fixed SQLSTATE",
+      "applies_to": {
+        "object_kinds": ["procedure", "function", "trigger"],
+        "dimensions": ["outcome"]
+      },
+      "comparison": {
+        "strategy": "error-source-number"
+      },
+      "convention": {
+        "sqlstate": "P0001",
+        "raise_form": "RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = <text>, DETAIL = '{\"source_error\": <n>, \"severity\": <s>, \"state\": <st>}'",
+        "detail_json_keys": ["source_error", "severity", "state"]
+      },
+      "rewrite_guidance": "Every RAISERROR becomes RAISE EXCEPTION with SQLSTATE P0001 and a DETAIL JSON carrying the source number/severity/state; the message text is carried verbatim. Never map business errors onto engine SQLSTATEs.",
+      "scenario_seed": "Drive each RAISERROR site and assert the same source error number surfaces on both engines.",
+      "severity": "behaviour_divergence",
+      "notes": "2026-09-09 (Spec 2). The comparator matches on DETAIL.source_error; message text is advisory (SYBPG.PROC.MSG.001). Java code branching on Sybase error numbers is a flagged call site (SYBPG.PROC.CALLSITE.001)."
+    },
+    {
+      "id": "SYBPG.PROC.MSG.001",
+      "divergence_class": "message_carriage",
+      "title": "PRINT and informational messages become RAISE NOTICE and are advisory in comparison",
+      "applies_to": {
+        "object_kinds": ["procedure", "function", "trigger"],
+        "dimensions": ["messages"]
+      },
+      "comparison": {
+        "strategy": "advisory"
+      },
+      "rewrite_guidance": "PRINT <text> becomes RAISE NOTICE '%', <text>. Message text differences never fail a comparison on their own.",
+      "scenario_seed": "Drive a PRINT path and confirm the notice is captured on both sides.",
+      "severity": "tolerated_divergence",
+      "notes": "2026-09-09 (Spec 2)."
+    },
+    {
+      "id": "SYBPG.PROC.RS.ORDER.001",
+      "divergence_class": "result_set_ordering",
+      "title": "Result-set rows compare ordered only when the producing SELECT carries ORDER BY",
+      "applies_to": {
+        "object_kinds": ["procedure", "function"],
+        "dimensions": ["result_sets"]
+      },
+      "comparison": {
+        "strategy": "multiset",
+        "params": {
+          "ordered_when": "order_by_present"
+        }
+      },
+      "rewrite_guidance": "Keep every ORDER BY exactly; never add one the source lacks (row order without ORDER BY is engine-dependent and is compared as a multiset).",
+      "scenario_seed": "Drive a result set whose SELECT has no ORDER BY and confirm the multiset comparison; drive one with ORDER BY on a tie and confirm the tiebreak.",
+      "severity": "tolerated_divergence",
+      "notes": "2026-09-09 (Spec 2)."
+    },
+    {
+      "id": "SYBPG.PROC.RS.COLNAME.001",
+      "divergence_class": "result_set_column_names",
+      "title": "Result-set column names compare case-insensitively; translations emit lower-case unquoted names",
+      "applies_to": {
+        "object_kinds": ["procedure", "function"],
+        "dimensions": ["result_set_columns"]
+      },
+      "comparison": {
+        "strategy": "collation-case"
+      },
+      "rewrite_guidance": "Emit lower-case, unquoted column aliases matching the source select list; pgjdbc column lookup is case-insensitive so DB-only call sites keep working.",
+      "scenario_seed": "Confirm every source column name is present (case-insensitively) and in the same position.",
+      "severity": "tolerated_divergence",
+      "notes": "2026-09-09 (Spec 2)."
+    },
+    {
+      "id": "SYBPG.PROC.RS.TYPE.001",
+      "divergence_class": "result_set_cell_types",
+      "title": "Result-set and OUT-parameter cells compare under the column-type rules via a driver-type map",
+      "applies_to": {
+        "object_kinds": ["procedure", "function"],
+        "dimensions": ["result_set_cells", "output_params"]
+      },
+      "comparison": null,
+      "type_map": {
+        "int": "int", "integer": "int", "int4": "int", "smallint": "smallint", "int2": "smallint", "tinyint": "tinyint",
+        "bigint": "bigint", "int8": "bigint",
+        "numeric": "numeric", "decimal": "numeric", "money": "money", "smallmoney": "smallmoney",
+        "float": "float", "float8": "float", "real": "real", "float4": "real", "double": "float",
+        "datetime": "datetime", "timestamp": "datetime", "smalldatetime": "smalldatetime", "date": "date", "time": "time",
+        "bigdatetime": "bigdatetime", "bigtime": "bigtime",
+        "char": "char", "bpchar": "char", "nchar": "nchar", "varchar": "varchar", "nvarchar": "nvarchar", "text": "text",
+        "unichar": "unichar", "univarchar": "univarchar",
+        "bit": "bit", "bool": "bit", "boolean": "bit",
+        "binary": "binary", "varbinary": "varbinary", "image": "image", "bytea": "varbinary"
+      },
+      "rewrite_guidance": "Not a rewrite rule: the comparator maps each engine's reported cell type onto the ruleset column-type vocabulary so DT/STR/NUM/BIT/BIN rules apply to envelope cells exactly as to table cells.",
+      "scenario_seed": "n/a",
+      "severity": "value_divergence",
+      "notes": "2026-09-09 (Spec 2)."
+    },
+    {
+      "id": "SYBPG.PROC.TXN.001",
+      "divergence_class": "transaction_control",
+      "title": "Transaction control inside a routine maps to sub-blocks; an inner ROLLBACK raises",
+      "applies_to": {
+        "object_kinds": ["procedure", "function", "trigger"],
+        "constructs": ["transaction_control"]
+      },
+      "comparison": null,
+      "convention": {
+        "inner_begin_commit": "BEGIN ... EXCEPTION ... END sub-block (savepoint semantics); no COMMIT inside a function",
+        "inner_rollback": "RAISE EXCEPTION USING ERRCODE = 'P0002', MESSAGE = 'source routine rolled back' — the caller's transaction aborts, as the source's outer transaction did"
+      },
+      "rewrite_guidance": "PL/pgSQL functions cannot commit; translate BEGIN TRAN/COMMIT to sub-blocks and ROLLBACK to a P0002 raise. Never emit COMMIT/ROLLBACK inside the function body.",
+      "scenario_seed": "Drive the inner-rollback path and assert the caller observes an aborted transaction on both engines.",
+      "severity": "behaviour_divergence",
+      "notes": "2026-09-09 (Spec 2)."
+    },
+    {
+      "id": "SYBPG.PROC.VOL.001",
+      "divergence_class": "clock_volatility",
+      "title": "Clock-derived cells are volatility: compared as non-null timestamps within the run window",
+      "applies_to": {
+        "object_kinds": ["procedure", "function"],
+        "constructs": ["getdate", "getutcdate"],
+        "dimensions": ["result_set_cells", "output_params"]
+      },
+      "comparison": {
+        "strategy": "timestamp-window",
+        "params": {
+          "window_ms": 86400000
+        }
+      },
+      "rewrite_guidance": "getdate() becomes now()/clock_timestamp() per SYBPG.DT.001 precision; the comparator never asserts equality of clock values captured at different wall times.",
+      "scenario_seed": "Capture a clock-bearing result twice and confirm the volatility evidence marks the cell.",
+      "severity": "tolerated_divergence",
+      "notes": "2026-09-09 (Spec 2). Applies only to cells the profile or the double-fire evidence flags as clock-derived — never a blanket mask."
+    },
+    {
+      "id": "SYBPG.PROC.VOL.002",
+      "divergence_class": "random_volatility",
+      "title": "Random / generated-id cells are volatility: compared by presence only",
+      "applies_to": {
+        "object_kinds": ["procedure", "function"],
+        "constructs": ["newid", "rand"],
+        "dimensions": ["result_set_cells", "output_params"]
+      },
+      "comparison": {
+        "strategy": "masked"
+      },
+      "rewrite_guidance": "newid() becomes gen_random_uuid(); rand() becomes random(). Values are never asserted equal.",
+      "scenario_seed": "Confirm the cell is non-null on both sides.",
+      "severity": "tolerated_divergence",
+      "notes": "2026-09-09 (Spec 2). Identity values remain governed by SYBPG.SEQ.001."
+    },
+    {
+      "id": "SYBPG.PROC.SESSION.001",
+      "divergence_class": "session_settings",
+      "title": "Capture connections apply the application driver's session defaults explicitly",
+      "applies_to": {
+        "object_kinds": ["procedure", "function", "trigger"]
+      },
+      "comparison": null,
+      "session_profile": {
+        "driver": "jconnect",
+        "set": [
+          "set ansinull off",
+          "set arithabort on",
+          "set chained off",
+          "set quoted_identifier off",
+          "set nocount off",
+          "set rowcount 0",
+          "set textsize 32768",
+          "set dateformat mdy",
+          "set transaction isolation level 1",
+          "set string_rtruncation off"
+        ]
+      },
+      "rewrite_guidance": "Behaviour that depends on a session option (ANSI null comparison, arithmetic abort, string truncation) must be reproduced explicitly on the target; the translator treats these SET values as the source semantics.",
+      "scenario_seed": "n/a — the profile is applied on every capture connection and recorded in the envelope.",
+      "severity": "behaviour_divergence",
+      "notes": "2026-09-09 (Spec 2). The list equals ASE login defaults as jConnect leaves them; the sidecar defaults to jTDS, so the SETs are applied explicitly regardless of driver. PROC_CALL_SESSION_SET overrides the list (semicolon-separated)."
+    },
+    {
+      "id": "SYBPG.PROC.CALLSITE.001",
+      "divergence_class": "call_site_compatibility",
+      "title": "JDBC call-pattern compatibility per target shape",
+      "applies_to": {
+        "object_kinds": ["procedure", "function"]
+      },
+      "comparison": null,
+      "matrix": {
+        "return_status": {
+          "jdbc_call_return": "compatible",
+          "jdbc_call": "compatible",
+          "exec_text": "needs_change: EXEC text is T-SQL; call SELECT <function>() instead",
+          "bare_reference": "unknown",
+          "error_number_branching": "needs_change: Sybase error numbers arrive in SQLSTATE P0001 DETAIL, not getErrorCode()"
+        },
+        "single_result_set": {
+          "jdbc_call_return": "needs_change: a set-returning function has no return value; drop the ? = and read the result set",
+          "jdbc_call": "compatible",
+          "exec_text": "needs_change: EXEC text is T-SQL; SELECT * FROM <function>(...) instead",
+          "bare_reference": "unknown",
+          "error_number_branching": "needs_change: Sybase error numbers arrive in SQLSTATE P0001 DETAIL, not getErrorCode()"
+        },
+        "out_params": {
+          "jdbc_call_return": "needs_change: the return status is an OUT argument named return_status, not the ? = slot",
+          "jdbc_call": "compatible",
+          "exec_text": "needs_change: EXEC text is T-SQL; SELECT * FROM <function>(...) instead",
+          "bare_reference": "unknown",
+          "error_number_branching": "needs_change: Sybase error numbers arrive in SQLSTATE P0001 DETAIL, not getErrorCode()"
+        },
+        "rich": {
+          "jdbc_call_return": "needs_change: refcursor shape — run inside a transaction and register OUT cursor parameters (Types.REF_CURSOR)",
+          "jdbc_call": "needs_change: refcursor shape — run inside a transaction and register OUT cursor parameters (Types.REF_CURSOR)",
+          "exec_text": "needs_change: refcursor shape — run inside a transaction and register OUT cursor parameters (Types.REF_CURSOR)",
+          "bare_reference": "needs_change: refcursor shape — run inside a transaction and register OUT cursor parameters (Types.REF_CURSOR)",
+          "error_number_branching": "needs_change: Sybase error numbers arrive in SQLSTATE P0001 DETAIL, not getErrorCode()"
+        }
+      },
+      "rewrite_guidance": "Service-plane rewrites read the per-routine descriptor and this matrix; call sites classified compatible keep their code, needs_change sites carry the named change.",
+      "scenario_seed": "n/a — deterministic classification of code-scan call sites.",
+      "severity": "behaviour_divergence",
+      "notes": "2026-09-09 (Spec 2). Patterns are classified from the code scan's proc-call query text: `{? = call` → jdbc_call_return, `{call` → jdbc_call, `exec`/`execute` text → exec_text, a bare routine reference (SimpleJdbcCall / prepareCall by name) → bare_reference (honest unknown)."
     }
   ],
   "construct_refs": [

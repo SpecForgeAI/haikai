@@ -75,6 +75,12 @@ import { DiscoveryRunDetailPage } from './components/DashboardView/DiscoveryRunD
 import { ApiBaselinesListPage } from './components/DashboardView/ApiBaselinesListPage';
 import { CaptureSessionDetailPage } from './components/DashboardView/CaptureSessionDetailPage';
 import { BaselineDetailPage } from './components/DashboardView/BaselineDetailPage';
+// Stored Proc & Function Behaviour Program, Spec 3 (2026-09-09). Second
+// behaviour-baseline kind; sibling detail routes under `/proc-behaviour`.
+//   `/proc-behaviour/capture-sessions/:sessionId` -> ProcCaptureSessionDetailPage
+//   `/proc-behaviour/baselines/:baselineId`       -> ProcBaselineDetailPage
+import { ProcCaptureSessionDetailPage } from './components/ProcBehaviour/ProcCaptureSessionDetailPage';
+import { ProcBaselineDetailPage } from './components/ProcBehaviour/ProcBaselineDetailPage';
 // Spec 2026-06-24 Vulnerability store + manual capture + current-state view
 // -- Task Group 5. New top-level "Security" tab (peer of discovery /
 // api-behaviour). Mounted architecture-scoped under <AppShell> so it
@@ -797,6 +803,27 @@ function AppRoutes() {
             <Route
               path="baselines/:baselineId"
               element={<BaselineDetailPage />}
+            />
+          </Route>
+          {/*
+            Stored Proc & Function Behaviour Program, Spec 3 (2026-09-09).
+            The SECOND behaviour-baseline kind, DB-native and independent of
+            the API capture path. Sibling routes beside the api-behaviour
+            ones; the list surface itself is the "Stored procs and functions"
+            tab on `ApiBaselinesListPage`, so there is no index route here.
+              - `/proc-behaviour/capture-sessions/:sessionId` -> proc capture
+                session detail (polls /status every 3s while in flight).
+              - `/proc-behaviour/baselines/:baselineId`       -> proc baseline
+                detail (read-only + Pin).
+          */}
+          <Route path="proc-behaviour">
+            <Route
+              path="capture-sessions/:sessionId"
+              element={<ProcCaptureSessionDetailPage />}
+            />
+            <Route
+              path="baselines/:baselineId"
+              element={<ProcBaselineDetailPage />}
             />
           </Route>
           {/*

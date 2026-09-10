@@ -66,3 +66,27 @@ export async function fetchEffectsByDataEntityPointIds(
   params.set('data_entity_point_ids', dataEntityPointIds.join(','));
   return fetchEffects(projectId, architectureId, params);
 }
+
+/**
+ * Every stored-proc CALL effect of the architecture (Stored Proc & Function
+ * Behaviour Program, Spec 2, 2026-09-09): the rows the code scan minted with
+ * `path_metadata_json.proc_name` — the call-site compatibility input and the
+ * "routines the next plane depends on" read for the graduated gate.
+ */
+export async function fetchProcCallEffects(
+  projectId: string,
+  architectureId: string,
+): Promise<EndpointDataEffectRow[]> {
+  const baseUrl = getConfig().architectureModelServiceBaseUrl;
+  const url =
+    `${baseUrl}/api/model/projects/${encodeURIComponent(projectId)}` +
+    `/architectures/${encodeURIComponent(architectureId)}` +
+    `/endpoint-data-effects/proc-calls`;
+  const response = await fetch(url, { method: 'GET', headers: { Accept: 'application/json' } });
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(`AMS endpoint-data-effects/proc-calls returned ${response.status}: ${text || '<empty>'}`);
+  }
+  const body = (await response.json()) as EndpointDataEffectRow[];
+  return Array.isArray(body) ? body : [];
+}

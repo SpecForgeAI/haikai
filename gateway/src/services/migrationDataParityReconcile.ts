@@ -26,7 +26,7 @@ import {
   TargetDbSecret,
 } from './migrationTargetCredentialsStore';
 import { currentSystemCredentialsStore } from './baselineDriftScheduler';
-import { defaultFetchPackView, orderedTables } from './migrationDbPackPlanner';
+import { defaultFetchPackView, orderedTables, type PackView } from './migrationDbPackPlanner';
 import type { MigrateScope, MigrationDriverDeps } from './migrationExecutionDriver';
 // Long-running DB-plane wiring (2026-08-10): 6h cap + undici agent with
 // per-request timeouts disabled — a bare fetch dies at 300s (headersTimeout).
@@ -177,7 +177,7 @@ export async function defaultResolveDataParityTables(
   const auditSinks = new Set(
     (packView.manifest.audit_sink_tables ?? []).map((qn) => qn.toLowerCase()),
   );
-  return orderedTables(packView.manifest)
+  const tables = orderedTables(packView.manifest)
     .filter((qn) => !auditSinks.has(qn.toLowerCase()))
     .map((qn) => {
     const dot = qn.indexOf('.');
@@ -192,6 +192,32 @@ export async function defaultResolveDataParityTables(
     else if (pk) entry.primaryKey = pk;
     return entry;
   });
+  return [...tables, ...approvedViewParityTables(packView)];
+}
+
+/**
+ * Views ride the TABLE comparator (Stored Proc & Function Behaviour Program,
+ * Spec 5, decision 4): every APPROVED `translate` view on the pack is
+ * compared as a KEYLESS relation — AMVS runs the canonical-multiset full
+ * scan under its bound and reports an honest `unverifiable` (naming the
+ * bound) above it. Never keyed: a view has no primary key on either side.
+ */
+export function approvedViewParityTables(packView: PackView): DataParityTable[] {
+  const seen = new Set<string>();
+  const out: DataParityTable[] = [];
+  for (const t of packView.translations ?? []) {
+    if (t.kind !== 'view' || t.disposition !== 'translate' || t.review_status !== 'approved') continue;
+    const ref = (t.object_ref ?? '').trim();
+    if (!ref) continue;
+    const dot = ref.indexOf('.');
+    const entry: DataParityTable =
+      dot > 0 ? { schema: ref.slice(0, dot), table: ref.slice(dot + 1) } : { schema: null, table: ref };
+    const key = `${entry.schema ?? ''}.${entry.table}`.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(entry);
+  }
+  return out;
 }
 
 /** Injectable sub-dependencies (all real by default; mocked in tests). */

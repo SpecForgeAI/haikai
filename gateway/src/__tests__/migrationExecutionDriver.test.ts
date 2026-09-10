@@ -26,6 +26,14 @@
 jest.mock('../services/logger', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
+// Spec 5 (proc behaviour program): the graduated proc-parity gate has its own
+// matrix suite; here it is a pass-through so the plane-precedence tests keep
+// exercising the data-parity gate alone.
+jest.mock('../services/migrationProcParityGate', () => ({
+  evaluateProcParityReadiness: jest.fn().mockResolvedValue({
+    ok: true, reasons: [], warnings: [], counts: {}, findings: [], states: [],
+  }),
+}));
 
 import {
   evaluateHardBlock,

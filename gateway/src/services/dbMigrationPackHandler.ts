@@ -1507,6 +1507,8 @@ export type TranslationHookFn = (args: {
   packId: string;
   manifest: PackManifest;
   findings: GenerationInputs['findings'];
+  /** Spec 1 (2026-09-09): lets the seed resolver consult the routine catalog. */
+  architectureId?: string | null;
 }) => Promise<TranslationHookResult | null>;
 
 export interface TranslationHookResult {
@@ -1519,9 +1521,16 @@ const defaultTranslationHook: TranslationHookFn = async ({
   packId,
   manifest,
   findings,
+  architectureId,
 }) => {
   const entries = (manifest.requires_translation_spec_2 ?? []) as RequiresTranslationEntry[];
-  const sync = await syncPackTranslations({ projectId, packId, entries, findings });
+  const sync = await syncPackTranslations({
+    projectId,
+    packId,
+    entries,
+    findings,
+    architectureId: architectureId ?? null,
+  });
   const emission = await runTranslationEmission(projectId, packId);
   return {
     sync: sync.summary,
@@ -1693,6 +1702,7 @@ export async function generateDbMigrationPack(
     packId: pack.id,
     manifest: artifacts.manifest,
     findings: inputs.findings,
+    architectureId,
   });
 
   logger.info(

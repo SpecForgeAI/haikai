@@ -1333,6 +1333,25 @@ class ArchModelClient {
   }
 
   /**
+   * Bulk-upsert the profiled routine catalog (Stored Proc & Function
+   * Behaviour Program, Spec 1, 2026-09-09) as first-class `db_routines`
+   * facts keyed by (architecture, schema, name, kind). Records are the
+   * engine-neutral snake_case `RoutineRecord`s — sent verbatim.
+   */
+  async bulkUpsertDbRoutines(
+    projectId: string,
+    architectureId: string,
+    runId: string,
+    routines: import('./databasePacks/routineTypes').RoutineRecord[],
+  ): Promise<{ upserted: number }> {
+    const response = await this.client.put<{ upserted: number }>(
+      `/api/projects/${encodeURIComponent(projectId)}/architectures/${encodeURIComponent(architectureId)}/db-routines/bulk`,
+      { discovery_run_id: runId, routines }
+    );
+    return response.data;
+  }
+
+  /**
    * Lists ALL discovery runs for an architecture (2026-08-23; the CODE scan
    * fetches the latest COMPLETED database run's live proc harvest from its
    * steps_payload). Returns [] on 404.

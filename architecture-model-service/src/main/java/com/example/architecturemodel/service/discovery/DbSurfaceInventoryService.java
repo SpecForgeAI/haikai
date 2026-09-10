@@ -16,6 +16,8 @@ import com.example.architecturemodel.repository.discovery.EndpointDataEffectRepo
 import com.example.architecturemodel.repository.entity.DataEntityPointRepository;
 import com.example.architecturemodel.repository.entity.DbMigrationPackRepository;
 import com.example.architecturemodel.repository.entity.DbMigrationPackTranslationRepository;
+import com.example.architecturemodel.model.entity.discovery.DbRoutineEntity;
+import com.example.architecturemodel.repository.entity.DbRoutineRepository;
 import com.example.architecturemodel.repository.entity.LogicalDataEntityRepository;
 import com.example.architecturemodel.repository.entity.PhysicalDataEntityRepository;
 import com.example.architecturemodel.trace.HaikaiTrace;
@@ -86,6 +88,8 @@ public class DbSurfaceInventoryService {
     private final EndpointDataEffectRepository endpointDataEffectRepository;
     private final DbMigrationPackRepository dbMigrationPackRepository;
     private final DbMigrationPackTranslationRepository dbMigrationPackTranslationRepository;
+    /** Routine catalog (Spec 1, 2026-09-09): procs / functions / triggers as facts. */
+    private final DbRoutineRepository dbRoutineRepository;
 
     /** Per-object claim tallies accumulated from effects. */
     private static final class Refs {
@@ -279,6 +283,52 @@ public class DbSurfaceInventoryService {
                     unclaimedViews++;
                 }
                 default -> { /* unknown kind: skip, never throw */ }
+            }
+        }
+
+        // Routine catalog (Stored Proc & Function Behaviour Program, Spec 1,
+        // 2026-09-09): procs / functions / triggers the DB scan profiled that
+        // NO pack translation row represents yet (no pack generated, or the
+        // object fell outside the pack) still belong to the surface. Same
+        // claim rule (proc_name effect references); source "routine_catalog".
+        Set<String> representedProcs = new HashSet<>();
+        Set<String> representedTriggers = new HashSet<>();
+        for (DbMigrationPackTranslationEntity t : translations) {
+            if (t.getObjectRef() == null) {
+                continue;
+            }
+            String kind = t.getKind() == null ? "" : t.getKind().toLowerCase(Locale.ROOT);
+            if ("stored_procedure".equals(kind)) {
+                representedProcs.add(normalizeName(t.getObjectRef()));
+            } else if ("trigger".equals(kind)) {
+                representedTriggers.add(normalizeName(t.getObjectRef()));
+            }
+        }
+        for (DbRoutineEntity r : dbRoutineRepository
+                .findByArchitectureIdOrderBySchemaNameAscRoutineNameAsc(architectureId)) {
+            String name = normalizeName(r.getRoutineName());
+            String ref = r.getSchemaName() + "." + r.getRoutineName();
+            String kind = r.getRoutineKind() == null ? "" : r.getRoutineKind().toLowerCase(Locale.ROOT);
+            if (DbRoutineEntity.KIND_TRIGGER.equals(kind)) {
+                if (representedTriggers.contains(name)) {
+                    continue;
+                }
+                objects.add(new DbSurfaceObjectDto(
+                    ref, "trigger", "routine_catalog",
+                    0, false, false, false, null, null, null));
+                triggers++;
+            } else {
+                if (representedProcs.contains(name)) {
+                    continue;
+                }
+                boolean claimed = procNamesReferenced.contains(name);
+                objects.add(new DbSurfaceObjectDto(
+                    ref, "stored_procedure", "routine_catalog",
+                    0, false, false, claimed, null, null, !claimed));
+                procs++;
+                if (!claimed) {
+                    unclaimedProcs++;
+                }
             }
         }
 

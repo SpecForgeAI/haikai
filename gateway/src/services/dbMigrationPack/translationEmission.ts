@@ -50,6 +50,14 @@ import {
   FetchTranslationsFn,
   PatchTranslationFn,
 } from './translations';
+import { defaultFetchRoutineCatalog, type FetchRoutineCatalogFn } from './translations';
+import { loadPairRuleset, type MigrationPairRuleset } from '../../migrationPairRules';
+import { createTracer } from '../../trace';
+import { fetchProcCallEffects } from '../endpointDataEffectsClient';
+import { deriveDescriptorsByRoutine, type RoutineCatalogRow, type RoutineDescriptor } from './routineInvocationDescriptor';
+import { computeCallSiteCompatibility, type CallSiteEffect } from './callSiteCompatibility';
+
+const trace = createTracer('gateway');
 
 export const TRANSLATIONS_CHANGESET_PATH = 'liquibase/changesets/050-translations.sql';
 
@@ -117,6 +125,40 @@ export function emitTranslationFileContent(row: TranslationRow): string {
  * per approved object, id `translation--<kind>--<object_ref>` — stable, so
  * unchanged approved content emits byte-identical (no checksum churn).
  */
+/**
+ * Callee-first order for the emitted translations (Spec 4, 2026-09-09):
+ * routines with no proc calls first, callers after their callees. Rows the
+ * catalog does not know keep their relative order at the end. Deterministic
+ * (name-sorted DFS, cycle-safe).
+ */
+export function orderApprovedCalleesFirst(approved: TranslationRow[], routines: RoutineCatalogRow[] | undefined): TranslationRow[] {
+  if (!routines || routines.length === 0) return approved;
+  const tail = (ref: string): string => (ref.replace(/[[\]"]/g, '').split('.').pop() ?? ref).toLowerCase();
+  const rowsByName = new Map<string, TranslationRow[]>();
+  for (const row of approved) {
+    if (row.kind !== 'stored_procedure') continue;
+    const key = tail(row.object_ref);
+    rowsByName.set(key, [...(rowsByName.get(key) ?? []), row]);
+  }
+  const calls = new Map<string, string[]>();
+  for (const r of routines) {
+    if (r.routine_kind === 'trigger') continue;
+    calls.set(r.routine_name.toLowerCase(), (r.proc_calls_json ?? []).map((c) => c.toLowerCase()));
+  }
+  const state = new Map<string, 'visiting' | 'done'>();
+  const ordered: TranslationRow[] = [];
+  const visit = (name: string): void => {
+    if (state.get(name)) return;
+    state.set(name, 'visiting');
+    for (const callee of [...(calls.get(name) ?? [])].sort()) if (rowsByName.has(callee)) visit(callee);
+    state.set(name, 'done');
+    for (const row of rowsByName.get(name) ?? []) ordered.push(row);
+  };
+  for (const name of [...rowsByName.keys()].sort()) visit(name);
+  const placed = new Set(ordered);
+  return [...ordered, ...approved.filter((r) => !placed.has(r))];
+}
+
 export function emitTranslationsChangeset(approved: TranslationRow[]): string {
   const lines: string[] = [];
   lines.push(formattedSqlHeader(TRANSLATIONS_CHANGESET_PATH).trimEnd());
@@ -303,6 +345,14 @@ export function applyTranslationEmission(args: {
   files: EmissionFileRow[];
   manifest: Record<string, unknown> | null;
   rows: TranslationRow[];
+  /**
+   * Spec 2 (2026-09-09): routine catalog + proc-call effects + pair ruleset
+   * for the manifest's `invocation_descriptors` and `call_site_compatibility`
+   * sections. Optional — a pre-catalog pack emits exactly as before.
+   */
+  routines?: RoutineCatalogRow[];
+  procCallEffects?: CallSiteEffect[];
+  ruleset?: MigrationPairRuleset | null;
 }): ApplyTranslationEmissionResult {
   // 1) Strip prior emission artifacts (idempotent re-emission).
   const base = args.files.filter(
@@ -311,10 +361,13 @@ export function applyTranslationEmission(args: {
 
   // 1b) Emission gate (2026-08-09): approved drafts that cannot apply are
   // DEMOTED (excluded + reported), never allowed to brick the pack.
-  const { emittable: approved, demotions } = partitionEmittableTranslations(
+  const partitioned = partitionEmittableTranslations(
     selectApprovedTranslations(args.rows),
     base
   );
+  const demotions = partitioned.demotions;
+  // Callee-first (Spec 4): a caller's function is created after its callees.
+  const approved = orderApprovedCalleesFirst(partitioned.emittable, args.routines);
 
   // 2) Master changelog include list: 050 present ONLY with >=1 approved.
   const withMaster = base.map((f) =>
@@ -328,6 +381,29 @@ export function applyTranslationEmission(args: {
   let manifest = args.manifest;
   if (manifest) {
     manifest = { ...manifest, translations: buildManifestTranslationsSection(approved) };
+    // Spec 2 (2026-09-09): the per-routine calling-convention descriptors
+    // (deterministic from catalog + ruleset) and the call-site compatibility
+    // count. Both are DATA the replayer and the service-plane rewrites read.
+    if (args.routines && args.routines.length > 0) {
+      const descriptors = deriveDescriptorsByRoutine(args.routines, args.ruleset ?? null);
+      const invocationDescriptors: Record<string, RoutineDescriptor> = {};
+      for (const [name, d] of [...descriptors.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+        invocationDescriptors[name] = d;
+      }
+      manifest = { ...manifest, invocation_descriptors: invocationDescriptors };
+      if (args.procCallEffects) {
+        const compatibility = computeCallSiteCompatibility(args.procCallEffects, descriptors, args.ruleset ?? null);
+        manifest = {
+          ...manifest,
+          call_site_compatibility: {
+            ...compatibility,
+            // Bounded detail: the counts are the headline; the first sites
+            // carry the named changes (the full list rides the effects).
+            sites: compatibility.sites.slice(0, 500),
+          },
+        };
+      }
+    }
   }
   const manifestContent = manifest ? JSON.stringify(manifest, null, 2) + '\n' : null;
   const withManifest = withMaster.map((f) =>
@@ -388,7 +464,26 @@ export interface TranslationEmissionDeps {
   putPack?: (projectId: string, body: Record<string, unknown>) => Promise<Record<string, unknown>>;
   /** Writes emission demotions back to needs_rework (2026-08-09). */
   patchTranslation?: PatchTranslationFn;
+  /** Spec 2 (2026-09-09): routine catalog, proc-call effects, ruleset — all fail-soft. */
+  fetchRoutineCatalog?: FetchRoutineCatalogFn;
+  fetchProcCallEffects?: (projectId: string, architectureId: string) => Promise<CallSiteEffect[]>;
+  loadRuleset?: () => MigrationPairRuleset | null;
 }
+
+const defaultFetchProcCallEffects: NonNullable<TranslationEmissionDeps['fetchProcCallEffects']> = async (
+  projectId,
+  architectureId
+) => {
+  try {
+    return await fetchProcCallEffects(projectId, architectureId);
+  } catch (error) {
+    logger.warn(
+      `[diag-gateway] db_translation stage=proc-call-effects-unavailable projectId=${projectId} ` +
+        `reason=${error instanceof Error ? error.message : String(error)}`
+    );
+    return [];
+  }
+};
 
 async function amsJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
@@ -449,6 +544,9 @@ export async function runTranslationEmission(
   const fetchTranslations = deps.fetchTranslations ?? defaultFetchTranslations;
   const putPack = deps.putPack ?? defaultPutPack;
   const patchTranslation = deps.patchTranslation ?? defaultPatchTranslation;
+  const fetchRoutineCatalog = deps.fetchRoutineCatalog ?? defaultFetchRoutineCatalog;
+  const fetchEffects = deps.fetchProcCallEffects ?? defaultFetchProcCallEffects;
+  const loadRuleset = deps.loadRuleset ?? loadPairRuleset;
 
   logger.info(
     `[diag-gateway] db_translation stage=emission projectId=${projectId} packId=${packId}`
@@ -458,6 +556,12 @@ export async function runTranslationEmission(
     fetchPackFiles(projectId, packId),
     fetchTranslations(projectId, packId),
   ]);
+  // Spec 2 (2026-09-09): descriptors + call-site compatibility inputs.
+  const architectureId = typeof pack.architecture_id === 'string' ? pack.architecture_id : null;
+  const [routines, procCallEffects] = architectureId
+    ? await Promise.all([fetchRoutineCatalog(projectId, architectureId), fetchEffects(projectId, architectureId)])
+    : [[], []];
+  const ruleset = loadRuleset();
 
   const result = applyTranslationEmission({
     files: files.map((f) => ({
@@ -468,7 +572,43 @@ export async function runTranslationEmission(
     })),
     manifest: pack.manifest_json ?? null,
     rows,
+    routines,
+    procCallEffects,
+    ruleset,
   });
+
+  // PACK.ABI.* (Spec 2): every translate-dispositioned routine has a
+  // descriptor; the compatibility count is computed with honest unknowns.
+  const translateRoutines = rows.filter(
+    (r) => r.disposition === 'translate' && r.kind === 'stored_procedure' && r.routine_id
+  );
+  const descriptorsOut = (result.manifest?.['invocation_descriptors'] ?? {}) as Record<string, unknown>;
+  const routineNamesWithDescriptor = new Set(Object.keys(descriptorsOut));
+  const missingDescriptors = translateRoutines.filter((r) => {
+    const tail = (r.object_ref.split('.').pop() ?? r.object_ref).toLowerCase();
+    return !routineNamesWithDescriptor.has(tail);
+  });
+  trace.predicate(
+    'PACK.ABI.01',
+    'every translate-dispositioned routine carries a calling-convention descriptor',
+    missingDescriptors.length === 0,
+    `descriptors for ${translateRoutines.length} routine(s)`,
+    `missing=${missingDescriptors.length}${
+      missingDescriptors.length > 0 ? ` [${missingDescriptors.slice(0, 10).map((r) => r.object_ref).join(',')}]` : ''
+    } catalog=${routines.length}`,
+    { project: projectId, arch: architectureId ?? undefined }
+  );
+  const compat = result.manifest?.['call_site_compatibility'] as
+    | { compatible: number; needs_change: number; unknown: number }
+    | undefined;
+  trace.predicate(
+    'PACK.ABI.02',
+    'call-site compatibility computed with honest unknowns',
+    compat !== undefined || routines.length === 0,
+    'compatible/needs_change/unknown counts on the manifest',
+    compat ? `compatible=${compat.compatible} needs_change=${compat.needs_change} unknown=${compat.unknown}` : 'no catalog',
+    { project: projectId, arch: architectureId ?? undefined }
+  );
 
   // Emission-gate demotions (2026-08-09): return each excluded approval to
   // needs_rework CARRYING the reason — the reviewer sees exactly why in the

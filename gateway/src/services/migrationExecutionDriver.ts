@@ -117,6 +117,8 @@ import {
   evaluateDataParityReadiness,
 } from './migrationDataParityGate';
 import { createDataParityReconcileTrigger } from './migrationDataParityReconcile';
+import { createProcParityReconcileTrigger } from './migrationProcParityReconcile';
+import { evaluateProcParityReadiness, ProcParityGateReads } from './migrationProcParityGate';
 import { createDataMigrationTrigger } from './migrationDataRunnerDispatch';
 import {
   createDbPlaneCompletionRunner,
@@ -320,6 +322,11 @@ export interface MigrationDriverDeps {
    * deps mocks keep compiling; injected in tests.
    */
   dataParityGateReads?: DataParityGateReads;
+  /**
+   * Graduated proc-parity gate reads (Spec 5). Optional + defaulted inside
+   * {@link evaluateProcParityReadiness}; injected in tests.
+   */
+  procParityGateReads?: ProcParityGateReads;
   recordWorkItemImplementationError: typeof recordWorkItemImplementationError;
   /** The headless shape-spec auto-answerer (Group 4); mocked in tests. */
   autoAnswerer: ShapeSpecAutoAnswerer;
@@ -349,6 +356,18 @@ export interface MigrationDriverDeps {
    * data-parity invocation is a work-machine shakedown seam.
    */
   triggerDataParityReconcile?: (
+    scope: MigrateScope,
+    runId: string,
+    deps: MigrationDriverDeps
+  ) => Promise<void>;
+  /**
+   * DB-plane proc-parity re-check (Stored Proc & Function Behaviour Program,
+   * Spec 5): replays the pinned proc baseline against the freshly-built
+   * target after the data-parity reconcile (step 6). Fail-open execute —
+   * the graduated gate reads the per-routine reports. Lazily defaulted;
+   * tests inject a mock.
+   */
+  triggerProcParityReconcile?: (
     scope: MigrateScope,
     runId: string,
     deps: MigrationDriverDeps
@@ -426,8 +445,8 @@ export interface MigrationDriverDeps {
 
 /** Outcome of the Migrate trigger. */
 export type StartMigrationResult =
-  | { status: 'started'; runId: string; itemCount: number }
-  | { status: 'blocked'; reasons: HardBlockResult['reasons'] }
+  | { status: 'started'; runId: string; itemCount: number; warnings?: string[] }
+  | { status: 'blocked'; reasons: HardBlockResult['reasons']; warnings?: string[] }
   | { status: 'error'; message: string };
 
 // ============================================================================
@@ -943,6 +962,9 @@ export function defaultMigrationDriverDeps(
     // read). Tests inject a mock; the fallback stub inside kickPlaneReconcile
     // only applies to deps built without this field.
     triggerDataParityReconcile: createDataParityReconcileTrigger(),
+    // Spec 5 (proc behaviour program): the DB plane re-checks proc parity on
+    // the built target right after data parity (fail-open execute).
+    triggerProcParityReconcile: createProcParityReconcileTrigger(),
     // Spec W / Y: the DB plane loads the target via the data-migration runner
     // (AMVS route) before the data-parity reconcile compares it.
     triggerDataMigration: createDataMigrationTrigger(),
@@ -1179,6 +1201,8 @@ export async function startMigration(
   //     v1 checks the LATEST run only (sequential per-plane execution); a
   //     multi-run history walk is deliberately out of scope.
   let planePrecedenceReasons: HardBlockResult['reasons'] = [];
+  /** Spec 5: non-blocking proc-parity findings for the plane being started. */
+  let procParityWarnings: string[] = [];
   if (plane) {
     const planesWithStories = new Set<MigrationPlane>();
     for (const item of items) {
@@ -1266,6 +1290,25 @@ export async function startMigration(
             })),
           );
         }
+        // Spec 5 (proc behaviour program): the GRADUATED proc-parity gate —
+        // blocks only routines THIS plane calls; everything else is a warning
+        // that rides the start result (never a block).
+        const procParity = await evaluateProcParityReadiness({
+          projectId,
+          architectureId: book.current_architecture_id ?? null,
+          nextPlane: plane === 'service' ? 'service' : plane === 'ui' ? 'ui' : null,
+          reads: deps.procParityGateReads,
+        });
+        procParityWarnings = procParity.warnings;
+        if (!procParity.ok) {
+          planePrecedenceReasons.push(
+            ...procParity.reasons.map((r) => ({
+              code: r.code,
+              message: r.message,
+              workItemId: null,
+            })),
+          );
+        }
       }
     }
   }
@@ -1283,7 +1326,11 @@ export async function startMigration(
       reasonCount: allBlockReasons.length,
       reasons: allBlockReasons.map((r) => r.code),
     });
-    return { status: 'blocked', reasons: allBlockReasons };
+    return {
+      status: 'blocked',
+      reasons: allBlockReasons,
+      ...(procParityWarnings.length > 0 ? { warnings: procParityWarnings } : {}),
+    };
   }
 
   // 4. Build the PHASED dispatch set (Spec W): plane-grouped (db -> service ->
@@ -1695,7 +1742,12 @@ export async function startMigration(
     }
   }
 
-  return { status: 'started', runId, itemCount: dispatchSet.length };
+  return {
+    status: 'started',
+    runId,
+    itemCount: dispatchSet.length,
+    ...(procParityWarnings.length > 0 ? { warnings: procParityWarnings } : {}),
+  };
 }
 
 /**
@@ -4390,6 +4442,26 @@ export async function resumeMigration(
         reasons: parity.reasons.map((r) => r.code),
       });
       return { status: 'blocked', reasons: parity.reasons };
+    }
+    // Spec 5: the graduated proc-parity gate at the resume boundary — the
+    // next plane is the service plane (the DB plane never precedes the UI
+    // plane directly); blocks only routines that plane calls.
+    const procParity = await evaluateProcParityReadiness({
+      projectId: scope.projectId,
+      architectureId: book?.current_architecture_id ?? null,
+      nextPlane: 'service',
+      reads: deps.procParityGateReads,
+    });
+    if (!procParity.ok) {
+      logger.info('[diag-gateway] migration_execution_driver resume_blocked_proc_parity', {
+        projectId: scope.projectId,
+        runId,
+        reasons: procParity.reasons.map((r) => r.code),
+      });
+      return {
+        status: 'blocked',
+        reasons: procParity.reasons.map((r) => ({ code: r.code, message: r.message, workItemId: null })),
+      };
     }
   }
 

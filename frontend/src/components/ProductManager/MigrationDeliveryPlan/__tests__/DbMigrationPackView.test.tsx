@@ -763,3 +763,61 @@ describe('untranslated-block key uniqueness (2026-08-30 duplicate-key bug)', () 
     }
   });
 });
+
+describe('stored proc call-site compatibility (Spec 2, 2026-09-09)', () => {
+  it('renders the counts and the needs-change rows when the manifest carries the section', async () => {
+    const manifest = {
+      ...MANIFEST,
+      call_site_compatibility: {
+        compatible: 3,
+        needs_change: 1,
+        unknown: 2,
+        rule_id: 'SYBPG.PROC.CALLSITE.001',
+        undescribed_routines: [],
+        sites: [
+          {
+            endpoint_id: 'ep-1',
+            routine: 'upd_ledger_roll',
+            pattern: 'jdbc_call_return',
+            verdict: 'needs_change',
+            reason: 'a set-returning function has no return value; drop the ? = and read the result set',
+            shape: 'single_result_set',
+          },
+          {
+            endpoint_id: 'ep-2',
+            routine: 'upd_ledger_roll',
+            pattern: 'jdbc_call',
+            verdict: 'compatible',
+            reason: null,
+            shape: 'single_result_set',
+          },
+        ],
+      },
+    } as unknown as DbMigrationPackManifest;
+    mockListPacks.mockResolvedValue([buildPack({ manifest_json: manifest })]);
+    mockGetPack.mockResolvedValue(buildPack({ manifest_json: manifest }));
+    mockListFiles.mockResolvedValue(FILES);
+
+    renderView();
+    await waitFor(() =>
+      expect(screen.getByTestId('db-pack-call-site-compatibility')).toBeInTheDocument(),
+    );
+    expect(screen.getByTestId('db-pack-call-site-counts')).toHaveTextContent('3 compatible');
+    expect(screen.getByTestId('db-pack-call-site-counts')).toHaveTextContent('1 need a change');
+    expect(screen.getByTestId('db-pack-call-site-counts')).toHaveTextContent('2 unknown');
+    const section = screen.getByTestId('db-pack-call-site-compatibility');
+    expect(section.querySelectorAll('tbody tr').length).toBe(1);
+    expect(section).toHaveTextContent('drop the ? = and read the result set');
+  });
+
+  it('renders nothing for a pre-catalog manifest without the section', async () => {
+    mockListPacks.mockResolvedValue([buildPack()]);
+    mockGetPack.mockResolvedValue(buildPack());
+    mockListFiles.mockResolvedValue(FILES);
+    renderView();
+    await waitFor(() =>
+      expect(screen.getByTestId('db-pack-coverage-summary')).toBeInTheDocument(),
+    );
+    expect(screen.queryByTestId('db-pack-call-site-compatibility')).toBeNull();
+  });
+});

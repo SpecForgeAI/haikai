@@ -6,14 +6,22 @@
  * Service (API), per the book's plane scope), supply the CURRENT and TARGET
  * state connection details, and go.
  *
- *   - DATABASE reconciliation = the AMVS data-parity comparator. Needs the
- *     current (source) + target DB credentials; the table scope comes from
- *     the DB migration pack server-side.
+ *   - DATA PARITY = the AMVS data-parity comparator. Needs the current
+ *     (source) + target DB credentials; the table scope comes from the DB
+ *     migration pack server-side.
+ *   - STORED PROCS AND FUNCTIONS (Spec 5, 2026-09-09) = the proc-parity
+ *     comparator replaying the pinned proc baseline against the migrated
+ *     routines. Needs the TARGET DB block only — the oracle IS the pinned
+ *     baseline, so nothing is replayed against the source.
  *   - SERVICE (API) reconciliation = the full-baseline replay against the
  *     book's latest run. Needs the target service base URL + auth; the
  *     CURRENT-state service details update the source-side registration
  *     (the replay ORACLE itself is the recorded baseline — current-state
  *     behaviour is never re-captured here).
+ *
+ * A DB-ONLY migration (no service plane in the book's scope) must work end to
+ * end: the whole service group — checkbox and credential blocks — is HIDDEN,
+ * not merely disabled, so the modal offers only what the book actually has.
  *
  * Credential blocks are OPTIONAL: blanks fall back to the run's already-
  * registered in-memory credentials server-side, so a re-run doesn't force
@@ -209,6 +217,9 @@ export function RunReconciliationModal({
   logReplayFn = runLogReplayReconciliation,
 }: RunReconciliationModalProps) {
   const [runDb, setRunDb] = useState<boolean>(scope.db);
+  // Spec 5 (2026-09-09): proc parity is its own DB-group checkbox — on by
+  // default whenever the DB plane is in scope.
+  const [runProc, setRunProc] = useState<boolean>(scope.db);
   const [runApi, setRunApi] = useState<boolean>(scope.service);
   const [sourceDb, setSourceDb] = useState<DbFieldsState>(emptyDb('sybase'));
   const [targetDb, setTargetDb] = useState<DbFieldsState>(emptyDb('postgres'));
@@ -227,10 +238,15 @@ export function RunReconciliationModal({
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<StartReconciliationResultDto | null>(null);
 
+  // The service plane is either IN the book's scope or it does not exist at
+  // all — a DB-only migration never renders the service group.
+  const serviceInScope = scope.service;
+
   const ranAny = useMemo(
     () =>
       (result !== null &&
         (result.dataParity?.status === 'started' ||
+          result.procParity?.status === 'started' ||
           result.apiReconcile?.status === 'started')) ||
       logReplayResult?.ok === true,
     [result, logReplayResult],
@@ -238,14 +254,14 @@ export function RunReconciliationModal({
 
   const submit = async () => {
     setError(null);
-    if (!runDb && !runApi && !runLogReplay) {
+    if (!runDb && !runProc && !runApi && !runLogReplay) {
       setError('Select at least one reconciliation to run.');
       return;
     }
     const source = dbBlockFromFields(sourceDb, 'Current state database');
     if (runDb && source.error) return setError(source.error);
     const target = dbBlockFromFields(targetDb, 'Target state database');
-    if ((runDb || runApi) && target.error) return setError(target.error);
+    if ((runDb || runProc || runApi) && target.error) return setError(target.error);
     // The source-side registration is keyed by its base URL — auth without a
     // URL cannot be stored, so say so instead of silently dropping it.
     if (runApi && currentBaseUrl.trim() === '' && currentAuth.authType !== 'none') {
@@ -262,6 +278,7 @@ export function RunReconciliationModal({
 
     const body: StartReconciliationRequestDto = {
       run_data_parity: runDb,
+      run_proc_parity: runProc,
       run_api_reconcile: runApi,
       ...(source.block ? { source_db: source.block } : {}),
       ...(target.block ? { target_db: target.block } : {}),
@@ -279,7 +296,7 @@ export function RunReconciliationModal({
     };
     setSubmitting(true);
     try {
-      if (runDb || runApi) {
+      if (runDb || runProc || runApi) {
         setResult(await startFn(projectId, architectureId, bookId, body));
       }
       if (runLogReplay) {
@@ -321,14 +338,18 @@ export function RunReconciliationModal({
     }
   };
 
-  const outcomeLine = (label: string, outcome: StartReconciliationResultDto['dataParity']) => {
+  const outcomeLine = (
+    label: string,
+    testId: string,
+    outcome: StartReconciliationResultDto['dataParity'],
+  ) => {
     if (!outcome) return null;
     return (
       <div
         className={`${styles.recResultLine} ${
           outcome.status === 'started' ? styles.recResultStarted : styles.recResultBlocked
         }`}
-        data-testid={`rrm-result-${label === 'Database' ? 'db' : 'api'}`}
+        data-testid={testId}
       >
         <strong>{label}:</strong>{' '}
         {outcome.status === 'started' ? `started — ${outcome.detail}` : `blocked — ${outcome.reason}`}
@@ -342,6 +363,8 @@ export function RunReconciliationModal({
         <div className={styles.modalTitle}>Run reconciliation</div>
 
         <div className={styles.checkRow}>
+          {/* DATABASE group: data parity + proc parity are separate engines
+              with separate credential needs (Spec 5, 2026-09-09). */}
           <label>
             <input
               type="checkbox"
@@ -350,40 +373,59 @@ export function RunReconciliationModal({
               data-testid="rrm-check-db"
               onChange={(e) => setRunDb(e.target.checked)}
             />{' '}
-            Database reconciliation
+            Data parity
           </label>
           <label>
             <input
               type="checkbox"
-              checked={runApi}
-              disabled={!scope.service}
-              data-testid="rrm-check-api"
-              onChange={(e) => setRunApi(e.target.checked)}
+              checked={runProc}
+              disabled={!scope.db}
+              data-testid="rrm-check-proc"
+              onChange={(e) => setRunProc(e.target.checked)}
             />{' '}
-            Service (API) reconciliation
+            Stored procs and functions
           </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={runLogReplay}
-              data-testid="rrm-check-log-replay"
-              onChange={(e) => setRunLogReplay(e.target.checked)}
-            />{' '}
-            Log-replay reconciliation (round 2) — replays the staged application-log
-            corpus against BOTH systems at S0
-          </label>
+          {/* SERVICE group: absent entirely from a DB-only migration. */}
+          {serviceInScope && (
+            <label>
+              <input
+                type="checkbox"
+                checked={runApi}
+                data-testid="rrm-check-api"
+                onChange={(e) => setRunApi(e.target.checked)}
+              />{' '}
+              Service (API) reconciliation
+            </label>
+          )}
+          {serviceInScope && (
+            <label>
+              <input
+                type="checkbox"
+                checked={runLogReplay}
+                data-testid="rrm-check-log-replay"
+                onChange={(e) => setRunLogReplay(e.target.checked)}
+              />{' '}
+              Log-replay reconciliation (round 2) — replays the staged application-log
+              corpus against BOTH systems at S0
+            </label>
+          )}
         </div>
 
         {result === null && logReplayResult === null ? (
           <>
-            {runDb && (
+            {/* The TARGET block serves both DB engines; the SOURCE block is
+                required only by data parity (proc parity replays the pinned
+                baseline, so there is no source side to connect to). */}
+            {(runDb || runProc) && (
               <div className={styles.credColumns} data-testid="rrm-db-fields">
-                <DbFields
-                  legend="Current state database (source)"
-                  value={sourceDb}
-                  onChange={setSourceDb}
-                  idPrefix="rrm-source-db"
-                />
+                {runDb && (
+                  <DbFields
+                    legend="Current state database (source)"
+                    value={sourceDb}
+                    onChange={setSourceDb}
+                    idPrefix="rrm-source-db"
+                  />
+                )}
                 <DbFields
                   legend="Target state database"
                   value={targetDb}
@@ -440,7 +482,7 @@ export function RunReconciliationModal({
                 them wont_report so the re-run can start)
               </label>
             )}
-            {!runDb && runApi && (
+            {!runDb && !runProc && runApi && (
               <div className={styles.credColumns}>
                 <DbFields
                   legend="Target state database (optional — enables state checks)"
@@ -458,8 +500,9 @@ export function RunReconciliationModal({
           </>
         ) : (
           <div data-testid="rrm-results">
-            {outcomeLine('Database', result?.dataParity ?? null)}
-            {outcomeLine('Service (API)', result?.apiReconcile ?? null)}
+            {outcomeLine('Database', 'rrm-result-db', result?.dataParity ?? null)}
+            {outcomeLine('Stored procs', 'rrm-result-proc', result?.procParity ?? null)}
+            {outcomeLine('Service (API)', 'rrm-result-api', result?.apiReconcile ?? null)}
             {logReplayResult && (
               <div
                 className={`${styles.recResultLine} ${
