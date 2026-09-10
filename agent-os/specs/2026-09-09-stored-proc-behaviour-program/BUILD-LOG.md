@@ -1,6 +1,6 @@
 # Stored Proc & Function Behaviour Program — Build Log
 
-## STATUS: BUILT 2026-09-10 — Specs 1–5 on `feature/stored-proc-behaviour-program` (one commit per spec); merge to main + work-machine shakedown pending
+## STATUS: BUILT 2026-09-10 — Specs 1–5 on `feature/stored-proc-behaviour-program` (one commit per spec); MERGED to main d78b65bc (--no-ff, 2026-09-10); work-machine shakedown pending
 
 Design of record:
 `agent-os/planning/2026-09-09-stored-proc-behaviour-baseline-shaping.md`
