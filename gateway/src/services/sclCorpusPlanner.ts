@@ -110,8 +110,16 @@ export interface SclCorpusPlanStats {
    */
   foundationSplitCount: number;
   rowBudget: number;
-  /** The ONE clustering rule this planner applies (asserted after planning; IMPL-06). */
-  clusteringRule?: 'row_budget';
+  /**
+   * The clustering rule this planner applies (asserted after planning; IMPL-06).
+   *
+   * IMPL-06 existed because the rule was implicit. Since 2026-09-10 TWO budgets
+   * fire together -- the row/operation budget and the rendered-size budget --
+   * so reporting `row_budget` alone under-named the rule that produced the plan,
+   * which is the same gap IMPL-06 was raised to close. `row_budget` is retained
+   * for plans persisted before the size budget existed.
+   */
+  clusteringRule?: 'row_budget' | 'row_and_size_budget';
   /**
    * Story titles whose carried cost still exceeds the row budget — only a
    * single method whose own rows exceed the budget can do this (it cannot be
@@ -1354,10 +1362,13 @@ export function deriveCorpusPlan(
     externalEndpointGroups: externalEndpointGroups.map(withBoundaries),
     internalEndpointGroups: internalEndpointGroups.map(withBoundaries),
   };
-  // Clustering-rule assertion (2026-09-03, IMPL-06): one rule, applied to
+  // Clustering-rule assertion (2026-09-03, IMPL-06): the rule is applied to
   // endpoint groups AND foundation layers alike; anything still over budget
-  // is named rather than silently accepted.
-  stats.clusteringRule = 'row_budget';
+  // is named rather than silently accepted. Both budgets are reported since
+  // 2026-09-10 -- a story splits when EITHER the row/operation budget or the
+  // rendered-size budget is exceeded, so naming only the row budget described
+  // a rule the planner no longer applies on its own.
+  stats.clusteringRule = 'row_and_size_budget';
   stats.overSizeStories = [...planned.foundationStories, ...planned.externalEndpointGroups, ...planned.internalEndpointGroups]
     .filter((s) => (s.predictedChars ?? 0) > sizeBudgetChars)
     .map((s) => s.title);

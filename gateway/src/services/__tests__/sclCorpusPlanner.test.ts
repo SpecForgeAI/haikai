@@ -252,7 +252,8 @@ describe('deriveCorpusPlan — endpoint groups', () => {
       splitCount: 0,
       foundationSplitCount: 0, // fixture layers are all well under the 40 budget
       rowBudget: 40,
-      clusteringRule: 'row_budget',
+      // Both budgets fire since 2026-09-10, so the rule names both.
+      clusteringRule: 'row_and_size_budget',
       overBudgetStories: [],
       // Dependency-order fields (2026-09-07). All three EMPTY is the assertion
       // that matters: this fixture's foundation layers carry no contract that

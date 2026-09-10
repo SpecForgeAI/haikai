@@ -1290,7 +1290,14 @@ async function runEpicPipeline(args: {
         console.log(
           `[diag-gateway] migration_bow_expansion corpus_plan_used ` +
             `stories=${corpusItems.filter((i) => i.type === 'story').length} ` +
-            `clustering_rule=${corpusPlan.stats.clusteringRule ?? 'row_budget'} ` +
+            `clustering_rule=${corpusPlan.stats.clusteringRule ?? 'row_and_size_budget'} ` +
+            // Both budgets are logged (2026-09-10): a size-budget split was
+            // invisible here, and `over_budget` alone read as "nothing over
+            // budget" while stories could be over the SIZE budget instead.
+            `row_budget=${corpusPlan.stats.rowBudget} ` +
+            `over_budget=${(corpusPlan.stats.overBudgetStories ?? []).length} ` +
+            `size_budget_chars=${corpusPlan.stats.sizeBudgetChars ?? 0} ` +
+            `over_size=${(corpusPlan.stats.overSizeStories ?? []).length} ` +
             `over_budget=${(corpusPlan.stats.overBudgetStories ?? []).length} ` +
             `constants_evicted=${(corpusPlan.stats.constantsEvicted ?? []).length} ` +
             `forward_refs=${(corpusPlan.stats.forwardReferences ?? []).length} ` +

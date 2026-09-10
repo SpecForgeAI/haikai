@@ -68,7 +68,8 @@ describe('deriveCorpusPlan budget discipline', () => {
 
   it('names the clustering rule and lists stories that remain over budget (an unsplittable single method)', () => {
     const plan = deriveCorpusPlan([rootTable(10)], { rowBudget: 5 });
-    expect(plan.stats.clusteringRule).toBe('row_budget');
+    // BOTH budgets fire since 2026-09-10, so the reported rule names both.
+    expect(plan.stats.clusteringRule).toBe('row_and_size_budget');
     expect(plan.externalEndpointGroups).toHaveLength(1);
     expect(plan.externalEndpointGroups[0].rowCount).toBe(10);
     expect(plan.stats.overBudgetStories).toEqual([plan.externalEndpointGroups[0].title]);
@@ -76,7 +77,11 @@ describe('deriveCorpusPlan budget discipline', () => {
 
   it('reports NO over-budget stories when everything fits', () => {
     const plan = deriveCorpusPlan([rootTable(3), boundary(1, 2)], { rowBudget: 5 });
-    expect(plan.stats.clusteringRule).toBe('row_budget');
+    expect(plan.stats.clusteringRule).toBe('row_and_size_budget');
     expect(plan.stats.overBudgetStories).toEqual([]);
+    // The size budget is reported alongside the row budget, so a plan cannot
+    // look "within budget" while a story is over the size budget unseen.
+    expect(plan.stats.sizeBudgetChars).toBeGreaterThan(0);
+    expect(plan.stats.overSizeStories).toEqual([]);
   });
 });

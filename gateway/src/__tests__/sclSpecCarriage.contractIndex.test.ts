@@ -19,7 +19,7 @@ import {
   MigrationStorySpecGenerationDto,
 } from '../services/migrationShapeSpecGenerationHandler';
 import { TargetStateCapturedDecision } from '../services/targetStateCapturedDecisionsClient';
-import { classifyUnresolvedTarget } from '../services/sclSpecCarriage';
+import { classifyUnresolvedTarget, dispatchImplementorsFor } from '../services/sclSpecCarriage';
 
 const GET_ORDER = 'com.app.OrdersController#getOrder(String)';
 const DAO = 'com.app.dao.OrderDao';
@@ -509,6 +509,78 @@ describe('unresolved callee classification (2026-09-10)', () => {
     const corpus = new Map<string, SclContractDto>([['T-GET', table([])]]);
     expect(classifyUnresolvedTarget('?#getOrder(?)', corpus)).toBe('in_project_unmined');
     expect(classifyUnresolvedTarget('?#isAssignableFrom(?)', corpus)).toBe('outside_corpus');
+  });
+
+  // An interface/abstract declaration has no body, so it can never carry a
+  // behaviour contract. One criteria-matching interface method was the
+  // unresolved callee in three specs while the corpus already held
+  // twenty-plus implementors of it.
+  describe('in-project interface dispatch (2026-09-10)', () => {
+    const IFACE = 'com.app.criteria.Criteria#match(T)';
+
+    function impl(key: string, symbol: string): SclContractDto {
+      return {
+        contract_key: key,
+        kind: 'behaviour_table',
+        source_path: `src/${symbol.split('#')[0].replace(/\./g, '/')}.java`,
+        source_symbol: symbol,
+        fan_in: 2,
+        roots_json: { roots: [] },
+        body_json: { symbol, annotations: [], rows: [], references: [] },
+      } as unknown as SclContractDto;
+    }
+
+    const implementors = new Map<string, SclContractDto>([
+      ['T-AND', impl('T-AND', 'com.app.criteria.BookCriteriaAnd#match(com.app.Book)')],
+      ['T-OR', impl('T-OR', 'com.app.criteria.NodeCriteriaOr#match(com.app.Node)')],
+    ]);
+
+    it('classifies an unimplemented interface method with two-plus corpus implementors as dispatch', () => {
+      expect(classifyUnresolvedTarget(IFACE, implementors)).toBe('in_project_dispatch');
+      expect(dispatchImplementorsFor(IFACE, implementors)).toEqual([
+        'com.app.criteria.BookCriteriaAnd',
+        'com.app.criteria.NodeCriteriaOr',
+      ]);
+    });
+
+    it('a SINGLE same-named method is too weak to call dispatch (stays an unmined gap)', () => {
+      const one = new Map<string, SclContractDto>([['T-AND', implementors.get('T-AND')!]]);
+      expect(classifyUnresolvedTarget(IFACE, one)).toBe('in_project_unmined');
+    });
+
+    it('the target class being IN the corpus means it was scanned: a real gap, never dispatch', () => {
+      // The real trap: two config classes each carry a `getValue`, so
+      // name-matching alone would mask a gap on a scanned class.
+      const scanned = new Map<string, SclContractDto>([
+        ['T-BATCH', impl('T-BATCH', 'com.app.batch.BatchConfig#getValue(String)')],
+        ['T-CORE', impl('T-CORE', 'com.app.core.CoreConfig#getValue(String)')],
+        ['T-OTHER', impl('T-OTHER', 'com.app.core.CoreConfig#init()')],
+      ]);
+      expect(classifyUnresolvedTarget('com.app.core.CoreConfig#getValue(String)', scanned)).toBe(
+        'in_project_unmined',
+      );
+      expect(dispatchImplementorsFor('com.app.core.CoreConfig#getValue(String)', scanned)).toEqual([]);
+    });
+
+    it('renders a DISPATCH marker and warns under UNRESOLVED_DISPATCH, not UNRESOLVED_REFERENCE', () => {
+      // corpusByKey is built from `corpusIndex`, not `contracts`: the
+      // implementors must be visible in the INDEX for dispatch to be detected.
+      const caller = tableCalling(IFACE);
+      const row = runSclSpecCarriage({
+        story: story(null),
+        baseRow: baseRow(),
+        contracts: [caller],
+        decisions: [decision()],
+        wireFactsSectionText: null,
+        targetStackSectionText: null,
+        corpusIndex: [caller, ...implementors.values()],
+      });
+      const text = row.generatedSpecText as string;
+      expect(text).toContain('UNRESOLVED DISPATCH — interface/abstract declaration, 2 implementors');
+      const json = JSON.stringify(row.warningsJson ?? []);
+      expect(json).toContain('UNRESOLVED_DISPATCH');
+      expect(json).not.toContain('UNRESOLVED_REFERENCE');
+    });
   });
 
   it('an outside-corpus callee is rendered as external and NOT warned; an in-project unmined callee still warns', () => {

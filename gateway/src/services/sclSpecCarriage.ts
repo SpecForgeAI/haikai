@@ -399,14 +399,67 @@ function foundationObjective(
  * corpus contract carries). The latter will never have a contract, so warning
  * on it is noise that costs real quality points; it is now rendered as an
  * external call and NOT warned.
+ *
+ * A THIRD case was still being mis-reported as a mining gap (2026-09-10): an
+ * in-project INTERFACE (or abstract) method. It has no body, so it can never
+ * carry a behaviour contract, and "the scan did not mine it" is simply untrue.
+ * One criteria-matching interface method was the unresolved callee in three
+ * separate specs across two layers while the corpus already carried
+ * twenty-plus implementors of it, so ONE interface declaration was reported
+ * as three mining gaps. That case is now classified and warned separately,
+ * NOT silenced: the dispatch is still visible, it just stops polluting the
+ * signal that means "re-scan with that source in scope".
  */
-export type UnresolvedTargetClass = 'outside_corpus' | 'in_project_unmined';
+export type UnresolvedTargetClass =
+  | 'outside_corpus'
+  | 'in_project_unmined'
+  | 'in_project_dispatch';
 
 const OUTSIDE_CORPUS_PREFIXES = [
   'java.', 'javax.', 'jakarta.', 'kotlin.', 'scala.', 'sun.', 'jdk.',
   'org.springframework.', 'org.slf4j.', 'org.apache.', 'org.hibernate.', 'org.junit.',
   'com.google.', 'com.fasterxml.', 'lombok.', 'io.micrometer.', 'org.aspectj.', 'reactor.',
 ];
+
+/** `com.app.criteria.Criteria#match(T)` -> `com.app.criteria.Criteria`. */
+function classOfTargetSymbol(symbol: string): string {
+  const hash = symbol.indexOf('#');
+  return hash >= 0 ? symbol.slice(0, hash) : symbol;
+}
+
+/**
+ * The distinct corpus classes that implement `#<method>(` for an unresolved
+ * callee (2026-09-10) -- the evidence that the callee is an interface/abstract
+ * declaration dispatched polymorphically rather than an unmined method.
+ *
+ * The discriminator is the TARGET CLASS's own presence in the corpus. If any
+ * contract belongs to that class then the class WAS scanned, so a missing
+ * method on it is a genuine mining gap and this returns [] (the caller keeps
+ * warning). This is what stops a same-named method elsewhere in the corpus --
+ * two config classes each carrying a `getValue` is the real trap -- from
+ * masking a real gap on a class that was scanned.
+ *
+ * Two implementors are required: a single match is too weak to call dispatch.
+ */
+export function dispatchImplementorsFor(
+  targetSymbol: string,
+  corpusByKey?: ReadonlyMap<string, SclContractDto>
+): string[] {
+  if (!corpusByKey || corpusByKey.size === 0) return [];
+  const hash = targetSymbol.indexOf('#');
+  if (hash < 0) return [];
+  const cls = targetSymbol.slice(0, hash);
+  const method = targetSymbol.slice(hash + 1).replace(/\(.*$/, '');
+  if (!cls || cls === '?' || !method) return [];
+  const implementors = new Set<string>();
+  for (const c of corpusByKey.values()) {
+    const sym = asString(bodyOf(c).symbol) ?? c.source_symbol ?? '';
+    const symCls = classOfTargetSymbol(sym);
+    if (symCls === cls) return [];
+    if (sym.includes(`#${method}(`)) implementors.add(symCls);
+  }
+  return implementors.size >= 2 ? [...implementors].sort() : [];
+}
 
 export function classifyUnresolvedTarget(
   targetSymbol: string,
@@ -426,6 +479,12 @@ export function classifyUnresolvedTarget(
       if (sym.includes(`#${method}(`)) return 'in_project_unmined';
     }
     return 'outside_corpus';
+  }
+  // A named in-project class with no contract of its own, whose method several
+  // other corpus classes implement: an interface/abstract declaration reached
+  // through polymorphic dispatch, not a method the scan failed to mine.
+  if (dispatchImplementorsFor(targetSymbol, corpusByKey).length >= 2) {
+    return 'in_project_dispatch';
   }
   return 'in_project_unmined';
 }
@@ -501,10 +560,37 @@ function renderOutcome(
       );
     }
     if (!targetKey) {
-      if (classifyUnresolvedTarget(targetSymbol, state.corpusByKey) === 'outside_corpus') {
+      const unresolvedClass = classifyUnresolvedTarget(targetSymbol, state.corpusByKey);
+      if (unresolvedClass === 'outside_corpus') {
         // A JDK/library call, or a chain break no corpus contract could ever
         // resolve: outside the corpus boundary by nature. Rendered, not warned.
         return `call → (external — outside the corpus boundary, no contract by design) ${targetSymbol}${argsSuffix}`;
+      }
+      if (unresolvedClass === 'in_project_dispatch') {
+        // An interface/abstract declaration whose implementors the corpus
+        // already carries. Warned under its OWN code so it never reads as
+        // "re-scan needed", and the implementors are named so the implementer
+        // can see what the call can land on.
+        const implementors = dispatchImplementorsFor(targetSymbol, state.corpusByKey);
+        state.warnings.push({
+          code: 'UNRESOLVED_DISPATCH',
+          contractKey,
+          targetSymbol,
+          implementorCount: implementors.length,
+          implementors: implementors.slice(0, 10),
+          message:
+            `Behaviour table ${contractKey} delegates to '${targetSymbol}', which carries no ` +
+            `contract of its own, but ${implementors.length} other corpus classes implement ` +
+            `that method — an in-project INTERFACE/abstract declaration reached by dispatch, ` +
+            `NOT an unmined callee. The slicer's dispatch resolution did not attach candidate ` +
+            `keys to this row; the row is carried with a DISPATCH marker. Implementors: ` +
+            `${implementors.slice(0, 10).join(', ')}` +
+            `${implementors.length > 10 ? `, (+${implementors.length - 10} more)` : ''}.`,
+        });
+        return (
+          `call → (UNRESOLVED DISPATCH — interface/abstract declaration, ` +
+          `${implementors.length} implementors carried in the corpus) ${targetSymbol}${argsSuffix}`
+        );
       }
       state.warnings.push({
         code: 'UNRESOLVED_REFERENCE',
