@@ -2,14 +2,50 @@
   "contracts": [
     {
       "body_json": {
+        "contentHash": "306ecb2016953f8c4edceb7fb03de74004d23cd253efb2dd6b7647959eb668a5",
+        "fields": [
+          {
+            "kind": "ref:com.legacy.hier.service.NodeService",
+            "name": "nodeService",
+            "notes": [],
+            "nullable": null,
+            "sourceCarrier": null,
+            "wireName": null
+          }
+        ],
+        "flags": [],
+        "key": "S-306ecb201695",
+        "kind": "shape",
+        "references": [],
+        "representation": "immutable",
+        "sourcePath": "src/main/java/com/legacy/hier/api/NodeResource.java",
+        "symbol": "com.legacy.hier.api.NodeResource",
+        "wireFacts": {
+          "discriminator": null,
+          "xmlRootName": null
+        }
+      },
+      "content_hash": "306ecb2016953f8c4edceb7fb03de74004d23cd253efb2dd6b7647959eb668a5",
+      "contract_key": "S-306ecb201695",
+      "fan_in": 0,
+      "kind": "shape",
+      "roots_json": {
+        "reachable": false,
+        "roots": [],
+        "total": 0
+      },
+      "source_path": "src/main/java/com/legacy/hier/api/NodeResource.java",
+      "source_symbol": "com.legacy.hier.api.NodeResource"
+    },
+    {
+      "body_json": {
         "annotations": [
-          "@Path(\"/nodes\")",
           "@GET",
           "@Path(\"/{nodeId}\")",
           "@Produces(MediaType.APPLICATION_JSON)"
         ],
-        "contentHash": "668b8d59c4e273ab439e07b046660351cd4cccb86ca4cbd07094aa0e8a871b33",
-        "key": "T-c05b84cc136c",
+        "contentHash": "d4b2380a3aa9270de2e85914ce337cd563b85c6f06bf4b197cf196e9866bdeab",
+        "key": "T-6e89b7944dfe",
         "kind": "behaviour_table",
         "outcomeSignature": [
           {
@@ -20,7 +56,7 @@
           {
             "detail": null,
             "kind": "value",
-            "label": "value:javax.ws.rs.core.Response"
+            "label": "value:Response"
           },
           {
             "detail": null,
@@ -28,9 +64,7 @@
             "label": "call:com.legacy.hier.service.NodeService#findNode(String)"
           }
         ],
-        "references": [
-          "T-07903425cbd9"
-        ],
+        "references": [],
         "rows": [
           {
             "conditionRef": {
@@ -59,7 +93,7 @@
             "index": 1,
             "kind": "branch",
             "outcome": {
-              "outcomeLabel": "value:javax.ws.rs.core.Response",
+              "outcomeLabel": "value:Response",
               "ref": {
                 "line": 25,
                 "path": "src/main/java/com/legacy/hier/api/NodeResource.java"
@@ -77,15 +111,7 @@
             "index": 2,
             "kind": "dispatch",
             "outcome": {
-              "args": [
-                "nodeId"
-              ],
-              "candidateSymbols": [
-                "com.legacy.hier.service.CachingNodeServiceImpl#findNode(String)",
-                "com.legacy.hier.service.NodeServiceImpl#findNode(String)"
-              ],
-              "primarySymbol": null,
-              "targetKey": "T-07903425cbd9",
+              "targetKey": null,
               "targetSymbol": "com.legacy.hier.service.NodeService#findNode(String)",
               "type": "call"
             }
@@ -101,8 +127,8 @@
         "startLine": 18,
         "symbol": "com.legacy.hier.api.NodeResource#getNode(String)"
       },
-      "content_hash": "668b8d59c4e273ab439e07b046660351cd4cccb86ca4cbd07094aa0e8a871b33",
-      "contract_key": "T-c05b84cc136c",
+      "content_hash": "d4b2380a3aa9270de2e85914ce337cd563b85c6f06bf4b197cf196e9866bdeab",
+      "contract_key": "T-6e89b7944dfe",
       "fan_in": 1,
       "kind": "behaviour_table",
       "roots_json": {
@@ -117,13 +143,51 @@
     },
     {
       "body_json": {
+        "contentHash": "cb37adc92925628b4a1f5d2da9d2d1af76c1ea36068796f0f93d89aed6b24b7e",
+        "fields": [
+          {
+            "kind": "ref:S-7a26437153ea",
+            "name": "hierarchyViewProvider",
+            "notes": [],
+            "nullable": null,
+            "sourceCarrier": null,
+            "wireName": null
+          }
+        ],
+        "flags": [],
+        "key": "S-cb37adc92925",
+        "kind": "shape",
+        "references": [
+          "S-7a26437153ea"
+        ],
+        "representation": "immutable",
+        "sourcePath": "src/main/java/com/legacy/hier/api/ViewResource.java",
+        "symbol": "com.legacy.hier.api.ViewResource",
+        "wireFacts": {
+          "discriminator": null,
+          "xmlRootName": null
+        }
+      },
+      "content_hash": "cb37adc92925628b4a1f5d2da9d2d1af76c1ea36068796f0f93d89aed6b24b7e",
+      "contract_key": "S-cb37adc92925",
+      "fan_in": 0,
+      "kind": "shape",
+      "roots_json": {
+        "reachable": false,
+        "roots": [],
+        "total": 0
+      },
+      "source_path": "src/main/java/com/legacy/hier/api/ViewResource.java",
+      "source_symbol": "com.legacy.hier.api.ViewResource"
+    },
+    {
+      "body_json": {
         "annotations": [
-          "@Path(\"/views\")",
           "@GET",
           "@Produces({MediaType.APPLICATION_JSON, MediaType.APPLICATION_XML})"
         ],
-        "contentHash": "2ebfed38ddb204c31e35a163f3a8a60ec315fb55cd78639e062924d683eda494",
-        "key": "T-fcfec193ec79",
+        "contentHash": "0dbe3a76a8111ff375c036138c01b4298e6da36aab0671d985f5eacd7ce1db64",
+        "key": "T-ff2f0c4e9174",
         "kind": "behaviour_table",
         "outcomeSignature": [
           {
@@ -144,11 +208,11 @@
           {
             "detail": null,
             "kind": "value",
-            "label": "value:javax.ws.rs.core.Response"
+            "label": "value:Response"
           }
         ],
         "references": [
-          "T-5f17b1d993f0"
+          "T-936c3471adfa"
         ],
         "rows": [
           {
@@ -196,10 +260,7 @@
             "index": 2,
             "kind": "branch",
             "outcome": {
-              "args": [
-                "audit"
-              ],
-              "targetKey": "T-5f17b1d993f0",
+              "targetKey": "T-936c3471adfa",
               "targetSymbol": "com.legacy.hier.provider.HierarchyViewProvider#getAllViews(AuditInfo)",
               "type": "call"
             }
@@ -210,7 +271,7 @@
             "index": 3,
             "kind": "terminal",
             "outcome": {
-              "outcomeLabel": "value:javax.ws.rs.core.Response",
+              "outcomeLabel": "value:Response",
               "ref": {
                 "line": 49,
                 "path": "src/main/java/com/legacy/hier/api/ViewResource.java"
@@ -231,37 +292,36 @@
           },
           {
             "name": "headers",
-            "typeRef": "javax.ws.rs.core.HttpHeaders"
+            "typeRef": "HttpHeaders"
           }
         ],
         "sourcePath": "src/main/java/com/legacy/hier/api/ViewResource.java",
         "startLine": 38,
-        "symbol": "com.legacy.hier.api.ViewResource#getAllViews(String,String,javax.ws.rs.core.HttpHeaders)"
+        "symbol": "com.legacy.hier.api.ViewResource#getAllViews(String,String,HttpHeaders)"
       },
-      "content_hash": "2ebfed38ddb204c31e35a163f3a8a60ec315fb55cd78639e062924d683eda494",
-      "contract_key": "T-fcfec193ec79",
+      "content_hash": "0dbe3a76a8111ff375c036138c01b4298e6da36aab0671d985f5eacd7ce1db64",
+      "contract_key": "T-ff2f0c4e9174",
       "fan_in": 1,
       "kind": "behaviour_table",
       "roots_json": {
         "reachable": true,
         "roots": [
-          "com.legacy.hier.api.ViewResource#getAllViews(String,String,javax.ws.rs.core.HttpHeaders)"
+          "com.legacy.hier.api.ViewResource#getAllViews(String,String,HttpHeaders)"
         ],
         "total": 1
       },
       "source_path": "src/main/java/com/legacy/hier/api/ViewResource.java",
-      "source_symbol": "com.legacy.hier.api.ViewResource#getAllViews(String,String,javax.ws.rs.core.HttpHeaders)"
+      "source_symbol": "com.legacy.hier.api.ViewResource#getAllViews(String,String,HttpHeaders)"
     },
     {
       "body_json": {
         "annotations": [
-          "@Path(\"/views\")",
           "@GET",
           "@Path(\"/{viewId}\")",
           "@Produces({MediaType.APPLICATION_JSON, MediaType.APPLICATION_XML})"
         ],
-        "contentHash": "53e5530a5962f9f47a70dbf0c892a5f753f17143218780e54c037b0fdc04aea1",
-        "key": "T-a415976a249d",
+        "contentHash": "d040ae12098fb17f56accac92a1cd581c974249189a2e5203856fdfd25ce38e0",
+        "key": "T-4e986345c65b",
         "kind": "behaviour_table",
         "outcomeSignature": [
           {
@@ -282,11 +342,11 @@
           {
             "detail": null,
             "kind": "value",
-            "label": "value:javax.ws.rs.core.Response"
+            "label": "value:Response"
           }
         ],
         "references": [
-          "T-3e34e6e10db6"
+          "T-4371aab2706b"
         ],
         "rows": [
           {
@@ -334,11 +394,7 @@
             "index": 2,
             "kind": "branch",
             "outcome": {
-              "args": [
-                "viewId",
-                "audit"
-              ],
-              "targetKey": "T-3e34e6e10db6",
+              "targetKey": "T-4371aab2706b",
               "targetSymbol": "com.legacy.hier.provider.HierarchyViewProvider#getView(Integer,AuditInfo)",
               "type": "call"
             }
@@ -349,7 +405,7 @@
             "index": 3,
             "kind": "terminal",
             "outcome": {
-              "outcomeLabel": "value:javax.ws.rs.core.Response",
+              "outcomeLabel": "value:Response",
               "ref": {
                 "line": 35,
                 "path": "src/main/java/com/legacy/hier/api/ViewResource.java"
@@ -374,31 +430,31 @@
           },
           {
             "name": "headers",
-            "typeRef": "javax.ws.rs.core.HttpHeaders"
+            "typeRef": "HttpHeaders"
           }
         ],
         "sourcePath": "src/main/java/com/legacy/hier/api/ViewResource.java",
         "startLine": 22,
-        "symbol": "com.legacy.hier.api.ViewResource#getView(String,String,Integer,javax.ws.rs.core.HttpHeaders)"
+        "symbol": "com.legacy.hier.api.ViewResource#getView(String,String,Integer,HttpHeaders)"
       },
-      "content_hash": "53e5530a5962f9f47a70dbf0c892a5f753f17143218780e54c037b0fdc04aea1",
-      "contract_key": "T-a415976a249d",
+      "content_hash": "d040ae12098fb17f56accac92a1cd581c974249189a2e5203856fdfd25ce38e0",
+      "contract_key": "T-4e986345c65b",
       "fan_in": 1,
       "kind": "behaviour_table",
       "roots_json": {
         "reachable": true,
         "roots": [
-          "com.legacy.hier.api.ViewResource#getView(String,String,Integer,javax.ws.rs.core.HttpHeaders)"
+          "com.legacy.hier.api.ViewResource#getView(String,String,Integer,HttpHeaders)"
         ],
         "total": 1
       },
       "source_path": "src/main/java/com/legacy/hier/api/ViewResource.java",
-      "source_symbol": "com.legacy.hier.api.ViewResource#getView(String,String,Integer,javax.ws.rs.core.HttpHeaders)"
+      "source_symbol": "com.legacy.hier.api.ViewResource#getView(String,String,Integer,HttpHeaders)"
     },
     {
       "body_json": {
-        "contentHash": "5f69702d539bf52cbad5b7b32f858a7f9c7d2531844fae9ad093bddb4fed40ad",
-        "key": "Q-5f69702d539b",
+        "contentHash": "69d5137216bf263da78d6b56614c969b19fae7cb4e7992cb3bf38ba9fe6d4f1d",
+        "key": "Q-69d5137216bf",
         "kind": "boundary",
         "operations": [
           {
@@ -408,7 +464,7 @@
               "path": "src/main/java/com/legacy/hier/dao/ViewDao.java"
             },
             "resultShape": "S-1f2ed1506a4b",
-            "sqlVerbatim": "\"SELECT id, name, valid_from, valid_to FROM hier_view WHERE view_id = ? ORDER BY version DESC\" \"findLatest failed for view \""
+            "sqlVerbatim": "\"SELECT id, name, valid_from, valid_to FROM hier_view WHERE view_id = ? ORDER BY version DESC\""
           },
           {
             "name": "findAll",
@@ -417,21 +473,21 @@
               "path": "src/main/java/com/legacy/hier/dao/ViewDao.java"
             },
             "resultShape": "S-1f2ed1506a4b",
-            "sqlVerbatim": "\"SELECT id, name, valid_from, valid_to FROM hier_view WHERE valid_to IS NULL\" \"findAll failed\""
+            "sqlVerbatim": "\"SELECT id, name, valid_from, valid_to FROM hier_view WHERE valid_to IS NULL\""
           }
         ],
         "sourcePath": "src/main/java/com/legacy/hier/dao/ViewDao.java",
         "symbol": "com.legacy.hier.dao.ViewDao"
       },
-      "content_hash": "5f69702d539bf52cbad5b7b32f858a7f9c7d2531844fae9ad093bddb4fed40ad",
-      "contract_key": "Q-5f69702d539b",
+      "content_hash": "69d5137216bf263da78d6b56614c969b19fae7cb4e7992cb3bf38ba9fe6d4f1d",
+      "contract_key": "Q-69d5137216bf",
       "fan_in": 2,
       "kind": "boundary",
       "roots_json": {
         "reachable": true,
         "roots": [
-          "com.legacy.hier.api.ViewResource#getAllViews(String,String,javax.ws.rs.core.HttpHeaders)",
-          "com.legacy.hier.api.ViewResource#getView(String,String,Integer,javax.ws.rs.core.HttpHeaders)"
+          "com.legacy.hier.api.ViewResource#getAllViews(String,String,HttpHeaders)",
+          "com.legacy.hier.api.ViewResource#getView(String,String,Integer,HttpHeaders)"
         ],
         "total": 2
       },
@@ -552,7 +608,7 @@
     {
       "body_json": {
         "annotations": [],
-        "contentHash": "da136bb0520a2933db37e6a16d437f288837d3a287cf1122974cf1c2bd8f77a7",
+        "contentHash": "17e39d66923f7cb501ec198ac936131f1045eae47464b2238a5113487f5224e1",
         "key": "T-c5ca8c2fc1e8",
         "kind": "behaviour_table",
         "outcomeSignature": [
@@ -567,9 +623,7 @@
             "label": "call:com.legacy.hier.service.NodeService#findNode(String)"
           }
         ],
-        "references": [
-          "T-07903425cbd9"
-        ],
+        "references": [],
         "rows": [
           {
             "conditionRef": {
@@ -580,11 +634,6 @@
             "index": 0,
             "kind": "dispatch",
             "outcome": {
-              "candidateSymbols": [
-                "com.legacy.hier.service.CachingNodeServiceImpl#countNodes()",
-                "com.legacy.hier.service.NodeServiceImpl#countNodes()"
-              ],
-              "primarySymbol": null,
               "targetKey": null,
               "targetSymbol": "com.legacy.hier.service.NodeService#countNodes()",
               "type": "call"
@@ -599,15 +648,7 @@
             "index": 1,
             "kind": "loop",
             "outcome": {
-              "args": [
-                "String.valueOf(i)"
-              ],
-              "candidateSymbols": [
-                "com.legacy.hier.service.CachingNodeServiceImpl#findNode(String)",
-                "com.legacy.hier.service.NodeServiceImpl#findNode(String)"
-              ],
-              "primarySymbol": null,
-              "targetKey": "T-07903425cbd9",
+              "targetKey": null,
               "targetSymbol": "com.legacy.hier.service.NodeService#findNode(String)",
               "type": "call"
             }
@@ -618,7 +659,7 @@
         "startLine": 9,
         "symbol": "com.legacy.hier.jobs.NightlyRollupJob#run()"
       },
-      "content_hash": "da136bb0520a2933db37e6a16d437f288837d3a287cf1122974cf1c2bd8f77a7",
+      "content_hash": "17e39d66923f7cb501ec198ac936131f1045eae47464b2238a5113487f5224e1",
       "contract_key": "T-c5ca8c2fc1e8",
       "fan_in": 1,
       "kind": "behaviour_table",
@@ -680,8 +721,8 @@
       "roots_json": {
         "reachable": true,
         "roots": [
-          "com.legacy.hier.api.ViewResource#getAllViews(String,String,javax.ws.rs.core.HttpHeaders)",
-          "com.legacy.hier.api.ViewResource#getView(String,String,Integer,javax.ws.rs.core.HttpHeaders)"
+          "com.legacy.hier.api.ViewResource#getAllViews(String,String,HttpHeaders)",
+          "com.legacy.hier.api.ViewResource#getView(String,String,Integer,HttpHeaders)"
         ],
         "total": 2
       },
@@ -762,8 +803,8 @@
       "roots_json": {
         "reachable": true,
         "roots": [
-          "com.legacy.hier.api.ViewResource#getAllViews(String,String,javax.ws.rs.core.HttpHeaders)",
-          "com.legacy.hier.api.ViewResource#getView(String,String,Integer,javax.ws.rs.core.HttpHeaders)"
+          "com.legacy.hier.api.ViewResource#getAllViews(String,String,HttpHeaders)",
+          "com.legacy.hier.api.ViewResource#getView(String,String,Integer,HttpHeaders)"
         ],
         "total": 2
       },
@@ -955,8 +996,8 @@
         "annotations": [
           "@ExecutionTimeLogging"
         ],
-        "contentHash": "98753ab0e9b4d834132a0f4112d44644e83a2d6e1ff5abad0a670c73c72f80ae",
-        "key": "T-5f17b1d993f0",
+        "contentHash": "c39672fd904899ba89da9b8e2fe3d9b06ebc87ee9535f80eb230ba52d3f4202e",
+        "key": "T-936c3471adfa",
         "kind": "behaviour_table",
         "outcomeSignature": [
           {
@@ -967,7 +1008,7 @@
           {
             "detail": null,
             "kind": "value",
-            "label": "value:com.legacy.hier.model.ResponseEnvelope"
+            "label": "value:ResponseEnvelope"
           }
         ],
         "references": [
@@ -980,9 +1021,6 @@
             "index": 0,
             "kind": "terminal",
             "outcome": {
-              "args": [
-                "audit"
-              ],
               "targetKey": "T-40150aaa1c61",
               "targetSymbol": "com.legacy.hier.provider.ViewCache#getAllViews(AuditInfo)",
               "type": "call"
@@ -998,7 +1036,7 @@
             "kind": "catch",
             "outcome": {
               "exceptionType": "Exception",
-              "outcomeLabel": "value:com.legacy.hier.model.ResponseEnvelope",
+              "outcomeLabel": "value:ResponseEnvelope",
               "ref": {
                 "line": 43,
                 "path": "src/main/java/com/legacy/hier/provider/HierarchyViewProvider.java"
@@ -1018,14 +1056,14 @@
         "startLine": 37,
         "symbol": "com.legacy.hier.provider.HierarchyViewProvider#getAllViews(AuditInfo)"
       },
-      "content_hash": "98753ab0e9b4d834132a0f4112d44644e83a2d6e1ff5abad0a670c73c72f80ae",
-      "contract_key": "T-5f17b1d993f0",
+      "content_hash": "c39672fd904899ba89da9b8e2fe3d9b06ebc87ee9535f80eb230ba52d3f4202e",
+      "contract_key": "T-936c3471adfa",
       "fan_in": 1,
       "kind": "behaviour_table",
       "roots_json": {
         "reachable": true,
         "roots": [
-          "com.legacy.hier.api.ViewResource#getAllViews(String,String,javax.ws.rs.core.HttpHeaders)"
+          "com.legacy.hier.api.ViewResource#getAllViews(String,String,HttpHeaders)"
         ],
         "total": 1
       },
@@ -1038,8 +1076,8 @@
           "@ExecutionTimeLogging",
           "@AuditDbLogging"
         ],
-        "contentHash": "b898956a290c381a8e61e39cec5f771e6c3c66a31cbcf2db2ae9e4c943b7fd0b",
-        "key": "T-3e34e6e10db6",
+        "contentHash": "8223385f306e0199f4876f22aa04ea72a5264d7e183be4de369c59b13c126a5d",
+        "key": "T-4371aab2706b",
         "kind": "behaviour_table",
         "outcomeSignature": [
           {
@@ -1050,11 +1088,11 @@
           {
             "detail": null,
             "kind": "value",
-            "label": "value:com.legacy.hier.model.ResponseEnvelope"
+            "label": "value:ResponseEnvelope"
           }
         ],
         "references": [
-          "T-200ca518d07e"
+          "T-401457e9d4b6"
         ],
         "rows": [
           {
@@ -1066,11 +1104,7 @@
             "index": 0,
             "kind": "branch",
             "outcome": {
-              "args": [
-                "viewId",
-                "audit"
-              ],
-              "targetKey": "T-200ca518d07e",
+              "targetKey": "T-401457e9d4b6",
               "targetSymbol": "com.legacy.hier.provider.ViewCache#getViewViaCache(Integer,AuditInfo)",
               "type": "call"
             }
@@ -1081,7 +1115,7 @@
             "index": 1,
             "kind": "terminal",
             "outcome": {
-              "outcomeLabel": "value:com.legacy.hier.model.ResponseEnvelope",
+              "outcomeLabel": "value:ResponseEnvelope",
               "ref": {
                 "line": 23,
                 "path": "src/main/java/com/legacy/hier/provider/HierarchyViewProvider.java"
@@ -1100,7 +1134,7 @@
             "kind": "catch",
             "outcome": {
               "exceptionType": "ViewNotFoundException",
-              "outcomeLabel": "value:com.legacy.hier.model.ResponseEnvelope",
+              "outcomeLabel": "value:ResponseEnvelope",
               "ref": {
                 "line": 26,
                 "path": "src/main/java/com/legacy/hier/provider/HierarchyViewProvider.java"
@@ -1119,7 +1153,7 @@
             "kind": "catch",
             "outcome": {
               "exceptionType": "NoDataFoundException",
-              "outcomeLabel": "value:com.legacy.hier.model.ResponseEnvelope",
+              "outcomeLabel": "value:ResponseEnvelope",
               "ref": {
                 "line": 29,
                 "path": "src/main/java/com/legacy/hier/provider/HierarchyViewProvider.java"
@@ -1138,7 +1172,7 @@
             "kind": "catch",
             "outcome": {
               "exceptionType": "Exception",
-              "outcomeLabel": "value:com.legacy.hier.model.ResponseEnvelope",
+              "outcomeLabel": "value:ResponseEnvelope",
               "ref": {
                 "line": 32,
                 "path": "src/main/java/com/legacy/hier/provider/HierarchyViewProvider.java"
@@ -1162,14 +1196,14 @@
         "startLine": 18,
         "symbol": "com.legacy.hier.provider.HierarchyViewProvider#getView(Integer,AuditInfo)"
       },
-      "content_hash": "b898956a290c381a8e61e39cec5f771e6c3c66a31cbcf2db2ae9e4c943b7fd0b",
-      "contract_key": "T-3e34e6e10db6",
+      "content_hash": "8223385f306e0199f4876f22aa04ea72a5264d7e183be4de369c59b13c126a5d",
+      "contract_key": "T-4371aab2706b",
       "fan_in": 1,
       "kind": "behaviour_table",
       "roots_json": {
         "reachable": true,
         "roots": [
-          "com.legacy.hier.api.ViewResource#getView(String,String,Integer,javax.ws.rs.core.HttpHeaders)"
+          "com.legacy.hier.api.ViewResource#getView(String,String,Integer,HttpHeaders)"
         ],
         "total": 1
       },
@@ -1227,7 +1261,7 @@
     {
       "body_json": {
         "annotations": [],
-        "contentHash": "cb432f3374f4e53546157433b9001a0495dbac74a677dd2885e343056f984c62",
+        "contentHash": "5ce90c3ca23784eb47e711413237470745277704ceab65a14d14b8785fa0e51c",
         "key": "T-40150aaa1c61",
         "kind": "behaviour_table",
         "outcomeSignature": [
@@ -1238,7 +1272,7 @@
           }
         ],
         "references": [
-          "Q-5f69702d539b"
+          "Q-69d5137216bf"
         ],
         "rows": [
           {
@@ -1247,7 +1281,7 @@
             "index": 0,
             "kind": "terminal",
             "outcome": {
-              "targetKey": "Q-5f69702d539b",
+              "targetKey": "Q-69d5137216bf",
               "targetSymbol": "com.legacy.hier.dao.ViewDao#findAll()",
               "type": "call"
             }
@@ -1263,14 +1297,14 @@
         "startLine": 29,
         "symbol": "com.legacy.hier.provider.ViewCache#getAllViews(AuditInfo)"
       },
-      "content_hash": "cb432f3374f4e53546157433b9001a0495dbac74a677dd2885e343056f984c62",
+      "content_hash": "5ce90c3ca23784eb47e711413237470745277704ceab65a14d14b8785fa0e51c",
       "contract_key": "T-40150aaa1c61",
       "fan_in": 1,
       "kind": "behaviour_table",
       "roots_json": {
         "reachable": true,
         "roots": [
-          "com.legacy.hier.api.ViewResource#getAllViews(String,String,javax.ws.rs.core.HttpHeaders)"
+          "com.legacy.hier.api.ViewResource#getAllViews(String,String,HttpHeaders)"
         ],
         "total": 1
       },
@@ -1280,29 +1314,14 @@
     {
       "body_json": {
         "annotations": [],
-        "cacheFacts": {
-          "cacheField": "cache",
-          "cacheType": "Map<Integer, HierarchyViewDetail>",
-          "keyType": "Integer",
-          "missLoads": [],
-          "mutators": [
-            {
-              "operations": [
-                "put"
-              ],
-              "symbol": "com.legacy.hier.provider.ViewCache#getViewViaCache(Integer,AuditInfo)"
-            }
-          ],
-          "valueType": "HierarchyViewDetail"
-        },
-        "contentHash": "b20380c31960eb753d1fddfe91b7a71785e9df1449e356797399e8772111f327",
-        "key": "T-200ca518d07e",
+        "contentHash": "bcf92f2fa71a75f19f90652ad839009941c70ee89094a4841266853685d86b26",
+        "key": "T-401457e9d4b6",
         "kind": "behaviour_table",
         "outcomeSignature": [
           {
             "detail": null,
             "kind": "value",
-            "label": "value:com.legacy.hier.model.HierarchyViewDetail"
+            "label": "value:HierarchyViewDetail"
           },
           {
             "detail": null,
@@ -1316,7 +1335,7 @@
           }
         ],
         "references": [
-          "Q-5f69702d539b"
+          "Q-69d5137216bf"
         ],
         "rows": [
           {
@@ -1328,7 +1347,7 @@
             "index": 0,
             "kind": "branch",
             "outcome": {
-              "outcomeLabel": "value:com.legacy.hier.model.HierarchyViewDetail",
+              "outcomeLabel": "value:HierarchyViewDetail",
               "ref": {
                 "line": 18,
                 "path": "src/main/java/com/legacy/hier/provider/ViewCache.java"
@@ -1346,10 +1365,7 @@
             "index": 1,
             "kind": "branch",
             "outcome": {
-              "args": [
-                "viewId"
-              ],
-              "targetKey": "Q-5f69702d539b",
+              "targetKey": "Q-69d5137216bf",
               "targetSymbol": "com.legacy.hier.dao.ViewDao#findLatest(Integer)",
               "type": "call"
             }
@@ -1378,7 +1394,7 @@
             "index": 3,
             "kind": "terminal",
             "outcome": {
-              "outcomeLabel": "value:com.legacy.hier.model.HierarchyViewDetail",
+              "outcomeLabel": "value:HierarchyViewDetail",
               "ref": {
                 "line": 25,
                 "path": "src/main/java/com/legacy/hier/provider/ViewCache.java"
@@ -1402,14 +1418,14 @@
         "startLine": 16,
         "symbol": "com.legacy.hier.provider.ViewCache#getViewViaCache(Integer,AuditInfo)"
       },
-      "content_hash": "b20380c31960eb753d1fddfe91b7a71785e9df1449e356797399e8772111f327",
-      "contract_key": "T-200ca518d07e",
+      "content_hash": "bcf92f2fa71a75f19f90652ad839009941c70ee89094a4841266853685d86b26",
+      "contract_key": "T-401457e9d4b6",
       "fan_in": 1,
       "kind": "behaviour_table",
       "roots_json": {
         "reachable": true,
         "roots": [
-          "com.legacy.hier.api.ViewResource#getView(String,String,Integer,javax.ws.rs.core.HttpHeaders)"
+          "com.legacy.hier.api.ViewResource#getView(String,String,Integer,HttpHeaders)"
         ],
         "total": 1
       },
@@ -1419,8 +1435,8 @@
     {
       "body_json": {
         "annotations": [],
-        "contentHash": "a8dd96affb1f9d34f91b5ad7bcd222e733deef00004dccb3a5ac433ef82d040e",
-        "key": "T-a6d90f888e3f",
+        "contentHash": "d76d16b83e0b9a0b5e365bc401086801a0ec267b618224464e90a62a6c6eddf2",
+        "key": "T-b4be232afd14",
         "kind": "behaviour_table",
         "outcomeSignature": [
           {
@@ -1460,10 +1476,10 @@
         ],
         "sourcePath": "src/main/java/com/legacy/hier/provider/ViewEnricher.java",
         "startLine": 9,
-        "symbol": "com.legacy.hier.provider.ViewEnricher#applyOpenEndedValidity(com.legacy.hier.model.HierarchyViewDetail)"
+        "symbol": "com.legacy.hier.provider.ViewEnricher#applyOpenEndedValidity(HierarchyViewDetail)"
       },
-      "content_hash": "a8dd96affb1f9d34f91b5ad7bcd222e733deef00004dccb3a5ac433ef82d040e",
-      "contract_key": "T-a6d90f888e3f",
+      "content_hash": "d76d16b83e0b9a0b5e365bc401086801a0ec267b618224464e90a62a6c6eddf2",
+      "contract_key": "T-b4be232afd14",
       "fan_in": 0,
       "kind": "behaviour_table",
       "roots_json": {
@@ -1472,7 +1488,7 @@
         "total": 0
       },
       "source_path": "src/main/java/com/legacy/hier/provider/ViewEnricher.java",
-      "source_symbol": "com.legacy.hier.provider.ViewEnricher#applyOpenEndedValidity(com.legacy.hier.model.HierarchyViewDetail)"
+      "source_symbol": "com.legacy.hier.provider.ViewEnricher#applyOpenEndedValidity(HierarchyViewDetail)"
     },
     {
       "body_json": {
@@ -1516,21 +1532,6 @@
         "annotations": [
           "@Override"
         ],
-        "cacheFacts": {
-          "cacheField": "nodeCache",
-          "cacheType": "Map<String, String>",
-          "keyType": "String",
-          "missLoads": [],
-          "mutators": [
-            {
-              "operations": [
-                "put"
-              ],
-              "symbol": "com.legacy.hier.service.CachingNodeServiceImpl#findNode(String)"
-            }
-          ],
-          "valueType": "String"
-        },
         "contentHash": "886b5ab9361ec9f606cd7911d614bd896853ef693a91beffcd0077945879b99c",
         "key": "T-07903425cbd9",
         "kind": "behaviour_table",
