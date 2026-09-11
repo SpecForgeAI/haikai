@@ -28,6 +28,11 @@ vi.mock('../../api/modelApi', () => ({
   loadModelByProjectId: vi.fn().mockResolvedValue(null),
 }));
 
+const mockGetLatestS0Snapshot = vi.fn();
+vi.mock('../../api/s0SnapshotApi', () => ({
+  getLatestS0Snapshot: (...a: unknown[]) => mockGetLatestS0Snapshot(...a),
+}));
+
 vi.mock('./DiscoveryRunDetailView.module.css', () => ({
   default: new Proxy(
     {},
@@ -72,6 +77,59 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockGetDiscoveryCandidateCount.mockResolvedValue({ count: 0 });
   mockGetDiscoveryCandidates.mockResolvedValue([]);
+  mockGetLatestS0Snapshot.mockResolvedValue({ snapshot_id: 'snap-1', tables: [] });
+});
+
+describe('DiscoveryRunDetailPage — S0 pin durability (2026-09-11)', () => {
+  const taken = () =>
+    run({
+      database: {
+        tableCount: 65,
+        s0Snapshot: { status: 'taken', snapshotId: 's0-20260910195359-28080', tableCount: 65, detail: null },
+      },
+    });
+
+  it('when the validation service has NO pin although the scan says taken, the row says so (and what happens next)', async () => {
+    const r = taken();
+    mockGetDiscoveryRuns.mockResolvedValue([r]);
+    mockGetDiscoveryRun.mockResolvedValue(r);
+    mockGetLatestS0Snapshot.mockResolvedValue(null);
+    renderPage();
+    const warn = await screen.findByTestId('s0-snapshot-pin-missing');
+    expect(warn.textContent).toContain('Pin not found on the validation service');
+    expect(warn.textContent).toContain('re-pinned automatically');
+    expect(mockGetLatestS0Snapshot).toHaveBeenCalledWith('proj-1', 'arch-1');
+    // The scan's own record still reads as taken — the record is true.
+    expect(screen.getByTestId('s0-snapshot-status-taken').textContent).toBe('Taken with this scan');
+  });
+
+  it('when the pin exists (or the service is unreachable) no warning renders', async () => {
+    const r = taken();
+    mockGetDiscoveryRuns.mockResolvedValue([r]);
+    mockGetDiscoveryRun.mockResolvedValue(r);
+    renderPage();
+    await screen.findByTestId('s0-snapshot-status-taken');
+    expect(screen.queryByTestId('s0-snapshot-pin-missing')).toBeNull();
+
+    mockGetLatestS0Snapshot.mockRejectedValue(new Error('down'));
+    renderPage();
+    await screen.findAllByTestId('s0-snapshot-status-taken');
+    expect(screen.queryByTestId('s0-snapshot-pin-missing')).toBeNull();
+  });
+
+  it('the estate banner says the DB scan is SAVED once candidates are committed, instead of asking to save it', async () => {
+    const r = taken();
+    mockGetDiscoveryRuns.mockResolvedValue([r]);
+    mockGetDiscoveryRun.mockResolvedValue(r);
+    mockGetDiscoveryCandidateCount.mockResolvedValue({ count: 1 });
+    mockGetDiscoveryCandidates.mockResolvedValue([
+      { id: 'c1', run_id: 'run-current', name: 'orders', review_status: 'committed', candidate_type: 'physical_data_entities', confidence: 1, payload_json: {} },
+    ]);
+    renderPage();
+    const saved = await screen.findByTestId('estate-continuation-saved');
+    expect(saved.textContent).toContain('this DB scan is saved');
+    expect(screen.queryByTestId('estate-continuation-unsaved')).toBeNull();
+  });
 });
 
 function renderPage() {

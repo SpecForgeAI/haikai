@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import os from 'os';
 import path from 'path';
 
 // Load environment variables from .env file
@@ -322,7 +323,19 @@ export const COMPENSATION_STATEMENT_TIMEOUT_SECONDS: number =
  * Default: `<service root>/s0-snapshots`.
  */
 export const S0_SNAPSHOT_DIR: string =
-  process.env.S0_SNAPSHOT_DIR || path.resolve(__dirname, '..', 's0-snapshots');
+  process.env.S0_SNAPSHOT_DIR || path.join(os.homedir(), '.haikai', 's0-snapshots');
+
+/**
+ * Where snapshots lived before 2026-09-11: INSIDE the service checkout
+ * (gitignored). The work machine updates by fresh clone, so every pickup
+ * silently deleted every pinned S0 while the discovery run (an AMS row)
+ * kept saying "taken" — proc capture refused with S0_NOT_PINNED and the API
+ * capture had nothing to fingerprint against. The default above is now
+ * checkout-independent (`~/.haikai/s0-snapshots`); this path exists only so
+ * boot can migrate whatever the old tree still holds (see
+ * services/s0/ensurePinned.ts).
+ */
+export const LEGACY_S0_SNAPSHOT_DIR: string = path.resolve(__dirname, '..', 's0-snapshots');
 
 /**
  * Keyset page size for S0 snapshot / fingerprint reads. Clamped to the

@@ -46,6 +46,7 @@ import {
   useArchitectureDispatch,
 } from '../../contexts/ArchitectureContext';
 import { loadModelByProjectId } from '../../api/modelApi';
+import { getLatestS0Snapshot } from '../../api/s0SnapshotApi';
 import { useProject } from '../../contexts/ProjectContext';
 import { useDiscoveryRunId } from '../../hooks/useCurrentView';
 import {
@@ -915,6 +916,31 @@ export const DiscoveryRunDetailPage: React.FC = () => {
     };
   })();
 
+  // Live pin check (2026-09-11). "Taken with this scan" is the scan's RECORD
+  // (an AMS row); the pin itself is a directory on the validation service's
+  // disk and a fresh clone / moved data directory loses it. Ask the service
+  // whether a pin actually exists so the page never claims a state the
+  // captures downstream cannot see. 'unknown' (not asked / unreachable)
+  // renders nothing — only a definite "no pin" is surfaced.
+  const [s0PinState, setS0PinState] = useState<'unknown' | 'present' | 'missing'>('unknown');
+  const s0PinProjectId = selectedRun?.project_id ?? activeProject?.id ?? null;
+  const s0PinArchitectureId = selectedRun?.architecture_id ?? activeArchitectureId ?? null;
+  useEffect(() => {
+    let cancelled = false;
+    setS0PinState('unknown');
+    if (s0Snapshot?.status !== 'taken' || !s0PinProjectId || !s0PinArchitectureId) return;
+    void getLatestS0Snapshot(s0PinProjectId, s0PinArchitectureId)
+      .then((manifest) => {
+        if (!cancelled) setS0PinState(manifest ? 'present' : 'missing');
+      })
+      .catch(() => {
+        if (!cancelled) setS0PinState('unknown');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [s0Snapshot?.status, s0Snapshot?.snapshotId, s0PinProjectId, s0PinArchitectureId]);
+
   // Routine catalog (Stored Proc & Function Behaviour Program, Spec 1,
   // 2026-09-09): the DB scan profiles every harvested proc / function /
   // trigger and saves the catalog to AMS at completion, recording the
@@ -1069,7 +1095,16 @@ export const DiscoveryRunDetailPage: React.FC = () => {
               fontSize: 13,
             }}
           >
-            <strong>Estate scan — next step:</strong> review &amp; save this DB scan, then{' '}
+            <strong>Estate scan — next step:</strong>{' '}
+            {hasCommittedCandidates ? (
+              <span data-testid="estate-continuation-saved">
+                this DB scan is saved; now{' '}
+              </span>
+            ) : (
+              <span data-testid="estate-continuation-unsaved">
+                review &amp; save this DB scan, then{' '}
+              </span>
+            )}
             <a href={discoveryListUrl}>run the code scan</a>. The joint foundation questions
             (tables no code touches, write-only audit sinks, scope conflicts) appear on the
             code scan&apos;s review once both evidence sets exist.
@@ -1495,6 +1530,17 @@ export const DiscoveryRunDetailPage: React.FC = () => {
                       }
                     >
                       {s0Snapshot.detail}
+                    </span>
+                  )}
+                  {s0Snapshot.status === 'taken' && s0PinState === 'missing' && (
+                    <span
+                      className={styles.phaseValue}
+                      data-testid="s0-snapshot-pin-missing"
+                      style={{ color: '#b45309' }}
+                    >
+                      Pin not found on the validation service (a fresh clone or a moved data
+                      directory loses it). It is re-pinned automatically from the saved model
+                      when the next capture starts; nothing to redo here.
                     </span>
                   )}
                 </div>

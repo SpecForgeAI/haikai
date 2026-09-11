@@ -4,6 +4,8 @@ import { requestLogger } from './middleware/requestLogger';
 import { errorHandler } from './middleware/errorHandler';
 import { apiMigrationValidationRouter } from './routes';
 import { reconcileOrphanRunningSessions } from './services/startupReconciliation';
+import { LEGACY_S0_SNAPSHOT_DIR, S0_SNAPSHOT_DIR } from './config';
+import { migrateLegacyS0Snapshots } from './services/s0/ensurePinned';
 
 /**
  * API Migration Validation Service Entry Point
@@ -28,6 +30,12 @@ app.use(requestLogger);
 
 // Mount api-migration-validation router at /api-migration-validation
 app.use('/api-migration-validation', apiMigrationValidationRouter);
+
+// S0 pin durability (2026-09-11): carry snapshots the legacy in-checkout tree
+// still holds into the checkout-independent location. Fail-soft, idempotent.
+if (process.env.NODE_ENV !== 'test') {
+  migrateLegacyS0Snapshots(LEGACY_S0_SNAPSHOT_DIR, S0_SNAPSHOT_DIR);
+}
 
 // Health check endpoint
 app.get('/health', (_req, res) => {
