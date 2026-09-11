@@ -56,10 +56,20 @@ public final class MigrationExecutionRunStatus {
     public static final String NEEDS_TARGET_CREDENTIALS = "needs_target_credentials";
     public static final String RECONCILE_FAILED = "reconcile_failed";
 
+    /**
+     * Implement-only completion (2026-09-11, start-from-work-item): every spec
+     * of the run implemented, pushed and its merge request open, with nothing
+     * deployed BY DESIGN (the operator chose "implement + MR only"). Terminal;
+     * distinct from {@link #DEPLOYED} so the next stage's precedence gate
+     * (which requires a deployed preceding plane) is not fooled.
+     */
+    public static final String IMPLEMENTED = "implemented";
+
     /** The set of all allowed persisted run-status values. */
     public static final Set<String> ALL = Set.of(
         STARTED, DISPATCHING, AWAITING_APPROVAL, HALTED, DEPLOYED, FAILED,
-        RECONCILING, RECONCILED, NEEDS_TARGET_CREDENTIALS, RECONCILE_FAILED
+        RECONCILING, RECONCILED, NEEDS_TARGET_CREDENTIALS, RECONCILE_FAILED,
+        IMPLEMENTED
     );
 
     private MigrationExecutionRunStatus() {

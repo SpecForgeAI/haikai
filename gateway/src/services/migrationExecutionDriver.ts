@@ -227,6 +227,17 @@ export interface MigrateScope {
    */
   batchName?: string | null;
   /**
+   * Run completion mode (2026-09-11, start-from-work-item). 'implement_mr' =
+   * implement + verify + commit + push + open the merge request, then STOP:
+   * no haibox deploy, no DB execution chain, no reconcile; the run finishes
+   * at `implemented` (its own terminal status) and the next stage stays
+   * locked until something deploys. Omitted / 'deploy' = the existing
+   * behaviour (the final item deploys, the plane reconciles). Persisted on
+   * the run's decision log at creation so resume, retry and boot recovery
+   * re-derive the SAME completion after a gateway restart.
+   */
+  completionMode?: 'implement_mr' | 'deploy' | null;
+  /**
    * Per-plane start (2026-07-26, user ruling: "Start stage 1 should start the
    * DB plane only"). When set, the run is scoped to THIS plane's non-deferred
    * stories (resolved onto the existing subset machinery, so the spec gate,
@@ -1630,6 +1641,11 @@ export async function startMigration(
           ...(runBaseBranch ? { base_branch: runBaseBranch } : {}),
           at: new Date().toISOString(),
         },
+        // Completion mode (2026-09-11): only stamped when it departs from the
+        // default so pre-existing runs read back as 'deploy' unchanged.
+        ...(scope.completionMode === 'implement_mr'
+          ? [{ type: 'run_completion_mode', mode: 'implement_mr', at: new Date().toISOString() }]
+          : []),
       ],
     } as MigrationExecutionRun,
     items: dispatchSet.map((d) => ({
@@ -1766,6 +1782,21 @@ export function runBaseModeOf(
   const last = entries.length > 0 ? (entries[entries.length - 1] as Record<string, unknown>) : null;
   const mode = last?.mode;
   return mode === 'integration' || mode === 'fresh' || mode === 'mr' ? mode : 'chain';
+}
+
+/**
+ * The run's completion mode (2026-09-11), read from the `run_completion_mode`
+ * decision-log entry stamped at creation. 'deploy' for every run that never
+ * asked otherwise (all runs before the entry existed).
+ */
+export function runCompletionModeOf(
+  run: MigrationExecutionRun | null | undefined
+): 'implement_mr' | 'deploy' {
+  const entries = (run?.decision_log_json ?? []).filter(
+    (e) => e && (e as Record<string, unknown>).type === 'run_completion_mode'
+  );
+  const last = entries.length > 0 ? (entries[entries.length - 1] as Record<string, unknown>) : null;
+  return last?.mode === 'implement_mr' ? 'implement_mr' : 'deploy';
 }
 
 /**
@@ -2107,7 +2138,11 @@ export async function runSpecSegment(
       plane: itemPlane,
     });
   }
-  const wantsHaiboxDeploy = (item.deploy_on_complete ?? false) && itemPlane !== 'db' && !planeEndpointFree;
+  // Implement-only runs (2026-09-11) never deploy, whatever the marker says:
+  // the MR is the deliverable.
+  const implementOnlyRun = runCompletionModeOf(run) === 'implement_mr';
+  const wantsHaiboxDeploy =
+    (item.deploy_on_complete ?? false) && itemPlane !== 'db' && !planeEndpointFree && !implementOnlyRun;
   // Run-branch chaining (2026-08-06): with chained branches the STAGE-FINAL
   // branch carries the whole chain's diff — only it opens the ONE MR.
   // Non-final items commit + push MR-less. DB-plane items ALL suppress: the
@@ -2363,9 +2398,12 @@ export async function runBatchSegment(
   const submitBatch = deps.submitOrchestrationBatch ?? submitOrchestrationBatch;
   // WS2 (2026-07-31): a db-plane batch never haibox-deploys — the DB
   // execution chain takes over on `implemented`.
-  const batchDeploys = !descriptors.every(
-    (d) => (d.plane ?? planeForWorkstream(d.workstream)) === 'db'
-  );
+  // Implement-only (2026-09-11): the batch implements, pushes and opens its
+  // one MR (IVS opens the MR regardless of deploy_on_complete), then stops.
+  const batchImplementOnly = runCompletionModeOf(run) === 'implement_mr';
+  const batchDeploys =
+    !batchImplementOnly &&
+    !descriptors.every((d) => (d.plane ?? planeForWorkstream(d.workstream)) === 'db');
   const batchHasServicePlane = descriptors.some(
     (d) => (d.plane ?? planeForWorkstream(d.workstream)) === 'service'
   );
@@ -2489,6 +2527,7 @@ export type OperatorHaltResult =
 const RUN_TERMINAL_STATUSES = new Set<string>([
   RUN_STATUS.HALTED,
   RUN_STATUS.DEPLOYED,
+  RUN_STATUS.IMPLEMENTED,
   RUN_STATUS.FAILED,
 ]);
 
@@ -2907,7 +2946,28 @@ export async function advanceRunOnBuildResult(
   // serve), so this is where the DB execution chain takes over: assemble the
   // branches + pack, apply the schema, load the data, reconcile, then pause
   // on the parity report. Detached; failures land on the run state.
-  if (item.deploy_on_complete === true) {
+  if (item.deploy_on_complete === true && runCompletionModeOf(run) === 'implement_mr') {
+    // Implement-only run (2026-09-11): the final item implemented, pushed and
+    // opened its MR — nothing deploys and no chain runs. Complete the run at
+    // `implemented` unless later items are still pending (then advance).
+    const hasPendingLater = (run.items ?? []).some(
+      (i) => i.id !== runItemId && i.status === RUN_ITEM_STATUS.PENDING
+    );
+    if (!hasPendingLater) {
+      await safePatchRun(deps, projectId, runId, { status: RUN_STATUS.IMPLEMENTED });
+      logger.info('[diag-gateway] migration_execution_driver run_implemented_no_deploy', {
+        projectId,
+        runId,
+        runItemId,
+      });
+      trace.ok('final spec implemented — MR open; run complete (implement-only)', {
+        run: runId,
+        job: jobId,
+        project: scope.project,
+      });
+      return 'advanced_run_complete';
+    }
+  } else if (item.deploy_on_complete === true) {
     let plane: MigrationPlane;
     try {
       plane = await resolveItemPlane(scope, run, item, deps);
@@ -3218,6 +3278,25 @@ async function advanceBatchOnBuildResult(
     jobId,
     itemCount: siblings.length,
   });
+
+  // Implement-only run (2026-09-11): the MR is open and the work is pushed —
+  // the run is COMPLETE at `implemented`. No DB chain, no deploy, no
+  // reconcile; the next stage stays locked (nothing deployed).
+  if (runCompletionModeOf(run) === 'implement_mr') {
+    await safePatchRun(deps, projectId, runId, { status: RUN_STATUS.IMPLEMENTED });
+    logger.info('[diag-gateway] migration_execution_driver run_implemented_no_deploy', {
+      projectId,
+      runId,
+      jobId,
+      itemCount: siblings.length,
+    });
+    trace.ok(`batch implemented — ${siblings.length} specs pushed, MR open; run complete (implement-only)`, {
+      run: runId,
+      job: jobId,
+      project: scope.project,
+    });
+    return 'advanced_run_complete';
+  }
 
   // WS2 (2026-07-31): a db-plane batch hands over to the DB execution chain
   // once its single job implements — same semantics as the per-spec path.
@@ -5011,7 +5090,7 @@ export async function recoverInFlightRuns(
 // Internal helpers (failure isolation + safe patches)
 // ============================================================================
 
-function collectDeferredWorkItemIds(workItems: WorkItem[]): Set<string> {
+export function collectDeferredWorkItemIds(workItems: WorkItem[]): Set<string> {
   const out = new Set<string>();
   for (const wi of workItems) {
     if (wi.deferred === true && wi.id) out.add(wi.id);

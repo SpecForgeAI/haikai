@@ -110,6 +110,9 @@ import {
 import { deriveServeSpecDefaults } from '../services/migrationServeSpecDefaults';
 import { defaultFetchPackView } from '../services/migrationDbPackPlanner';
 import { runOperatorIncrementalSync } from '../services/migrationDataRunnerDispatch';
+import { computePlanOrderFrontier } from '../services/migrationPlanOrderFrontier';
+import { collectDeferredWorkItemIds } from '../services/migrationExecutionDriver';
+import { getMigrationExecutionRunsForBook } from '../services/migrationExecutionRunClient';
 
 export const migrationExecutionRouter = Router();
 
@@ -2093,6 +2096,187 @@ migrationExecutionRouter.post(
         error: error instanceof Error ? error.message : 'Unknown error',
       });
       return res.status(502).json({ error: 'incremental sync dispatch failed' });
+    }
+  }
+);
+
+// ---------------------------------------------------------------------------
+// Start-from-work-item (2026-09-11).
+//
+// GET  .../migration-books-of-work/:bookId/plan-order-frontier
+//   Every work item's durable execution outcome (read across ALL runs of the
+//   book, so an outcome survives later runs) + which item is NEXT in plan
+//   order and why every other item is not startable.
+// POST .../migration-books-of-work/:bookId/migrate-work-item
+//   Start the not-yet-implemented specs beneath ONE work item (initiative,
+//   epic, feature or story) as one batch (one branch, one MR). The plan-order
+//   rule is enforced HERE, never trusted from the UI: the selection must be
+//   exactly the next specs in the global order. `completion` = 'implement_mr'
+//   (default: implement + push + MR, then stop) or 'deploy' (the stage-card
+//   semantics: the final item deploys and the plane reconciles).
+// ---------------------------------------------------------------------------
+
+async function loadPlanOrderFrontier(projectId: string, bookId: string) {
+  const deps = defaultMigrationDriverDeps(buildResultsCallbackUrl());
+  const book = await deps.fetchBookOfWork(projectId, bookId);
+  if (!book) return null;
+  const [workItems, runs] = await Promise.all([
+    deps.fetchWorkItems(projectId),
+    getMigrationExecutionRunsForBook(projectId, bookId),
+  ]);
+  return computePlanOrderFrontier({
+    book,
+    deferredWorkItemIds: collectDeferredWorkItemIds(workItems),
+    runs,
+  });
+}
+
+migrationExecutionRouter.get(
+  '/projects/:projectId/migration-books-of-work/:bookId/plan-order-frontier',
+  async (req: Request, res: Response) => {
+    const { projectId, bookId } = req.params;
+    try {
+      const frontier = await loadPlanOrderFrontier(projectId, bookId);
+      if (!frontier) {
+        return res.status(404).json({ error: `Book of work ${bookId} not found` });
+      }
+      return res.status(200).json(frontier);
+    } catch (error) {
+      logger.error('[diag-gateway] migration_execution_driver plan_order_frontier_error', {
+        projectId,
+        bookId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return res.status(502).json({ error: 'Failed to compute the plan-order frontier' });
+    }
+  }
+);
+
+migrationExecutionRouter.post(
+  '/projects/:projectId/migration-books-of-work/:bookId/migrate-work-item',
+  async (req: Request, res: Response) => {
+    const requestId = (req as { requestId?: string }).requestId ?? 'unknown';
+    const { projectId, bookId } = req.params;
+    const body = (req.body ?? {}) as {
+      company?: string;
+      project?: string;
+      book_item_id?: string;
+      bookItemId?: string;
+      completion?: string;
+      base_mode?: string;
+      baseMode?: string;
+    };
+
+    if (!body.company || typeof body.company !== 'string' || body.company.trim() === '') {
+      return res.status(400).json({ status: 'error', message: 'company is required' });
+    }
+    if (!body.project || typeof body.project !== 'string' || body.project.trim() === '') {
+      return res.status(400).json({ status: 'error', message: 'project is required' });
+    }
+    const bookItemId = (body.book_item_id ?? body.bookItemId ?? '').trim();
+    if (!bookItemId) {
+      return res.status(400).json({ status: 'error', message: 'book_item_id is required' });
+    }
+    const completion = body.completion ?? 'implement_mr';
+    if (completion !== 'implement_mr' && completion !== 'deploy') {
+      return res.status(400).json({
+        status: 'error',
+        message: 'completion must be one of implement_mr|deploy',
+      });
+    }
+    const VALID_ITEM_BASE_MODES = new Set(['chain', 'fresh', 'mr', 'integration']);
+    const requestedBaseMode = body.base_mode ?? body.baseMode;
+    if (requestedBaseMode !== undefined && !VALID_ITEM_BASE_MODES.has(requestedBaseMode)) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'base_mode must be one of chain|fresh|mr|integration',
+      });
+    }
+
+    try {
+      const frontier = await loadPlanOrderFrontier(projectId, bookId);
+      if (!frontier) {
+        return res.status(404).json({ status: 'error', message: `Book of work ${bookId} not found` });
+      }
+      const node = frontier.nodes[bookItemId];
+      if (!node) {
+        return res.status(404).json({
+          status: 'error',
+          message: `Work item ${bookItemId} is not in this book of work`,
+        });
+      }
+      if (!node.startable) {
+        // Plan order is a server rule (409, blocked-shaped like the gate).
+        return res.status(409).json({
+          status: 'blocked',
+          reasons: [
+            {
+              code: `plan_order_${node.reason}`,
+              message: node.reasonText,
+              workItemId: node.workItemId,
+            },
+          ],
+          frontierBookItemId: frontier.frontierBookItemId,
+        });
+      }
+
+      const bookItem = (await defaultMigrationDriverDeps(buildResultsCallbackUrl())
+        .fetchBookOfWork(projectId, bookId))?.book_of_work_json?.items?.find((i) => i.id === bookItemId);
+      const batchName =
+        sanitizeBatchName(`${bookItem?.title ?? 'item'}-${Date.now().toString(36).slice(-4)}`) ||
+        defaultBatchName(bookId);
+
+      const scope: MigrateScope = {
+        projectId,
+        bookId,
+        company: body.company,
+        project: body.project,
+        selectedWorkItemIds: node.remainingWorkItemIds,
+        batchName,
+        baseMode: (requestedBaseMode as MigrateScope['baseMode']) ?? null,
+        completionMode: completion,
+      };
+
+      logger.info('[diag-gateway] migration_execution_driver migrate_work_item_trigger', {
+        requestId,
+        projectId,
+        bookId,
+        bookItemId,
+        completion,
+        selectedCount: node.remainingWorkItemIds.length,
+        batchName,
+        baseMode: requestedBaseMode ?? 'auto',
+      });
+
+      const deps = defaultMigrationDriverDeps(buildResultsCallbackUrl());
+      trace.stageStart('GATE', { project: projectId });
+      const result = await startMigration(scope, deps);
+      emitMigrateGatePredicate('GATE.MIG.02', result, {
+        project: projectId,
+        run: typeof (result as { runId?: unknown }).runId === 'string'
+          ? (result as { runId: string }).runId
+          : undefined,
+      });
+      trace.stageEnd('GATE', { project: projectId });
+      if (result.status === 'started') {
+        return res.status(202).json({ ...result, batchName, completion });
+      }
+      if (result.status === 'blocked') {
+        return res.status(409).json(result);
+      }
+      return res.status(422).json(result);
+    } catch (error) {
+      logger.error('[diag-gateway] migration_execution_driver migrate_work_item_error', {
+        requestId,
+        projectId,
+        bookId,
+        bookItemId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return res.status(500).json({
+        status: 'error',
+        message: error instanceof Error ? error.message : 'Failed to start the work item',
+      });
     }
   }
 );

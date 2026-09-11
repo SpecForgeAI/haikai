@@ -824,3 +824,87 @@
 .coverageInlineLink:hover {
   color: #0d47a1;
 }
+
+/* Execution outcome chips (2026-09-11, start-from-work-item). Replace the
+   review-time "saved" chip once an item has a durable execution outcome. */
+.badgeImplemented {
+  background: #059669;
+  color: #ffffff;
+  border-color: #047857;
+  font-weight: 600;
+}
+.badgePartial {
+  background: #a7f3d0;
+  color: #064e3b;
+  border-color: #34d399;
+}
+.badgeInFlight {
+  background: #bfdbfe;
+  color: #1e3a8a;
+  border-color: #60a5fa;
+}
+
+/* Right-click context menu on a plan-tree row. */
+.itemMenu {
+  position: fixed;
+  z-index: 1200;
+  min-width: 300px;
+  max-width: 340px;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  padding: 4px 0;
+  font-size: 13px;
+}
+.itemMenuHeader {
+  padding: 6px 12px 8px;
+  border-bottom: 1px solid #e5e7eb;
+  margin-bottom: 4px;
+}
+.itemMenuTitle {
+  font-weight: 600;
+  color: #111827;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.itemMenuSummary {
+  color: #6b7280;
+  font-size: 12px;
+  margin-top: 2px;
+}
+.itemMenuEntry {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  padding: 6px 12px;
+  cursor: pointer;
+  color: #111827;
+  font: inherit;
+}
+.itemMenuEntry:hover:not(:disabled) {
+  background: #f3f4f6;
+}
+.itemMenuEntryDisabled,
+.itemMenuEntry:disabled {
+  color: #9ca3af;
+  cursor: not-allowed;
+}
+.itemMenuEntryLabel {
+  font-weight: 500;
+}
+.itemMenuEntryHint {
+  font-size: 11px;
+  color: #6b7280;
+  margin-top: 1px;
+  white-space: normal;
+}
+.itemMenuEntryDisabled .itemMenuEntryHint,
+.itemMenuEntry:disabled .itemMenuEntryHint {
+  color: #b91c1c;
+}

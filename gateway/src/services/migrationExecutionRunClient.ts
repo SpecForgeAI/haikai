@@ -121,6 +121,12 @@ export const RUN_STATUS = {
   AWAITING_APPROVAL: 'awaiting_approval',
   HALTED: 'halted',
   DEPLOYED: 'deployed',
+  /**
+   * Implement-only completion (2026-09-11, start-from-work-item): every spec
+   * implemented, pushed and its MR open; nothing deployed by design. Terminal.
+   * Mirrors MigrationExecutionRunStatus.IMPLEMENTED (AMS validates the set).
+   */
+  IMPLEMENTED: 'implemented',
   FAILED: 'failed',
 } as const;
 

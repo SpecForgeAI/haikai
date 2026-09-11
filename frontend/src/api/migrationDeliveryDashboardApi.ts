@@ -1779,3 +1779,159 @@ export async function resumeFailedMigrationRun(
       `Failed to resume the migration run from failure: ${res.status} ${res.statusText}`,
   );
 }
+
+// ---------------------------------------------------------------------------
+// Start-from-work-item (2026-09-11): plan-order frontier + per-item start.
+// ---------------------------------------------------------------------------
+
+export type PlanOrderStartReason =
+  | 'ok'
+  | 'all_implemented'
+  | 'no_dispatchable_leaves'
+  | 'blocked_by_preceding'
+  | 'run_in_flight'
+  | 'not_saved';
+
+export type PlanOrderLeafStatus =
+  | 'implemented'
+  | 'deployed'
+  | 'in_flight'
+  | 'failed'
+  | 'not_started';
+
+export interface PlanOrderOutcomeDto {
+  workItemId: string;
+  status: string;
+  outcome: string | null;
+  runId: string | null;
+  runStatus: string | null;
+  branch: string | null;
+  prUrl: string | null;
+  specName: string | null;
+  updatedAt: string | null;
+}
+
+export interface PlanOrderLeafDto {
+  bookItemId: string;
+  workItemId: string | null;
+  title: string;
+  plane: 'db' | 'service' | 'ui';
+  position: number;
+  status: PlanOrderLeafStatus;
+  outcome: PlanOrderOutcomeDto | null;
+}
+
+export interface PlanOrderNodeDto {
+  bookItemId: string;
+  workItemId: string | null;
+  leafCount: number;
+  doneCount: number;
+  failedCount: number;
+  inFlightCount: number;
+  remainingPlanes: Array<'db' | 'service' | 'ui'>;
+  remainingWorkItemIds: string[];
+  remainingBookItemIds: string[];
+  startable: boolean;
+  reason: PlanOrderStartReason;
+  reasonText: string;
+  blockedBy: {
+    bookItemId: string;
+    workItemId: string | null;
+    title: string;
+    precedingCount: number;
+  } | null;
+}
+
+export interface PlanOrderFrontierDto {
+  bookId: string;
+  runInFlight: boolean;
+  activeRunId: string | null;
+  activeRunStatus: string | null;
+  frontierBookItemId: string | null;
+  leaves: PlanOrderLeafDto[];
+  nodes: Record<string, PlanOrderNodeDto>;
+  outcomesByWorkItem: Record<string, PlanOrderOutcomeDto>;
+}
+
+/**
+ * GET .../migration-books-of-work/{bookId}/plan-order-frontier — every work
+ * item's DURABLE execution outcome (read across all runs of the book) plus
+ * which item is next in plan order. Null when the book has no frontier (404).
+ */
+export async function getPlanOrderFrontier(
+  projectId: string,
+  bookId: string,
+): Promise<PlanOrderFrontierDto | null> {
+  const url =
+    `${GATEWAY_BASE}/api/v1/projects/${encodeURIComponent(projectId)}` +
+    `/migration-books-of-work/${encodeURIComponent(bookId)}/plan-order-frontier`;
+  const res = await fetch(url, { method: 'GET', headers: { Accept: 'application/json' } });
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    throw new Error(`Failed to read the plan-order frontier: ${res.status} ${res.statusText}`);
+  }
+  return (await res.json()) as PlanOrderFrontierDto;
+}
+
+/**
+ * POST .../migration-books-of-work/{bookId}/migrate-work-item — start the
+ * not-yet-implemented specs beneath ONE work item as one batch (one branch,
+ * one MR). `completion` 'implement_mr' stops at the MR; 'deploy' deploys the
+ * final spec and reconciles (the stage-card semantics). The gateway refuses
+ * (409 blocked) any item that is not the next one in plan order.
+ */
+export async function triggerMigrateWorkItem(
+  projectId: string,
+  bookId: string,
+  body: {
+    company: string;
+    project: string;
+    bookItemId: string;
+    completion: 'implement_mr' | 'deploy';
+    baseMode?: 'chain' | 'fresh' | 'mr' | 'integration';
+  },
+): Promise<TriggerMigrateResult> {
+  const url =
+    `${GATEWAY_BASE}/api/v1/projects/${encodeURIComponent(projectId)}` +
+    `/migration-books-of-work/${encodeURIComponent(bookId)}/migrate-work-item`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({
+      company: body.company,
+      project: body.project,
+      book_item_id: body.bookItemId,
+      completion: body.completion,
+      ...(body.baseMode ? { base_mode: body.baseMode } : {}),
+    }),
+  });
+  let payload: unknown = null;
+  try {
+    payload = await res.json();
+  } catch {
+    // fall through to the status-based fallback below
+  }
+  const obj = (payload ?? {}) as Record<string, unknown>;
+  if (res.status === 202 || obj.status === 'started') {
+    return {
+      status: 'started',
+      runId: String(obj.runId ?? ''),
+      itemCount: typeof obj.itemCount === 'number' ? obj.itemCount : 0,
+      warnings: readWarnings(obj),
+    };
+  }
+  if (res.status === 409 || obj.status === 'blocked') {
+    return {
+      status: 'blocked',
+      reasons: Array.isArray(obj.reasons) ? (obj.reasons as MigrateBlockReason[]) : [],
+      warnings: readWarnings(obj),
+    };
+  }
+  return {
+    status: 'error',
+    message:
+      typeof obj.message === 'string' && obj.message
+        ? obj.message
+        : `Failed to start the work item: ${res.status} ${res.statusText}`,
+  };
+}
