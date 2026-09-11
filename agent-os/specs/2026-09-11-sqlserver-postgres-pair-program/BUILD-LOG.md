@@ -8,7 +8,7 @@ doctrine, the owner rulings, hard-item designs, the user prerequisite).
 | # | Spec | Size | Depends on | Branch | Status |
 |---|------|------|------------|--------|--------|
 | 0 | Foundations (vocabulary, pair-per-project, rules lib, guard) | M | — | `feat/mssql-pair-s0-foundations` | built 2026-09-11 |
-| 1 | Sidecar multi-engine (`db-discovery-sidecar`) | L | 0 | `feat/mssql-pair-s1-sidecar` | built 2026-09-11 (SHA) |
+| 1 | Sidecar multi-engine (`db-discovery-sidecar`) | L | 0 | `feat/mssql-pair-s1-sidecar` | built 2026-09-11 (5e8b9c25) |
 | 2 | Discovery `mssql` pack + scan UI | L | 1 | | pending |
 | 3 | Ruleset + `MssqlAdapter` + data plane | L | 1 | | pending |
 | 4 | State discipline on SQL Server | M | 3 | | pending |
@@ -61,7 +61,7 @@ ARCH_ID redeclare + `requestContractScanner`.
 
 ### S1 — Sidecar multi-engine (2026-09-11)
 
-As-built. Branch `feat/mssql-pair-s1-sidecar`. `mvn test`: **225 tests, 0
+As-built. Branch `feat/mssql-pair-s1-sidecar`, commit `5e8b9c25`. `mvn test`: **225 tests, 0
 failures, 0 errors** (126 pre-existing + 99 new); `mvn -DskipTests package`
 produces `target/db-discovery-sidecar-1.0.0-SNAPSHOT.jar`.
 
