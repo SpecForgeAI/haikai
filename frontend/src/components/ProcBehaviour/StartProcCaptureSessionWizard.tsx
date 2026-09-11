@@ -38,6 +38,8 @@ import {
 import styles from '../ApiBehaviour/StartCaptureSessionWizard.module.css';
 import proc from './ProcBehaviour.module.css';
 import type { DbEngineKey } from '../../api/dbEngines';
+import { DB_ENGINE_DEFAULT_PORT, DB_ENGINE_OPTIONS, isDbEngineKey } from '../../api/dbEngines';
+import { DEFAULT_MSSQL_AUTH, MssqlAuthFields, toMssqlAuthWire, type MssqlAuthValue } from '../shared/MssqlAuthFields';
 
 export const DEFAULT_ATTEMPTS_PER_SCENARIO = 15;
 export const DEFAULT_MAX_ROWS_PER_RESULT_SET = 1000;
@@ -65,18 +67,21 @@ interface DbState {
   password: string;
   readonlyUsername: string;
   readonlyPassword: string;
+  /** SQL Server connection extras; only on the wire when dbType === 'mssql'. */
+  mssqlAuth: MssqlAuthValue;
 }
 
 const INITIAL_DB: DbState = {
   dbType: 'sybase',
   host: '',
-  port: '5000',
+  port: String(DB_ENGINE_DEFAULT_PORT.sybase),
   database: '',
   schema: '',
   username: '',
   password: '',
   readonlyUsername: '',
   readonlyPassword: '',
+  mssqlAuth: DEFAULT_MSSQL_AUTH,
 };
 
 function defaultSessionName(): string {
@@ -198,6 +203,7 @@ export const StartProcCaptureSessionWizard: React.FC<
         scopeRoutineIds: Array.from(selected),
         dbConfigRedacted: {
           dbType: db.dbType,
+          ...(db.dbType === 'mssql' ? { mssqlAuth: toMssqlAuthWire(db.mssqlAuth) } : {}),
           host: db.host.trim(),
           port: Number(db.port) || null,
           database: db.database.trim(),
@@ -465,15 +471,27 @@ export const StartProcCaptureSessionWizard: React.FC<
                   id="proc-db-type"
                   className={styles.select}
                   value={db.dbType}
-                  onChange={(e) =>
-                    setDb((s) => ({ ...s, dbType: e.target.value as ProcDbType }))
-                  }
+                  onChange={(e) => {
+                    const next = isDbEngineKey(e.target.value) ? e.target.value : 'sybase';
+                    setDb((s) => ({ ...s, dbType: next, port: String(DB_ENGINE_DEFAULT_PORT[next]) }));
+                  }}
                   data-testid="proc-db-type"
                 >
-                  <option value="sybase">Sybase ASE</option>
-                  <option value="postgres">PostgreSQL</option>
+                  {[...DB_ENGINE_OPTIONS].sort((a, b) => (a.value === 'postgres' ? 1 : 0) - (b.value === 'postgres' ? 1 : 0)).map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
                 </select>
               </div>
+              {db.dbType === 'mssql' && (
+                <MssqlAuthFields
+                  value={db.mssqlAuth}
+                  onChange={(next) => setDb((s) => ({ ...s, mssqlAuth: next }))}
+                  testIdPrefix="proc-db-mssql"
+                  classNames={{ group: styles.fieldGroup, label: styles.label, input: styles.input, select: styles.select, hint: styles.hint }}
+                />
+              )}
               <div className={styles.fieldGroup}>
                 <label className={styles.label} htmlFor="proc-db-host">
                   Host

@@ -41,7 +41,9 @@ export function parseMssqlAuthWire(raw: unknown): MssqlAuth | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
   const pick = (a: string, b: string): unknown => (r[a] !== undefined ? r[a] : r[b]);
-  const scheme = pick('auth_scheme', 'authScheme');
+  // Accepts the AMVS form (auth_scheme / authScheme) and the discovery-service
+  // scan-config form (scheme) so one parser serves every wire that carries it.
+  const scheme = r.scheme !== undefined ? r.scheme : pick('auth_scheme', 'authScheme');
   const authScheme: 'sql' | 'ntlm' = scheme === 'ntlm' ? 'ntlm' : 'sql';
   const domain = pick('domain', 'domain');
   const encrypt = pick('encrypt', 'encrypt');

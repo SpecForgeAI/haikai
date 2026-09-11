@@ -543,6 +543,8 @@ export const DbMigrationPackView: React.FC<DbMigrationPackViewProps> = ({
         projectId={projectId}
         packId={pack.id}
         architectureId={architectureId}
+        sourceEngine={manifest?.source_engine ?? null}
+        sourceEngineDisplay={manifest?.source_engine_display ?? (manifest ? dbEngineLabel(manifest.source_engine) : null)}
         onChanged={handleDecisionResolved}
         onModelChanged={handleDecisionResolved}
         onPackRegenerated={() => {

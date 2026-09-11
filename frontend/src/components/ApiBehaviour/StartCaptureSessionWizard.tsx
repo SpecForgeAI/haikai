@@ -98,6 +98,8 @@ import {
 } from './logCorpusRunSupport';
 import { manualCapture } from '../../api/apiBehaviourClient';
 import type { DbEngineKey } from '../../api/dbEngines';
+import { DB_ENGINE_DEFAULT_PORT, DB_ENGINE_OPTIONS, isDbEngineKey } from '../../api/dbEngines';
+import { DEFAULT_MSSQL_AUTH, MssqlAuthFields, toMssqlAuthWire, type MssqlAuthValue } from '../shared/MssqlAuthFields';
 
 // ============================================================================
 // Props
@@ -167,6 +169,8 @@ interface Step3Config {
   readonlyUsername: string;
   readonlyPassword: string;
   allowlistText: string; // comma-separated table names
+  /** SQL Server connection extras; only on the wire when dbType === 'mssql'. */
+  mssqlAuth: MssqlAuthValue;
 }
 
 /**
@@ -211,6 +215,7 @@ const DEFAULT_STEP3: Step3Config = {
   readonlyUsername: '',
   readonlyPassword: '',
   allowlistText: '',
+  mssqlAuth: DEFAULT_MSSQL_AUTH,
 };
 
 // ============================================================================
@@ -611,13 +616,12 @@ export function StartCaptureSessionWizard({
   // only allowed `none` | `postgres`, which silently blocked the Sybase path.
   const canAdvanceStep3 =
     step3.dbType === 'none' ||
-    step3.dbType === 'postgres' ||
-    step3.dbType === 'sybase';
+    isDbEngineKey(step3.dbType);
 
   // DB connection-detail fields share the same form for Postgres + Sybase
   // (host/port/database/schema/username/password/allowlist). The only
   // difference is the conventional default port, which the user can edit.
-  const showDbDetailFields = step3.dbType === 'postgres' || step3.dbType === 'sybase';
+  const showDbDetailFields = step3.dbType !== 'none';
 
   const buildAuthConfigRedacted = useCallback((): Record<string, unknown> => {
     switch (step2.authType) {
@@ -651,6 +655,7 @@ export function StartCaptureSessionWizard({
       schema: step3.schema || null,
       username: step3.username,
       password: '[REDACTED]',
+      ...(step3.dbType === 'mssql' ? { mssqlAuth: toMssqlAuthWire(step3.mssqlAuth) } : {}),
       // Legacy key kept for older readers; `allowlistTables`/`allowlistSchemas`
       // are the canonical keys the capture tools read (2026-08-21 wire-key
       // fix: `allowlist` alone never reached `list_db_metadata`, which
@@ -1971,21 +1976,36 @@ export function StartCaptureSessionWizard({
                   id="csw-db-type"
                   className={styles.select}
                   value={step3.dbType}
-                  onChange={(e) =>
-                    setStep3((s) => ({ ...s, dbType: e.target.value as DbType }))
-                  }
+                  onChange={(e) => {
+                    const next = e.target.value as DbType;
+                    setStep3((s) => ({
+                      ...s,
+                      dbType: next,
+                      port: isDbEngineKey(next) ? String(DB_ENGINE_DEFAULT_PORT[next]) : s.port,
+                    }));
+                  }}
                   data-testid="start-capture-session-wizard-db-type"
                 >
                   <option value="none">None (skip DB sampling)</option>
-                  <option value="postgres">PostgreSQL</option>
-                  <option
-                    value="sybase"
-                    data-testid="start-capture-session-wizard-db-type-sybase"
-                  >
-                    Sybase ASE
-                  </option>
+                  {DB_ENGINE_OPTIONS.map((o) => (
+                    <option
+                      key={o.value}
+                      value={o.value}
+                      data-testid={`start-capture-session-wizard-db-type-${o.value}`}
+                    >
+                      {o.label}
+                    </option>
+                  ))}
                 </select>
               </div>
+              {step3.dbType === 'mssql' && (
+                <MssqlAuthFields
+                  value={step3.mssqlAuth}
+                  onChange={(next) => setStep3((s) => ({ ...s, mssqlAuth: next }))}
+                  testIdPrefix="start-capture-session-wizard-db-mssql"
+                  classNames={{ group: styles.fieldGroup, label: styles.label, input: styles.input, select: styles.select, hint: styles.hint }}
+                />
+              )}
               {showDbDetailFields && (
                 <>
                   <div className={styles.fieldGroup}>

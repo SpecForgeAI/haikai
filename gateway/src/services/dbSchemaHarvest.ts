@@ -87,6 +87,8 @@ export interface HarvestConnection {
   dbEngine?: SupportedDbEngine;
   /** Sybase driver selection; discovery-service defaults 'auto'. Ignored by other engines. */
   sybaseDriver?: string;
+  /** SQL Server connection extras (discovery-service `mssqlAuth` shape); ignored by other engines. */
+  mssqlAuth?: Record<string, unknown> | null;
   /** Optional schema include filter for the catalog walk. */
   includeSchemas?: string[] | null;
 }
@@ -215,6 +217,9 @@ const defaultCreateRun: NonNullable<HarvestDeps['createRun']> = async (args) => 
         readOnlyConfirmed: true,
         ...((connection.dbEngine ?? 'sybase') === 'sybase'
           ? { sybaseDriver: connection.sybaseDriver ?? 'auto' }
+          : {}),
+        ...(connection.dbEngine === 'mssql' && connection.mssqlAuth
+          ? { mssqlAuth: connection.mssqlAuth }
           : {}),
       },
       // The password lives in this request body ONLY; discovery-service stores

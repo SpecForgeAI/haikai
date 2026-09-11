@@ -33,6 +33,8 @@ import {
   type RunDbStructuralHarvestResponse,
 } from '../../../api/dbMigrationPackApi';
 import styles from './DbMigrationPack.module.css';
+import { DB_ENGINE_DEFAULT_PORT, dbEngineLabel, isDbEngineKey, type DbEngineKey } from '../../../api/dbEngines';
+import { DEFAULT_MSSQL_AUTH, MssqlAuthFields, toMssqlAuthWire, type MssqlAuthValue } from '../../shared/MssqlAuthFields';
 
 export interface DbMigrationPackHarvestModalProps {
   projectId: string;
@@ -40,6 +42,10 @@ export interface DbMigrationPackHarvestModalProps {
   architectureId: string;
   /** Rides as `target_architecture_id` when the mounting context has one. */
   targetArchitectureId?: string | null;
+  /** Source engine key from the pack manifest (defaults to the original single engine). */
+  sourceEngine?: string | null;
+  /** Source engine display name from the pack manifest (title text). */
+  sourceEngineDisplay?: string | null;
   /** Fired ONLY on stage 'completed' — the parent closes + refreshes. */
   onCompleted: (result: RunDbStructuralHarvestResponse) => void;
   onClose: () => void;
@@ -69,9 +75,12 @@ function savedBackSummary(savedBack: DbStructuralHarvestSavedBack): string {
 
 export const DbMigrationPackHarvestModal: React.FC<
   DbMigrationPackHarvestModalProps
-> = ({ projectId, architectureId, targetArchitectureId, onCompleted, onClose }) => {
+> = ({ projectId, architectureId, targetArchitectureId, sourceEngine, sourceEngineDisplay, onCompleted, onClose }) => {
+  const engineKey: DbEngineKey = isDbEngineKey(sourceEngine) ? sourceEngine : 'sybase';
+  const engineDisplay = sourceEngineDisplay ?? dbEngineLabel(engineKey);
   const [host, setHost] = useState('');
-  const [port, setPort] = useState<number>(5000);
+  const [port, setPort] = useState<number>(DB_ENGINE_DEFAULT_PORT[engineKey]);
+  const [mssqlAuth, setMssqlAuth] = useState<MssqlAuthValue>(DEFAULT_MSSQL_AUTH);
   const [databaseName, setDatabaseName] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -115,7 +124,9 @@ export const DbMigrationPackHarvestModal: React.FC<
         databaseName: databaseName.trim(),
         username,
         password,
-        ...(driver !== 'auto' ? { sybaseDriver: driver } : {}),
+        dbEngine: engineKey,
+        ...(engineKey === 'sybase' && driver !== 'auto' ? { sybaseDriver: driver } : {}),
+        ...(engineKey === 'mssql' ? { mssqlAuth: toMssqlAuthWire(mssqlAuth) } : {}),
       });
       setTestResult(
         `Connected — ${result.engine} ${result.serverVersion} ` +
@@ -144,7 +155,9 @@ export const DbMigrationPackHarvestModal: React.FC<
         database_name: databaseName.trim(),
         username,
         password,
-        ...(driver !== 'auto' ? { sybase_driver: driver } : {}),
+        db_engine: engineKey,
+        ...(engineKey === 'sybase' && driver !== 'auto' ? { sybase_driver: driver } : {}),
+        ...(engineKey === 'mssql' ? { mssql_auth: toMssqlAuthWire(mssqlAuth) } : {}),
       });
       if (result.stage === 'completed') {
         onCompleted(result);
@@ -171,7 +184,7 @@ export const DbMigrationPackHarvestModal: React.FC<
       >
         <div className={styles.modalHeader}>
           <h3 className={styles.modalTitle}>
-            Harvest from source DB — live Sybase connection
+            Harvest from source DB — live {engineDisplay} connection
           </h3>
           <p className={styles.modalHint}>
             Reads the real schema from the live source database, saves it back
@@ -214,21 +227,34 @@ export const DbMigrationPackHarvestModal: React.FC<
                 data-testid="db-pack-harvest-database"
               />
             </label>
-            <label className={styles.filterGroup}>
-              <span className={styles.filterLabel}>Driver (optional)</span>
-              <select
-                className={styles.filterSelect}
-                value={driver}
-                onChange={(e) => setDriver(e.target.value as SybaseDriverChoice)}
-                disabled={busy}
-                data-testid="db-pack-harvest-driver"
-              >
-                <option value="auto">Auto</option>
-                <option value="jtds">jTDS</option>
-                <option value="jconnect">jConnect</option>
-              </select>
-            </label>
+            {engineKey === 'sybase' && (
+              <label className={styles.filterGroup}>
+                <span className={styles.filterLabel}>Driver (optional)</span>
+                <select
+                  className={styles.filterSelect}
+                  value={driver}
+                  onChange={(e) => setDriver(e.target.value as SybaseDriverChoice)}
+                  disabled={busy}
+                  data-testid="db-pack-harvest-driver"
+                >
+                  <option value="auto">Auto</option>
+                  <option value="jtds">jTDS</option>
+                  <option value="jconnect">jConnect</option>
+                </select>
+              </label>
+            )}
           </div>
+          {engineKey === 'mssql' && (
+            <div className={styles.fieldRow}>
+              <MssqlAuthFields
+                value={mssqlAuth}
+                onChange={setMssqlAuth}
+                disabled={busy}
+                testIdPrefix="db-pack-harvest-mssql"
+                classNames={{ group: styles.filterGroup, label: styles.filterLabel, input: styles.filterInput, select: styles.filterSelect, hint: styles.modalHint }}
+              />
+            </div>
+          )}
           <div className={styles.fieldRow}>
             <label className={styles.filterGroup}>
               <span className={styles.filterLabel}>Username</span>

@@ -1374,6 +1374,16 @@ export const DbMigrationPackTranslationsTab: React.FC<
                     </td>
                     <td>
                       <span className={styles.badge}>{routineKindLabel(row)}</span>
+                      {row.untranslatable_reason && (
+                        <span
+                          className={styles.badge}
+                          title={`Not attempted: ${String(row.untranslatable_reason).replace(/_/g, ' ')}`}
+                          data-testid="db-pack-translation-untranslatable-reason"
+                        >
+                          {' '}
+                          not attempted · {String(row.untranslatable_reason).replace(/_/g, ' ')}
+                        </span>
+                      )}
                     </td>
                     <td>{scenariosLabel(row)}</td>
                     <td>{attemptsLabel(row)}</td>

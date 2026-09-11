@@ -49,6 +49,7 @@
  * object into "[object Object]").
  */
 import type { DbEngineKey } from './dbEngines';
+import type { MssqlAuthWire } from '../components/shared/MssqlAuthFields';
 
 const GATEWAY_BASE = import.meta.env.VITE_GATEWAY_BASE_URL ?? '';
 
@@ -175,6 +176,8 @@ export interface DbMigrationPackDto {
   architecture_id: string;
   status: DbMigrationPackStatus | string;
   stale_reason: string | null;
+  /** Named untranslatable reason (changeset 233); null = translatable. */
+  untranslatable_reason?: string | null;
   input_snapshot_hash: string | null;
   generated_at: string | null;
   work_item_id: string | null;
@@ -789,6 +792,8 @@ export interface DbMigrationPackTranslationDto {
   verdict_json?: DbMigrationPackTranslationVerdict | null;
   parity_report_id?: string | null;
   stale_reason?: string | null;
+  /** Named untranslatable reason (changeset 233); null = translatable. */
+  untranslatable_reason?: string | null;
 }
 
 /** Deterministic per-bucket counts (gateway `computeCoverageSummary`). */
@@ -1163,6 +1168,8 @@ export interface TestDbSourceConnectionRequest {
   dbEngine?: string;
   /** 'jtds' | 'jconnect'; omitted = gateway auto-selects. */
   sybaseDriver?: string;
+  /** SQL Server connection extras (discovery-service `mssqlAuth` shape). */
+  mssqlAuth?: MssqlAuthWire | null;
 }
 
 export interface TestDbSourceConnectionResponse {
@@ -1181,7 +1188,11 @@ export interface RunDbStructuralHarvestRequest {
   database_name: string;
   username: string;
   password: string;
+  /** Source engine key; defaults to 'sybase' gateway-side. */
+  db_engine?: string;
   sybase_driver?: string;
+  /** SQL Server connection extras (discovery-service `mssqlAuth` shape). */
+  mssql_auth?: MssqlAuthWire | null;
   include_schemas?: string[];
   service_id?: string;
 }

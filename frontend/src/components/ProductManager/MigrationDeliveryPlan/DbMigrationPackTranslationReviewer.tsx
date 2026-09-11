@@ -185,6 +185,14 @@ export const DbMigrationPackTranslationReviewer: React.FC<
           <h4 className={styles.manifestSectionTitle}>
             <span className={styles.badge}>{translation.kind}</span>{' '}
             {translation.object_ref}
+            {translation.untranslatable_reason && (
+              <>
+                {' '}
+                <span className={styles.badge} data-testid="db-pack-translation-reviewer-untranslatable-reason">
+                  not attempted · {String(translation.untranslatable_reason).replace(/_/g, ' ')}
+                </span>
+              </>
+            )}
           </h4>
           <p className={styles.manifestNote}>
             {translation.translation_key}
