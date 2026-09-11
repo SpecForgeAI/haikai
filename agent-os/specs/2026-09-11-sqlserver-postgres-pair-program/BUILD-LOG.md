@@ -9,7 +9,7 @@ doctrine, the owner rulings, hard-item designs, the user prerequisite).
 |---|------|------|------------|--------|--------|
 | 0 | Foundations (vocabulary, pair-per-project, rules lib, guard) | M | — | `feat/mssql-pair-s0-foundations` | built 2026-09-11 |
 | 1 | Sidecar multi-engine (`db-discovery-sidecar`) | L | 0 | | pending |
-| 2 | Discovery `mssql` pack + scan UI | L | 1 | `worktree-agent-a21a029156a542a75` | built 2026-09-11 (__S2_SHA__) |
+| 2 | Discovery `mssql` pack + scan UI | L | 1 | `worktree-agent-a21a029156a542a75` | built 2026-09-11 (a0859238) |
 | 3 | Ruleset + `MssqlAdapter` + data plane | L | 1 | | pending |
 | 4 | State discipline on SQL Server | M | 3 | | pending |
 | 5 | Pack generation for SQL Server | L | 2 | | pending |
