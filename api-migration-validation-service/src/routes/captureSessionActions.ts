@@ -9,6 +9,7 @@ import type {
   OperationDto,
 } from '../services/archModelClient';
 import { secretsStore } from '../services/secretsStore';
+import { ensureS0Pinned } from '../services/s0/ensurePinned';
 import { closureRunStore } from '../services/closureRunStore';
 import { runManager } from '../services/runManager';
 import { oasInventoryStore } from '../services/oasInventoryStore';
@@ -3245,6 +3246,45 @@ export function buildCaptureSessionActionsRouter(
         return fail(res, 409, 'Parsed OAS inventory not loaded for this session. Run /parse-oas before /start.', {
           code: 'INVENTORY_NOT_LOADED',
         });
+      }
+      // S0 self-heal (2026-09-11): the pin lives on this service's disk and a
+      // fresh clone loses it while the scan record still says "taken". When
+      // the session carries the source DB (compensation brackets need it),
+      // re-pin from the committed model so the end-of-job fingerprint and any
+      // restore have a canonical state. FAIL-SOFT: the API capture never
+      // blocks on this — the outcome is logged and the fingerprint reports
+      // `no_snapshot` honestly if it still could not be pinned.
+      {
+        // The redacted DB config rides the wire as a loose record.
+        const raw = (session.db_config_redacted_json ?? {}) as Record<string, unknown>;
+        const str = (k: string): string | null => (typeof raw[k] === 'string' && (raw[k] as string).length > 0 ? (raw[k] as string) : null);
+        const dbType = str('dbType') === 'postgres' ? 'postgres' : str('dbType') === 'sybase' ? 'sybase' : null;
+        const host = str('host');
+        const database = str('database');
+        const username = str('username');
+        const port = typeof raw.port === 'number' ? (raw.port as number) : dbType === 'postgres' ? 5432 : 5000;
+        const secrets = secretsStore.get(sessionId);
+        if (dbType && host && database && username && secrets?.db?.password) {
+          const pinned = await ensureS0Pinned({
+            projectId,
+            architectureId: session.architecture_id,
+            config: {
+              dbType,
+              host,
+              port,
+              database,
+              schema: str('schema'),
+              username,
+              password: secrets.db.password,
+            },
+            reason: 'api_capture_start',
+          });
+          if (pinned.status === 'failed') {
+            console.warn(
+              `[diag-amvs] op=s0_repin result=failed reason=api_capture_start session=${sessionId.slice(0, 8)} detail=${pinned.detail}`,
+            );
+          }
+        }
       }
 
       // ----------------------------------------------------------------
