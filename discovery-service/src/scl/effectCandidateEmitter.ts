@@ -134,18 +134,19 @@ export function parseProcCallsFromSql(sql: string | null | undefined): string[] 
 
 const WRITE_SQL_PATTERNS: RegExp[] = [
   // T-SQL makes INTO optional: `insert filter_tag (…) values (…)` is legal
-  // Sybase and a real house style (2026-08-26 shakedown: a createOrGet-style
+  // T-SQL and a real house style (2026-08-26 shakedown: a createOrGet-style
   // op's INSERT used the bare form, so the table surfaced as READ-only and
   // the compensation bracket never imaged it — the write leaked straight to
   // the end-of-job fingerprint). The SELECT side always parsed fine.
   /\binsert\s+(?:into\s+)?([A-Za-z0-9_."\[\]$#]+)/gi,
   /\bupdate\s+([A-Za-z0-9_."\[\]$#]+)\s+set\b/gi,
   /\bdelete\s+from\s+([A-Za-z0-9_."\[\]$#]+)/gi,
-  /\bmerge\s+into\s+([A-Za-z0-9_."\[\]$#]+)/gi,
+  // MERGE [INTO] target: INTO is optional in T-SQL (SQL Server house style omits it).
+  /\bmerge\s+(?:top\s*\(\d+\)\s+)?(?:into\s+)?([A-Za-z0-9_."\[\]$#]+)\s+(?:as\s+\w+\s+)?using\b/gi,
   /\btruncate\s+table\s+([A-Za-z0-9_."\[\]$#]+)/gi,
 ];
 
-/** Sybase aliased delete: `delete <alias> from <table> <alias>, ...`. The
+/** T-SQL aliased delete: `delete <alias> from <table> <alias>, ...`. The
  *  plain `delete from X` form stays with WRITE_SQL_PATTERNS. */
 const ALIASED_DELETE_RE = /\bdelete\s+([A-Za-z0-9_."\[\]$#]+)\s+from\b/gi;
 

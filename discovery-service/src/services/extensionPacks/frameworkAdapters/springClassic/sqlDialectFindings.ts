@@ -99,7 +99,7 @@ export function buildSqlDialectFindings(args: SqlDialectFindingsArgs): FindingEm
           nonPortableConstructs: classification.non_portable_constructs,
           migrationConcern:
             'Dialect-affected code paths must be rewritten AND re-verified against the pinned ' +
-            'baseline (scoped revalidation) when the database moves Sybase→PostgreSQL.',
+            'baseline (scoped revalidation) when the database moves from the T-SQL source engine to PostgreSQL.',
         },
         source: FINDING_SOURCE,
         createdByStage: CREATED_BY_STAGE,

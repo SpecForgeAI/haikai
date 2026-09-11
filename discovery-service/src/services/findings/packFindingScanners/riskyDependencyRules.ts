@@ -230,6 +230,20 @@ export const RISKY_DEPENDENCY_RULES: RiskyDependencyRule[] = [
     reason: 'Sybase jConn4 is end-of-life. Migrate to jConnect 7+ or a modern equivalent.',
     severity: 'medium',
   },
+  {
+    groupId: 'net.sourceforge.jtds',
+    artifactId: 'jtds',
+    versionPredicate: anyVersion,
+    reason: 'jTDS has been unmaintained since 2013 (no TLS 1.2+ negotiation, no SQL Server 2016+ features, no Java module support). Migrate to mssql-jdbc (SQL Server) or jConnect (Sybase).',
+    severity: 'medium',
+  },
+  {
+    groupId: 'com.microsoft.sqlserver',
+    artifactId: 'mssql-jdbc',
+    versionPredicate: (v) => majorLessThan(v, 12),
+    reason: 'mssql-jdbc < 12 is out of Microsoft mainstream support (12.x encrypts by default and supports Java 17/21).',
+    severity: 'medium',
+  },
 
   // --- Test stack ---
   {
