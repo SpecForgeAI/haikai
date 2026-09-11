@@ -32,7 +32,7 @@
  * methods (schema/table walk, view body fetch, etc.) live on the
  * `DatabaseDiscoveryPack` interface, not here.
  */
-export type DbType = 'postgres' | 'sybase';
+export type DbType = 'postgres' | 'sybase' | 'mssql';
 
 export interface DbConnectionConfig {
   dbType: DbType;

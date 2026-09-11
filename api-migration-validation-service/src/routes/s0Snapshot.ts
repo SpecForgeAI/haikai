@@ -16,7 +16,7 @@
 import { Router, Request, Response } from 'express';
 
 import { createDbAdapter } from '../services/db/dbAdapterFactory';
-import type { DbConnectionConfig, DbType } from '../types/db';
+import { isDbType, DB_TYPE_CHOICES, type DbConnectionConfig, type DbType } from '../types/db';
 import {
   buildIndexFromTableSpecs,
   fetchCompensationMetadataIndex,
@@ -63,8 +63,8 @@ interface S0Body {
 
 function dbBlockError(block: DbBlock | undefined): string | null {
   if (!block) return 'source_db is required';
-  if (block.db_type !== 'sybase' && block.db_type !== 'postgres') {
-    return "source_db.db_type must be 'sybase' or 'postgres'";
+  if (!isDbType(block.db_type)) {
+    return `source_db.db_type must be one of ${DB_TYPE_CHOICES}`;
   }
   for (const field of ['host', 'database', 'username', 'password'] as const) {
     if (!block[field] || typeof block[field] !== 'string') {
@@ -261,7 +261,7 @@ export function buildS0SnapshotRouter(): Router {
         metadata,
         manifest: resolved.manifest,
         dir: resolved.dir,
-        engine: ctx.config.dbType === 'postgres' ? 'postgres' : 'sybase',
+        engine: ctx.config.dbType,
         schema: ctx.config.schema ?? null,
       });
       trace.detail('s0.restore.done', {

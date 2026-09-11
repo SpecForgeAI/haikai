@@ -32,6 +32,10 @@ export function createDbAdapter(config: DbConnectionConfig): DbAdapter {
         'SybaseAdapter is not wired yet in discovery-service. ' +
           'Group 4 of spec 2026-05-16-database-discovery-packs fills this arm in.',
       );
+    case 'mssql':
+      // The sidecar-backed packs bypass DbAdapter (they call the sidecar
+      // client directly); the arm exists for exhaustiveness only.
+      throw new Error('MssqlAdapter is not wired in discovery-service; the mssql pack talks to the sidecar directly.');
     default: {
       // Exhaustive switch -- TypeScript will flag an unhandled engine.
       const _exhaustive: never = config.dbType;

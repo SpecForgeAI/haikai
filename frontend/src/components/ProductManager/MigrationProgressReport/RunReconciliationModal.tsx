@@ -49,13 +49,14 @@ import {
   type ApiAuthValue,
 } from '../../shared/ApiAuthFields';
 import styles from './MigrationProgressReport.module.css';
+import type { DbEngineKey } from '../../../api/dbEngines';
 
 // ============================================================================
 // Field state
 // ============================================================================
 
 interface DbFieldsState {
-  dbType: 'sybase' | 'postgres';
+  dbType: DbEngineKey;
   host: string;
   port: string;
   database: string;
@@ -64,7 +65,7 @@ interface DbFieldsState {
   password: string;
 }
 
-const emptyDb = (dbType: 'sybase' | 'postgres'): DbFieldsState => ({
+const emptyDb = (dbType: DbEngineKey): DbFieldsState => ({
   dbType,
   host: '',
   port: '',
@@ -148,7 +149,7 @@ function DbFields({
           className={styles.fieldInput}
           value={value.dbType}
           data-testid={`${idPrefix}-dbType`}
-          onChange={(e) => onChange({ ...value, dbType: e.target.value as 'sybase' | 'postgres' })}
+          onChange={(e) => onChange({ ...value, dbType: e.target.value as DbEngineKey })}
         >
           <option value="sybase">Sybase</option>
           <option value="postgres">PostgreSQL</option>

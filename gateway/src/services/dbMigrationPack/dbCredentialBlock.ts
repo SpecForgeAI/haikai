@@ -9,7 +9,7 @@
 
 import type { TargetDbSecret } from '../migrationTargetCredentialsStore';
 
-export const SUPPORTED_DB_ENGINES = ['postgres', 'sybase'] as const;
+export const SUPPORTED_DB_ENGINES = ['postgres', 'sybase', 'mssql'] as const;
 export type SupportedDbEngine = (typeof SUPPORTED_DB_ENGINES)[number];
 
 /** The 400-response text for a malformed credential block. */

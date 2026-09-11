@@ -52,6 +52,7 @@ import {
   validateJudgeVerdict,
   validateTranslationResponse,
 } from './translationValidators';
+import { rulesetForManifest } from './pairRuleset';
 
 // ---------------------------------------------------------------------------
 // Wire types (AMS snake_case — Group 2 endpoints)
@@ -1357,7 +1358,7 @@ export async function runTranslationPipeline(
     typeof pack.architecture_id === 'string' && pack.architecture_id.length > 0
       ? pack.architecture_id
       : null;
-  const ruleset = loadRuleset();
+  const ruleset = rulesetForManifest(manifest, loadRuleset);
   const routineCatalog = packArchitectureId ? await fetchRoutineCatalog(projectId, packArchitectureId) : [];
   const routinesById = new Map(routineCatalog.map((r) => [r.id, r]));
   const contractFor = (row: TranslationRow): RoutineContract | null => {

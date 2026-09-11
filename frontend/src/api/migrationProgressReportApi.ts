@@ -19,6 +19,7 @@
  * (`encodeURIComponent`), `GATEWAY_BASE`, and structured error parsing on a
  * non-2xx response (rejected promise carrying the server message).
  */
+import type { DbEngineKey } from './dbEngines';
 
 const GATEWAY_BASE = import.meta.env.VITE_GATEWAY_BASE_URL ?? '';
 
@@ -205,7 +206,7 @@ export async function getMigrationProgressSummary(
 // ============================================================================
 
 export interface ManualDbBlockDto {
-  dbType: 'sybase' | 'postgres';
+  dbType: DbEngineKey;
   host: string;
   port: number;
   database: string;

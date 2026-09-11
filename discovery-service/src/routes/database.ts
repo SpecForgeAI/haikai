@@ -31,6 +31,7 @@ import type {
   DatabaseDiscoveryCredentials,
   DatabaseEngine,
 } from '../services/databasePacks/types';
+import { isDatabaseEngine, DATABASE_ENGINE_CHOICES, DEFAULT_PORT_BY_ENGINE } from '../services/databasePacks/types';
 
 const databaseRouter = Router({ mergeParams: true });
 
@@ -44,7 +45,7 @@ function withDefaults(
   return {
     dbEngine: (body.dbEngine ?? 'postgres') as DatabaseEngine,
     host: body.host ?? '',
-    port: body.port ?? 5432,
+    port: body.port ?? DEFAULT_PORT_BY_ENGINE[(body.dbEngine ?? 'postgres') as DatabaseEngine] ?? 5432,
     databaseName: body.databaseName ?? '',
     catalogName: body.catalogName ?? null,
     schemaName: body.schemaName ?? null,
@@ -77,13 +78,9 @@ databaseRouter.post('/test-connection', async (req: Request, res: Response) => {
     password?: string;
   };
 
-  if (
-    !body.dbEngine ||
-    typeof body.dbEngine !== 'string' ||
-    (body.dbEngine !== 'postgres' && body.dbEngine !== 'sybase')
-  ) {
+  if (!isDatabaseEngine(body.dbEngine)) {
     res.status(400).json({
-      error: { code: 400, message: 'dbEngine must be "postgres" or "sybase".' },
+      error: { code: 400, message: `dbEngine must be one of ${DATABASE_ENGINE_CHOICES}.` },
     });
     return;
   }

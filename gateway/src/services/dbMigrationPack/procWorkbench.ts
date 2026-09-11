@@ -41,6 +41,8 @@ import {
   toRunnerWaivers,
 } from './procWorkbenchClients';
 import { loopConfigFromEnv, runTranslationReconcileLoop, type LoopConfig, type LoopDeps, type LoopResult, type LoopRoutine } from './translationReconcileLoop';
+import { rulesetForManifest } from './pairRuleset';
+import { manifestSourceEngine } from './pairRuleset';
 
 const trace = createTracer('gateway');
 
@@ -179,7 +181,7 @@ export async function runWorkbenchLoop(args: WorkbenchRunArgs, deps: WorkbenchDe
     const architectureId = typeof pack.architecture_id === 'string' ? pack.architecture_id : null;
     if (!architectureId) throw new Error('The pack carries no architecture_id.');
     const manifest = (pack.manifest_json ?? null) as Record<string, unknown> | null;
-    const ruleset = loadRuleset();
+    const ruleset = rulesetForManifest(manifest, loadRuleset);
     const [rows, routines, baseline, waiverRows] = await Promise.all([
       fetchTranslations(projectId, packId),
       fetchRoutineCatalog(projectId, architectureId),
@@ -232,6 +234,7 @@ export async function runWorkbenchLoop(args: WorkbenchRunArgs, deps: WorkbenchDe
           packId,
           translationAttemptId: attemptId,
           waivers,
+          sourceEngine: manifestSourceEngine(manifest),
           upstreamDivergentTables: args.upstreamDivergentTables ?? [],
         });
         if (outcome.error) return { status: 'unverifiable', reportId: null, failing: [], divergentCount: 0, unverifiableReason: outcome.error };

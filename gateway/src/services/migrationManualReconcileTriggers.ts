@@ -67,6 +67,7 @@ import {
   checkProcParityPreconditions,
   runProcParityForArchitecture,
 } from './migrationProcParityReconcile';
+import { parseDbCredentialBlock, dbBlockShapeError } from './dbMigrationPack/dbCredentialBlock';
 
 const trace = createTracer('gateway');
 
@@ -205,31 +206,10 @@ function parseDbBlock(
   label: string,
 ): { db?: TargetDbSecret; error?: string } {
   if (raw === undefined || raw === null) return {};
-  const engineOk = raw.dbType === 'postgres' || raw.dbType === 'sybase';
-  if (
-    !engineOk ||
-    !raw.host ||
-    typeof raw.port !== 'number' ||
-    !raw.database ||
-    !raw.username ||
-    typeof raw.password !== 'string' ||
-    raw.password.length === 0
-  ) {
-    return {
-      error: `${label} block must include { dbType: postgres|sybase, host, port, database, username, password }`,
-    };
-  }
-  return {
-    db: {
-      dbType: raw.dbType as 'postgres' | 'sybase',
-      host: raw.host,
-      port: raw.port,
-      database: raw.database,
-      schema: raw.schema ?? null,
-      username: raw.username,
-      password: raw.password,
-    },
-  };
+  // The engine vocabulary lives in pack code (dbCredentialBlock) — one copy.
+  const db = parseDbCredentialBlock(raw);
+  if (!db) return { error: dbBlockShapeError(label) };
+  return { db };
 }
 
 function validateAuth(

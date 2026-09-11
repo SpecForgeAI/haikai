@@ -108,7 +108,7 @@ export async function buildCaptureCompensationContext(
   const writeAdapterFactory = args.writeAdapterFactory ?? createCompensationWriteAdapter;
   return {
     context: {
-      engine: args.writeConfig.dbType === 'postgres' ? 'postgres' : 'sybase',
+      engine: args.writeConfig.dbType,
       schema: args.writeConfig.schema ?? null,
       effectScope,
       metadata,

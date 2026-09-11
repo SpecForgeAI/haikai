@@ -387,20 +387,13 @@ if (require.main === module) {
             stdio: ['ignore', 'pipe', 'ignore'],
           }).toString().trim() || 'unknown';
         } catch { /* not a git checkout */ }
-        // Migration-pair ruleset stamp (Data-Tier Oracle Spec O): the judge
-        // scores divergence handling against the pair the run declared.
-        let pairInfo: Record<string, unknown> = { migration_pair: 'none' };
+        // Migration-pair registry stamp (Data-Tier Oracle Spec O; pair-per-
+        // project since 2026-09-11): every pair present + the env pin.
+        let pairInfo: Record<string, unknown> = { migration_pairs: [], pinned_pair: null };
         try {
           // eslint-disable-next-line @typescript-eslint/no-var-requires
-          const { loadPairRuleset } = require('./migrationPairRules');
-          const rs = loadPairRuleset();
-          if (rs) {
-            pairInfo = {
-              migration_pair: rs.pair_id,
-              ruleset_version: rs.version,
-              rule_count: rs.rules.length,
-            };
-          }
+          const { pairRegistryStamp } = require('./migrationPairRules');
+          pairInfo = pairRegistryStamp();
         } catch { /* fail-soft */ }
         bootTrace.configHeader({
           git_sha: gitSha,

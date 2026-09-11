@@ -50,6 +50,7 @@
  * shape is already idiomatic camelCase -- no wire->camel mapping layer is
  * needed for that endpoint.
  */
+import type { DbEngineKey } from './dbEngines';
 
 const GATEWAY_BASE = import.meta.env.VITE_GATEWAY_BASE_URL ?? '';
 
@@ -1564,7 +1565,7 @@ export async function registerRunTargetDbCredentials(
 
 /** One DB credentials block (source or target side). */
 export interface StageDbCredentials {
-  dbType: 'postgres' | 'sybase';
+  dbType: DbEngineKey;
   host: string;
   port: number;
   database: string;

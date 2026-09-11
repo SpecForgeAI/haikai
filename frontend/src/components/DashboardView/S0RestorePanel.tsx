@@ -26,6 +26,7 @@ import {
   restoreS0Snapshot,
 } from '../../api/s0SnapshotApi';
 import styles from './ApiBaselinesListPage.module.css';
+import type { DbEngineKey } from '../../api/dbEngines';
 
 export interface S0RestorePanelProps {
   projectId: string;
@@ -34,7 +35,7 @@ export interface S0RestorePanelProps {
 }
 
 interface RestoreFormState {
-  dbType: 'postgres' | 'sybase';
+  dbType: DbEngineKey;
   host: string;
   port: string;
   database: string;

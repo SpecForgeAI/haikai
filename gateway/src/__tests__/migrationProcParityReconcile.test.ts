@@ -53,8 +53,8 @@ describe('checkProcParityPreconditions', () => {
   it('names the missing pack / pinned baseline; routines = translate-dispositioned catalog-linked rows', async () => {
     expect(await checkProcParityPreconditions('p', 'a', deps({ fetchPackView: (async () => null) as never }))).toMatchObject({ ok: false, blocked: expect.stringContaining('No DB migration pack') });
     expect(await checkProcParityPreconditions('p', 'a', deps({ fetchBaselineItems: async () => ({ baselineId: null, items: [] }) }))).toMatchObject({ ok: false, blocked: expect.stringContaining('No pinned proc behaviour baseline') });
-    expect(await checkProcParityPreconditions('p', 'a', deps())).toEqual({ ok: true, packId: 'k1', routineIds: ['r1', 'r2'], baselineId: 'b1' });
-    expect(await checkProcParityPreconditions('p', 'a', deps({ fetchTranslations: (async () => []) as never }))).toEqual({ ok: true, packId: 'k1', routineIds: [], baselineId: null });
+    expect(await checkProcParityPreconditions('p', 'a', deps())).toMatchObject({ ok: true, packId: 'k1', routineIds: ['r1', 'r2'], baselineId: 'b1' });
+    expect(await checkProcParityPreconditions('p', 'a', deps({ fetchTranslations: (async () => []) as never }))).toMatchObject({ ok: true, packId: 'k1', routineIds: [], baselineId: null });
   });
 });
 

@@ -345,7 +345,7 @@ describe('dbMigrationPack generation core (Group 2)', () => {
       UnsupportedEnginePairError
     );
     expect(() => buildSourceSchemaIr(makeInputs({ dbEngineAnswer: 'MySQL' }))).toThrow(
-      /Sybase ASE -> PostgreSQL is the only supported combination/
+      /PostgreSQL is the only supported target engine/
     );
     // Missing db.engine decision is equally a rejection (mandatory input).
     const noEngine = makeInputs();

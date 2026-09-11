@@ -15,8 +15,8 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { createTracer } from '../../trace';
-import { loadPairRuleset } from '../../migrationPairRules';
-import { DbConnectionConfig } from '../../types/db';
+import { pairRulesetForSource } from '../../migrationPairRules';
+import { DbConnectionConfig, DbType, isDbType, DB_TYPE_CHOICES } from '../../types/db';
 import { PostgresAdapter } from '../db/PostgresAdapter';
 import { SybaseAdapter } from '../db/SybaseAdapter';
 import { PostgresTargetLoader } from './targetLoader';
@@ -33,11 +33,17 @@ function intEnv(name: string, fallback: number): number {
   return Number.isFinite(v) ? v : fallback;
 }
 
+const SOURCE_DEFAULT_PORT: Record<DbType, number> = { postgres: 5432, sybase: 5000, mssql: 1433 };
+
 function sourceConfig(): DbConnectionConfig {
+  const rawType = env('SOURCE_DB_TYPE') || 'sybase';
+  if (!isDbType(rawType)) {
+    throw new Error(`SOURCE_DB_TYPE must be one of ${DB_TYPE_CHOICES} (got '${rawType}')`);
+  }
   return {
-    dbType: 'sybase',
+    dbType: rawType,
     host: env('SOURCE_DB_HOST'),
-    port: intEnv('SOURCE_DB_PORT', 5000),
+    port: intEnv('SOURCE_DB_PORT', SOURCE_DEFAULT_PORT[rawType]),
     database: env('SOURCE_DB_NAME'),
     username: env('SOURCE_DB_USER'),
     password: env('SOURCE_DB_PASSWORD'),
@@ -61,7 +67,7 @@ async function main(): Promise<number> {
     project: env('HAIKAI_PROJECT') || undefined,
     arch: env('HAIKAI_ARCH') || undefined,
   };
-  const ruleset = loadPairRuleset();
+  const ruleset = pairRulesetForSource(sourceConfig().dbType);
   const packRoot = env('DATA_MIGRATION_PACK_ROOT');
 
   tracer.configHeader(

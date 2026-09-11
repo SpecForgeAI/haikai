@@ -149,5 +149,5 @@ export interface BracketOutcome {
   readGuardObservations?: ReadGuardObservation[];
 }
 
-/** Engine flavour for literal / statement rendering. */
-export type CompensationEngine = 'sybase' | 'postgres';
+/** Engine flavour for literal / statement rendering (= the DB engine key). */
+export type CompensationEngine = import('../../types/db').DbType;

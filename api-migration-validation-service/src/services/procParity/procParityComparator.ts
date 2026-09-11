@@ -29,6 +29,7 @@ import {
   rulesForDimension,
   type MigrationPairRule,
   type MigrationPairRuleset,
+  procRulePrefix,
 } from '../../migrationPairRules';
 import { compareStateDeltas, type StateDeltaJson } from '../stateDelta';
 import type { RoutineInvocationEnvelope } from '../db/routineEnvelope';
@@ -358,7 +359,9 @@ export function compareScenario(args: CompareScenarioArgs): ScenarioParityResult
 
 /** The rule ids a ruleset contributes to proc comparison (for report citation). */
 export function procRuleIds(ruleset: MigrationPairRuleset | null): string[] {
-  return ruleset ? activeRules(ruleset).filter((r) => r.id.startsWith('SYBPG.PROC.')).map((r) => r.id) : [];
+  if (!ruleset) return [];
+  const prefix = `${procRulePrefix(ruleset)}PROC.`;
+  return activeRules(ruleset).filter((r) => r.id.startsWith(prefix)).map((r) => r.id);
 }
 
 export interface RoutineParitySummary {

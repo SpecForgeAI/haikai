@@ -29,6 +29,7 @@
 import React, { useMemo, useState } from 'react';
 import type { DbMigrationPackDbCredentials } from '../../../api/dbMigrationPackApi';
 import styles from './DbMigrationPack.module.css';
+import type { DbEngineKey } from '../../../api/dbEngines';
 
 export type DbMigrationPackTargetBuildVariant = 'build' | 'connect';
 
@@ -104,7 +105,7 @@ function untouched(fields: ConnectionFields, empty: ConnectionFields): boolean {
 
 function toCredentials(
   fields: ConnectionFields,
-  dbType: 'postgres' | 'sybase',
+  dbType: DbEngineKey,
 ): DbMigrationPackDbCredentials {
   return {
     dbType,

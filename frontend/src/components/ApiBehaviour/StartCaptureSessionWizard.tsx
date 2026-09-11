@@ -97,6 +97,7 @@ import {
   type LogCorpusExtractResponse,
 } from './logCorpusRunSupport';
 import { manualCapture } from '../../api/apiBehaviourClient';
+import type { DbEngineKey } from '../../api/dbEngines';
 
 // ============================================================================
 // Props
@@ -124,7 +125,7 @@ type WizardStep = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 // The auth option surface is SHARED (2026-08-13): the same five methods
 // render in the Start-stage dialog via components/shared/ApiAuthFields.
 type AuthType = ApiAuthType;
-type DbType = 'none' | 'postgres' | 'sybase';
+type DbType = 'none' | DbEngineKey;
 
 interface Step2Config {
   envName: string;

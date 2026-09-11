@@ -19,7 +19,7 @@ import { join } from 'path';
 
 const SRC_ROOT = join(__dirname, '..');
 
-const ENGINE_TOKEN = /sybase|postgres|t-?sql/i;
+const ENGINE_TOKEN = /sybase|postgres|t-?sql|mssql|sql\s?server/i;
 
 /**
  * file → allowed count of lines containing an engine token, with the reason

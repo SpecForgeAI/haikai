@@ -48,6 +48,7 @@
  * `errorBody.message || errorBody.error` read would stringify the nested
  * object into "[object Object]").
  */
+import type { DbEngineKey } from './dbEngines';
 
 const GATEWAY_BASE = import.meta.env.VITE_GATEWAY_BASE_URL ?? '';
 
@@ -1632,7 +1633,7 @@ export interface DbMigrationPackTranslationVerdict {
 
 /** Per-invocation connection block (never stored client-side). */
 export interface DbMigrationPackDbCredentials {
-  dbType: 'postgres' | 'sybase';
+  dbType: DbEngineKey;
   host: string;
   port: number;
   database: string;

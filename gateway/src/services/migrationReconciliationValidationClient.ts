@@ -32,6 +32,7 @@
 import { getConfig } from '../config';
 import { logger } from './logger';
 import type { TargetApiAuthSecret } from './migrationTargetCredentialsStore';
+import type { SupportedDbEngine } from './dbMigrationPack/dbCredentialBlock';
 
 // ============================================================================
 // Wire types (subset of the validation-service + AMS DTOs we drive / read)
@@ -388,7 +389,7 @@ export async function runHeadlessReconcile(
      * `state_unverified` — fail-closed, visible).
      */
     db?: {
-      dbType: 'postgres' | 'sybase';
+      dbType: SupportedDbEngine;
       host: string;
       port: number;
       database: string;

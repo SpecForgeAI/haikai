@@ -57,6 +57,7 @@ import type {
   ViewMetadata,
 } from './types';
 import type { FindingEmitInput } from '../findings/FindingEmitter';
+import type { DatabaseEngine } from './types';
 
 /**
  * Re-export the profiling mode so callers don't need a separate import.
@@ -108,8 +109,8 @@ export interface DatabaseCandidatePayload {
  * call in soft-fail and respects the per-finding-type cap.
  */
 export interface DatabaseDiscoveryPack {
-  /** Stable identifier (`'postgres'` / `'sybase'`). */
-  readonly engineKey: 'postgres' | 'sybase';
+  /** Stable identifier (`'postgres'` / `'sybase'` / `'mssql'`). */
+  readonly engineKey: DatabaseEngine;
 
   /** Human-readable label for log lines + the Findings tab. */
   readonly displayName: string;

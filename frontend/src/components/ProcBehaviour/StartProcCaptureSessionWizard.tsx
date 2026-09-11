@@ -37,6 +37,7 @@ import {
 } from '../../api/procBehaviourApi';
 import styles from '../ApiBehaviour/StartCaptureSessionWizard.module.css';
 import proc from './ProcBehaviour.module.css';
+import type { DbEngineKey } from '../../api/dbEngines';
 
 export const DEFAULT_ATTEMPTS_PER_SCENARIO = 15;
 export const DEFAULT_MAX_ROWS_PER_RESULT_SET = 1000;
@@ -44,7 +45,7 @@ export const DEFAULT_INVOCATION_TIMEOUT_SECONDS = 300;
 export const DEFAULT_QUIET_WINDOW_SECONDS = 120;
 
 type Step = 1 | 2 | 3;
-type ProcDbType = 'sybase' | 'postgres';
+type ProcDbType = DbEngineKey;
 
 export interface StartProcCaptureSessionWizardProps {
   open: boolean;

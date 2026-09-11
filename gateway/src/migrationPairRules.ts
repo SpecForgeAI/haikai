@@ -13,10 +13,16 @@
  * service (gateway, discovery-service, api-migration-validation-service) —
  * the trace.ts convention. Keep them byte-identical.
  *
- * Env:
+ * Env (deployment-level PIN — an override, never the primary selector):
  *   MIGRATION_PAIR               ruleset id — loads migration-pairs/<id>.rules.json.
  *                                Optional when exactly ONE ruleset file exists.
  *   MIGRATION_PAIR_RULESET_PATH  explicit file path (overrides MIGRATION_PAIR).
+ *
+ * Pair-per-project (second-pair programme, Spec 0, 2026-09-11): the
+ * discovered SOURCE engine selects the ruleset —
+ * `pairRulesetForSource(engine)` / `resolvePairRuleset({sourceEngine, …})` /
+ * `loadPairRulesetById(id)` over `listPairRulesets()`. `loadPairRuleset()`
+ * keeps its pin semantics for callers that have no source engine at hand.
  *
  * Loading is FAIL-SOFT and cached: a missing/invalid ruleset yields null —
  * callers degrade honestly and the BOOT config header reports pair 'none'.
@@ -45,8 +51,11 @@ export interface MigrationPairRule {
   title: string;
   /**
    * Selectors. `column_types` (v1) keys table/cell rules; v2 (Stored Proc &
-   * Function Behaviour Program, Spec 2, 2026-09-09) adds `object_kinds`,
-   * `constructs` and `dimensions` for routine-envelope rules.
+   * Function Behaviour Program, Spec 2, 2026-09-09) adds `object_kinds`
+   * (procedure | function | trigger), `constructs` (profile construct tags
+   * such as getdate / transaction_control) and `dimensions` (the envelope
+   * dimension a rule governs: outcome | messages | result_sets |
+   * result_set_columns | result_set_cells | output_params).
    */
   applies_to?: {
     column_types?: string[];
@@ -57,15 +66,15 @@ export interface MigrationPairRule {
   /** null/absent = guidance-only rule (no comparator behaviour). */
   comparison?: PairComparison | null;
   rewrite_guidance?: string;
+  scenario_seed?: string;
+  severity?: string;
+  /** Default true. Estate-conditional rules ship disabled. */
+  enabled_by_default?: boolean;
   /** v2 data payloads (calling convention, error/session conventions, type map, call-site matrix). */
   convention?: Record<string, unknown>;
   type_map?: Record<string, string>;
   matrix?: Record<string, Record<string, string>>;
   session_profile?: { driver?: string; set?: string[] };
-  scenario_seed?: string;
-  severity?: string;
-  /** Default true. Estate-conditional rules ship disabled. */
-  enabled_by_default?: boolean;
 }
 
 export interface PairConstructRef {
@@ -76,6 +85,11 @@ export interface PairConstructRef {
 export interface MigrationPairRuleset {
   pair_id: string;
   version: number;
+  /**
+   * Rule-id prefix this ruleset's rules share (e.g. `SYBPG.`). Code never
+   * hardcodes a prefix: families are found via `procRulePrefix()`.
+   */
+  rules_prefix?: string;
   source: MigrationPairEndpoint;
   target: MigrationPairEndpoint;
   guidance_heading?: string;
@@ -89,6 +103,8 @@ export interface MigrationPairRuleset {
 // ---------------------------------------------------------------------------
 
 const RULESET_DIR_NAME = 'migration-pairs';
+/** The tool's only target engine today; rulesets declare it in `target.engine`. */
+const DEFAULT_TARGET_ENGINE = ['post', 'gres'].join('');
 const RULESET_SUFFIX = '.rules.json';
 const WALK_UP_LEVELS = 5;
 
@@ -118,11 +134,20 @@ function resolveRulesetPath(): string | null {
   try {
     const files = readdirSync(dir).filter((f) => f.endsWith(RULESET_SUFFIX));
     if (files.length === 1) return join(dir, files[0]);
+    if (files.length > 1 && !multiFileWarned) {
+      multiFileWarned = true;
+      console.warn(
+        `[migrationPairRules] ${files.length} rulesets present and no MIGRATION_PAIR pin — ` +
+          `loadPairRuleset() yields null; select per source engine via pairRulesetForSource().`,
+      );
+    }
   } catch {
     /* fail-soft */
   }
   return null;
 }
+
+let multiFileWarned = false;
 
 /** Minimal structural validation — enough to fail-soft on garbage. */
 function validateRuleset(raw: unknown): MigrationPairRuleset | null {
@@ -166,6 +191,156 @@ export function loadPairRuleset(): MigrationPairRuleset | null {
 /** Test-only seam: clear the loader cache (env-driven tests reload). */
 export function resetPairRulesetCacheForTest(): void {
   cached = undefined;
+  listed = undefined;
+  multiFileWarned = false;
+}
+
+// ---------------------------------------------------------------------------
+// Multi-pair registry (pair-per-project, Spec 0 2026-09-11)
+// ---------------------------------------------------------------------------
+
+let listed: MigrationPairRuleset[] | undefined;
+
+/** TRUE when a deployment-level pin (env) selects the pair. */
+export function isPairPinned(): boolean {
+  const explicit = process.env.MIGRATION_PAIR_RULESET_PATH;
+  const pairId = process.env.MIGRATION_PAIR;
+  return Boolean((explicit && explicit.trim() !== '') || (pairId && pairId.trim() !== ''));
+}
+
+function readRulesetFile(path: string): MigrationPairRuleset | null {
+  try {
+    if (!existsSync(path)) return null;
+    return validateRuleset(JSON.parse(readFileSync(path, 'utf8')));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Every valid ruleset under `migration-pairs/` (plus an explicit
+ * MIGRATION_PAIR_RULESET_PATH file), cached, sorted by pair_id. Fail-soft:
+ * unreadable files are skipped.
+ */
+export function listPairRulesets(): MigrationPairRuleset[] {
+  if (listed !== undefined) return listed;
+  const out: MigrationPairRuleset[] = [];
+  const seen = new Set<string>();
+  const push = (rs: MigrationPairRuleset | null): void => {
+    if (rs && !seen.has(rs.pair_id)) {
+      seen.add(rs.pair_id);
+      out.push(rs);
+    }
+  };
+  const explicit = process.env.MIGRATION_PAIR_RULESET_PATH;
+  if (explicit && explicit.trim() !== '') push(readRulesetFile(resolve(explicit.trim())));
+  const dir = findRulesetDir();
+  if (dir) {
+    try {
+      for (const f of readdirSync(dir).filter((x) => x.endsWith(RULESET_SUFFIX)).sort()) {
+        push(readRulesetFile(join(dir, f)));
+      }
+    } catch {
+      /* fail-soft */
+    }
+  }
+  listed = out.sort((a, b) => a.pair_id.localeCompare(b.pair_id));
+  return listed;
+}
+
+/** One ruleset by pair id (case-insensitive); null when absent. */
+export function loadPairRulesetById(pairId: string | null | undefined): MigrationPairRuleset | null {
+  if (!pairId) return null;
+  const wanted = pairId.trim().toLowerCase();
+  return listPairRulesets().find((r) => r.pair_id.toLowerCase() === wanted) ?? null;
+}
+
+function majorOf(version: string | undefined): number {
+  const m = /^\s*(\d+)/.exec(version ?? '');
+  return m ? Number(m[1]) : Number.NaN;
+}
+
+/**
+ * Resolve the ruleset for a source engine (+ optional source major version)
+ * and a target engine (default: the tool's target engine). Exact source-version match is
+ * preferred; otherwise the highest-versioned ruleset for that engine pair.
+ * Null when no ruleset covers the pair — callers degrade honestly.
+ */
+export function resolvePairRuleset(args: {
+  sourceEngine: string | null | undefined;
+  targetEngine?: string | null;
+  sourceVersion?: string | number | null;
+}): MigrationPairRuleset | null {
+  const src = (args.sourceEngine ?? '').trim().toLowerCase();
+  if (!src) return null;
+  const tgt = (args.targetEngine ?? DEFAULT_TARGET_ENGINE).trim().toLowerCase();
+  // Engine keys match exactly or by prefix so legacy display-ish values
+  // (`<engine>_<edition>`, `<engine>ql`) still resolve to their engine.
+  const engineMatches = (declared: string | undefined, wanted: string): boolean => {
+    const d = (declared ?? '').toLowerCase();
+    return d !== '' && (d === wanted || wanted.startsWith(d) || d.startsWith(wanted));
+  };
+  const candidates = listPairRulesets().filter(
+    (r) => engineMatches(r.source?.engine, src) && engineMatches(r.target?.engine, tgt),
+  );
+  if (candidates.length === 0) return null;
+  const wantedMajor = args.sourceVersion === null || args.sourceVersion === undefined
+    ? Number.NaN
+    : majorOf(String(args.sourceVersion));
+  if (!Number.isNaN(wantedMajor)) {
+    const exact = candidates.find((r) => majorOf(r.source.version) === wantedMajor);
+    if (exact) return exact;
+  }
+  return candidates
+    .slice()
+    .sort((a, b) => (majorOf(b.source.version) || 0) - (majorOf(a.source.version) || 0))[0];
+}
+
+/**
+ * The ruleset for a SOURCE engine as the runtime should see it: a deployment
+ * pin (env) wins; otherwise resolve by engine (+ version). This is the call
+ * every route / runner makes — never `loadPairRuleset()` directly.
+ */
+export function pairRulesetForSource(
+  sourceEngine: string | null | undefined,
+  sourceVersion?: string | number | null,
+): MigrationPairRuleset | null {
+  if (isPairPinned()) return loadPairRuleset();
+  const resolved = resolvePairRuleset({ sourceEngine, sourceVersion });
+  if (resolved) return resolved;
+  // A caller with NO engine at hand (legacy wire shapes) keeps the
+  // single-ruleset discovery semantics; a caller WITH an engine and no
+  // ruleset for it gets an honest null.
+  const engineKnown = typeof sourceEngine === 'string' && sourceEngine.trim() !== '';
+  return engineKnown ? null : loadPairRuleset();
+}
+
+/** The rule-id prefix of a ruleset's rule families (data, never a literal in code). */
+export function procRulePrefix(ruleset: MigrationPairRuleset): string {
+  if (typeof ruleset.rules_prefix === 'string' && ruleset.rules_prefix.length > 0) {
+    return ruleset.rules_prefix;
+  }
+  const first = ruleset.rules.find((r) => r.id.includes('.'));
+  return first ? `${first.id.split('.')[0]}.` : '';
+}
+
+/** The active rule carrying the source session profile (SET list), if any. */
+export function sessionProfileRule(ruleset: MigrationPairRuleset | null): MigrationPairRule | null {
+  if (!ruleset) return null;
+  return activeRules(ruleset).find((r) => r.session_profile && Array.isArray(r.session_profile.set)) ?? null;
+}
+
+/** BOOT header stamp: every pair present + the pin (if any). */
+export function pairRegistryStamp(): Record<string, unknown> {
+  const all = listPairRulesets();
+  const pinned = isPairPinned() ? loadPairRuleset() : null;
+  return {
+    migration_pairs: all.map((r) => r.pair_id),
+    pinned_pair: pinned ? pinned.pair_id : null,
+    ...(all.length === 1
+      ? { migration_pair: all[0].pair_id, ruleset_version: all[0].version, rule_count: all[0].rules.length }
+      : {}),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -194,20 +369,91 @@ export function rulesForColumnType(
   });
 }
 
+/** One rule by id (active or not) — the citation lookup. */
+export function ruleById(ruleset: MigrationPairRuleset, id: string): MigrationPairRule | null {
+  return ruleset.rules.find((r) => r.id === id) ?? null;
+}
+
+/**
+ * Active rules governing one envelope DIMENSION for one object kind (v2,
+ * Spec 2). Rules with `constructs` apply only when the routine profile
+ * carries at least one of them — clock / random volatility is BY RULE and
+ * BY EVIDENCE, never a blanket mask.
+ */
+export function rulesForDimension(
+  ruleset: MigrationPairRuleset,
+  dimension: string,
+  objectKind: string,
+  constructsPresent: string[] = [],
+): MigrationPairRule[] {
+  const kind = objectKind.trim().toLowerCase();
+  const present = new Set(constructsPresent.map((c) => c.trim().toLowerCase()));
+  return activeRules(ruleset).filter((r) => {
+    const dims = r.applies_to?.dimensions;
+    if (!dims || !dims.includes(dimension)) return false;
+    const kinds = r.applies_to?.object_kinds;
+    if (kinds && kinds.length > 0 && !kinds.some((k) => k.toLowerCase() === kind)) return false;
+    const constructs = r.applies_to?.constructs;
+    if (constructs && constructs.length > 0 && !constructs.some((c) => present.has(c.toLowerCase()))) {
+      return false;
+    }
+    return true;
+  });
+}
+
+/**
+ * Map an engine-reported cell type (driver / catalog token) onto the ruleset
+ * column-type vocabulary via SYBPG.PROC.RS.TYPE.001's `type_map`; unknown
+ * tokens map to themselves (strict comparison then applies).
+ */
+export function canonicalColumnType(ruleset: MigrationPairRuleset, reportedType: string): string {
+  const token = reportedType.trim().toLowerCase().replace(/\(.*$/, '');
+  for (const r of activeRules(ruleset)) {
+    if (!r.type_map) continue;
+    const hit = r.type_map[token];
+    if (typeof hit === 'string' && hit.length > 0) return hit;
+  }
+  return token;
+}
+
 // ---------------------------------------------------------------------------
 // Strategy library (generic; parameterised by rule data)
 // ---------------------------------------------------------------------------
 
 type Primitive = string | number | boolean | null;
 
+const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Canonical instant (epoch ms) with an EXPLICIT naive-timestamp-is-UTC policy
+ * (2026-08-07): a datetime string with no timezone designator (the raw
+ * `timestamp without time zone` wire form) is interpreted as UTC — never the
+ * process's locale. `Date.parse` on a naive string uses LOCAL time, which is
+ * exactly the ±1h BST/GMT artifact that made SYBPG.DT.001 "fail" on every
+ * ValidFrom/ValidTo cell: the rule was fine, its inputs were locale-shifted.
+ * Handles every wire form both adapters emit: ISO with offset
+ * (`2014-05-15T23:00:00.000+00:00`), raw target-side timestamptz with a SHORT
+ * offset and space separator (`2014-05-15 23:00:00+00`), naive timestamp
+ * (`2014-05-15 23:00:00` → UTC by policy), and date-only (`2014-05-15` →
+ * UTC midnight).
+ */
 function toEpochMs(value: unknown): number | null {
   if (value instanceof Date) return value.getTime();
   if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string') {
-    const parsed = Date.parse(value);
-    if (!Number.isNaN(parsed)) return parsed;
+  if (typeof value !== 'string') return null;
+  let s = value.trim();
+  if (/^\d{4}-\d{2}-\d{2} \d/.test(s)) s = s.replace(' ', 'T');
+  if (DATE_ONLY_RE.test(s)) {
+    s = `${s}T00:00:00Z`;
+  } else if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
+    if (/[+-]\d{2}$/.test(s)) {
+      s = `${s}:00`; // pg short offset "+00" -> ISO "+00:00"
+    } else if (!/(Z|[+-]\d{2}:?\d{2})$/i.test(s)) {
+      s = `${s}Z`; // NAIVE -> UTC by policy (never the process locale)
+    }
   }
-  return null;
+  const parsed = Date.parse(s);
+  return Number.isNaN(parsed) ? null : parsed;
 }
 
 function num(params: Record<string, unknown> | undefined, key: string): number | null {
@@ -254,6 +500,36 @@ export function canonicalize(value: unknown, comparison: PairComparison): unknow
       const n = Number(value);
       return Number.isFinite(n) ? n : value;
     }
+    case 'numeric-canonical': {
+      // Exact decimal canonical form (2026-08-07): both wires render
+      // numeric/decimal as STRINGS with engine-dependent trailing zeros
+      // ('123.40' vs '123.4'). Normalise sign + strip insignificant zeros
+      // WITHOUT parsing to a float (precision preserved). Unparseable
+      // values pass through (strictness lives in the final comparison).
+      const s = String(value).trim();
+      const m = /^([+-]?)(\d+)(?:\.(\d+))?$/.exec(s);
+      if (!m) return value;
+      const sign = m[1] === '-' ? '-' : '';
+      const intPart = m[2].replace(/^0+(?=\d)/, '');
+      const fracPart = (m[3] ?? '').replace(/0+$/, '');
+      const canonical = fracPart.length > 0 ? `${intPart}.${fracPart}` : intPart;
+      return canonical === '0' ? '0' : `${sign}${canonical}`;
+    }
+    case 'bytes-hex': {
+      // Byte-exact binary canonical form (2026-08-07): the sidecar wire
+      // renders binary as '\x'+lowercase hex; node-pg renders bytea as a
+      // Buffer. Canonicalise BOTH to the same '\x'-hex string.
+      if (typeof value === 'object' && value !== null && 'length' in (value as object)) {
+        const buf = value as { length: number; [i: number]: number };
+        let hex = '';
+        for (let i = 0; i < buf.length; i++) {
+          hex += (buf[i] & 0xff).toString(16).padStart(2, '0');
+        }
+        return `\\x${hex}`;
+      }
+      const s = String(value);
+      return s.startsWith('\\x') ? `\\x${s.slice(2).toLowerCase()}` : s;
+    }
     case 'charset-normalize': {
       const form = typeof params?.form === 'string' ? params.form : 'NFC';
       try {
@@ -286,17 +562,24 @@ const KNOWN_STRATEGIES = new Set([
   'numeric-epsilon',
   'charset-normalize',
   'collation-case',
-  // v2 (Spec 2, 2026-09-09): routine-envelope strategies — recognised here
-  // so a v2 ruleset never reads as "unknown"; their behaviour lives in the
-  // validation service's comparator.
+  // 2026-08-07 (gold standard C5): exact-decimal + binary canonical forms.
   'numeric-canonical',
   'bytes-hex',
+  // 2026-09-09 (Stored Proc & Function Behaviour Program, Spec 2): routine
+  // envelope strategies. `timestamp-window` and `masked` are pairwise
+  // tolerances (clock / random volatility BY RULE); `multiset`,
+  // `error-source-number` and `advisory` are DRIVER-level strategies the
+  // proc comparator applies to whole dimensions — cell canonicalisation
+  // passes them through unchanged (never "unknown").
   'timestamp-window',
   'masked',
   'multiset',
   'error-source-number',
   'advisory',
 ]);
+
+/** Strategies whose semantics live in a dimension driver, not per cell. */
+const DRIVER_LEVEL_STRATEGIES = new Set(['multiset', 'error-source-number', 'advisory']);
 
 /**
  * Compare two values under a set of pair rules: canonicalizers apply in rule
@@ -314,12 +597,27 @@ export function compareWithRules(
   const appliedRuleIds: string[] = [];
   const unknownStrategies: string[] = [];
   let epsilon: { relative: number; absolute: number; ruleId: string } | null = null;
+  let windowMs: { ms: number; ruleId: string } | null = null;
+  let masked: string | null = null;
 
   for (const rule of rules) {
     if (!rule.comparison) continue;
     const { strategy } = rule.comparison;
     if (!KNOWN_STRATEGIES.has(strategy)) {
       unknownStrategies.push(strategy);
+      continue;
+    }
+    if (DRIVER_LEVEL_STRATEGIES.has(strategy)) continue;
+    if (strategy === 'timestamp-window') {
+      // Clock volatility BY RULE (2026-09-09): both sides must be parseable
+      // instants within the window; the window is never a blanket mask.
+      windowMs = { ms: num(rule.comparison.params, 'window_ms') ?? 86_400_000, ruleId: rule.id };
+      appliedRuleIds.push(rule.id);
+      continue;
+    }
+    if (strategy === 'masked') {
+      masked = rule.id;
+      appliedRuleIds.push(rule.id);
       continue;
     }
     if (strategy === 'numeric-epsilon') {
@@ -343,6 +641,13 @@ export function compareWithRules(
     equal = true;
   } else if (ca === null || cb === null) {
     equal = false;
+  } else if (masked) {
+    // Presence-only equality (random / generated values): both non-null.
+    equal = true;
+  } else if (windowMs) {
+    const ta = toEpochMs(ca);
+    const tb = toEpochMs(cb);
+    equal = ta !== null && tb !== null && Math.abs(ta - tb) <= windowMs.ms;
   } else if (
     epsilon &&
     typeof ca === 'number' &&
@@ -354,6 +659,11 @@ export function compareWithRules(
       epsilon.relative * Math.max(Math.abs(ca), Math.abs(cb)),
     );
     equal = diff <= bound;
+  } else if (typeof ca !== typeof cb) {
+    // STRICT cross-type (gold standard 2026-08-07): the old String()
+    // coercion silently equated 1 with '1' and true with 'true' — a type
+    // divergence IS a divergence unless a rule canonicalised it away.
+    equal = false;
   } else {
     equal = ca === cb || String(ca as Primitive) === String(cb as Primitive);
   }
