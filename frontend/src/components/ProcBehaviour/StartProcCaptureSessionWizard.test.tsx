@@ -235,4 +235,19 @@ describe('StartProcCaptureSessionWizard — start', () => {
     const banner = await screen.findByTestId('proc-start-capture-wizard-error');
     expect(banner.textContent).toBe('Run the DB scan first — it pins S0 automatically.');
   });
+
+  it('shows the server\u2019s OWN reason when the S0 re-pin failed (2026-09-11) instead of the generic next step', async () => {
+    const user = userEvent.setup();
+    const reason =
+      'S0 is not pinned for this architecture and could not be re-pinned from the committed model ' +
+      '(S0 re-pin failed: login failed). Save the DB scan (approve + commit its candidates) or re-run it, then start again.';
+    mockStart.mockRejectedValue(new ProcBehaviourApiError(409, { error: reason, code: 'S0_NOT_PINNED' }));
+    renderWizard();
+    await advanceToStart(user);
+
+    await user.click(screen.getByTestId('proc-start-capture-wizard-start'));
+
+    const banner = await screen.findByTestId('proc-start-capture-wizard-error');
+    expect(banner.textContent).toBe(reason);
+  });
 });
