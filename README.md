@@ -19,7 +19,7 @@ This repository is a monorepo that merges two formerly separate codebases:
 | `architecture-model-service` | Java 21 / Spring Boot / PostgreSQL | 8080 | Central data model & API (snake_case wire format) |
 | `architecture-read-service` | Java 21 / Spring Boot | 8079 | Reads draw.io diagrams from Confluence |
 | `jira-service` | Java 21 / Spring Boot | 8078 | Stateless Jira Cloud proxy |
-| `sybase-discovery-sidecar` | Java 17 / Spring Boot | 8093 | JDBC sidecar for Sybase ASE introspection |
+| `db-discovery-sidecar` | Java 17 / Spring Boot | 8093 | JDBC sidecar for source-database introspection (Sybase ASE, SQL Server) |
 | `gateway` | Node 20 / TypeScript / Express | 8081 | Chat orchestration, LLM calls, MCP tools |
 | `mcp-server` | Node 20 / TypeScript / Express | 8090 | MCP tool gateway to the model service |
 | `discovery-service` | Node 20 / TypeScript / tree-sitter | 8091 | Clones repos, extracts architecture candidates |

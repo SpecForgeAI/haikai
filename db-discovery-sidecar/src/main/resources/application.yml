@@ -1,0 +1,28 @@
+# DB Discovery Sidecar - default config (Sybase ASE + SQL Server).
+#
+# Override via environment variables (SPRING_*) or a project-level
+# application.yml on the classpath. Consumers locate the sidecar at
+# DB_SIDECAR_URL, falling back to the SYBASE_SIDECAR_URL alias and then to
+# http://localhost:8093.
+
+server:
+  port: 8093
+  # Limit max body size; introspection responses can be large but a single
+  # JSON request body shouldn't exceed 1 MB in practice.
+  servlet:
+    encoding:
+      charset: UTF-8
+
+# Log query category lines only; never log SQL bodies or credentials.
+logging:
+  level:
+    root: INFO
+    com.example.dbsidecar: INFO
+
+# Reasonable JDBC defaults; per-request overrides come from the HTTP body and
+# are clamped by the controller. Bound by SidecarProperties and READ -- the
+# previous `sybase.*` keys were DEAD (the values were hardcoded), which made
+# editing this file look effective when it was not.
+sidecar:
+  default-query-timeout-seconds: 30
+  default-max-rows: 1000
