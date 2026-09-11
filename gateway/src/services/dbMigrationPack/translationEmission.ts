@@ -114,7 +114,7 @@ export function selectApprovedTranslations(rows: TranslationRow[]): TranslationR
 /** One emitted per-object translation file (NO timestamps — checksum-stable). */
 export function emitTranslationFileContent(row: TranslationRow): string {
   return (
-    `-- Approved translation (Sybase ASE T-SQL -> PostgreSQL): ${row.kind} ${row.object_ref}\n` +
+    `-- Approved translation (source T-SQL -> PostgreSQL): ${row.kind} ${row.object_ref}\n` +
     `-- Source identity: ${row.translation_key}\n` +
     `-- Only APPROVED translations are emitted — drafts never enter the executable path.\n` +
     `${row.draft_content}\n`
@@ -135,9 +135,13 @@ export function emitTranslationFileContent(row: TranslationRow): string {
 export function orderApprovedCalleesFirst(approved: TranslationRow[], routines: RoutineCatalogRow[] | undefined): TranslationRow[] {
   if (!routines || routines.length === 0) return approved;
   const tail = (ref: string): string => (ref.replace(/[[\]"]/g, '').split('.').pop() ?? ref).toLowerCase();
+  // Every ROUTINE kind participates in the callee-first order, not just
+  // `stored_procedure` (2026-09-11): a scalar or table-valued function a
+  // procedure calls must exist before the procedure's CREATE runs.
+  const routineKinds = new Set(['stored_procedure', 'scalar_function', 'table_valued_function']);
   const rowsByName = new Map<string, TranslationRow[]>();
   for (const row of approved) {
-    if (row.kind !== 'stored_procedure') continue;
+    if (!routineKinds.has(row.kind)) continue;
     const key = tail(row.object_ref);
     rowsByName.set(key, [...(rowsByName.get(key) ?? []), row]);
   }
@@ -164,7 +168,7 @@ export function emitTranslationsChangeset(approved: TranslationRow[]): string {
   const lines: string[] = [];
   lines.push(formattedSqlHeader(TRANSLATIONS_CHANGESET_PATH).trimEnd());
   lines.push(
-    `-- Approved DB object translations (Sybase ASE T-SQL -> PostgreSQL).` +
+    `-- Approved DB object translations (source T-SQL -> PostgreSQL).` +
       ` Only APPROVED translations appear here — unapproved drafts are never emitted.`
   );
   for (const row of approved) {

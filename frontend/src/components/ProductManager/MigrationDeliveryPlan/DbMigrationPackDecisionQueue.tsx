@@ -50,6 +50,24 @@ const CATEGORY_OPTIONS = [
   'delta_key',
   'pk_composition',
   'surrogate_pk',
+  // SQL Server pair (Spec 5, AMS changeset 234): no-like-for-like objects
+  // and index/storage shapes, each a decision with options.
+  'temporal_table',
+  'fulltext_index',
+  'xml_method',
+  'hierarchyid_column',
+  'spatial_column',
+  'sql_variant_column',
+  'clr_object',
+  'service_broker',
+  'filestream',
+  'memory_optimized_table',
+  'synonym',
+  'user_defined_table_type',
+  'index_predicate',
+  'columnstore_index',
+  'cross_database_reference',
+  'indexed_view',
   'other',
 ] as const;
 

@@ -16,7 +16,7 @@
  * NO LLM — pure deterministic code.
  */
 
-import { findSybaseSystemReferences } from './sybaseSystemObjects';
+import { findSystemReferences } from './systemObjects';
 
 /**
  * Accepts BOTH pack-file shapes: the generation-side camelCase `PackFile`
@@ -110,8 +110,36 @@ export function extractDeclaredRelations(sql: string): DeclaredRelation[] {
  * (fail-loud posture for structurally broken packs). JSON well-formedness
  * still covers every file — provenance must parse too.
  */
-export function validatePackFiles(files: ValidatablePackFile[]): string[] {
+/**
+ * The SOURCE engine a pack was generated for, read from its own
+ * `manifest.json` (Spec 5.7). The validator is handed FILES, not context, so
+ * deriving the engine from the pack itself keeps every caller — generation,
+ * translation emission, the routes' re-checks — correct with no new
+ * argument. A pack with no readable manifest keeps the historical Sybase
+ * posture (fail-loud on ASE catalog names), which is the safe default: it
+ * over-reports rather than missing a real reference.
+ */
+export function packSourceEngine(files: ValidatablePackFile[]): string {
+  const manifest = files.find((f) => pathOf(f).endsWith('manifest.json'));
+  if (!manifest) return 'sybase';
+  try {
+    const parsed = JSON.parse(manifest.content.replace(/^﻿/, '')) as {
+      source_engine?: unknown;
+    };
+    return typeof parsed.source_engine === 'string' && parsed.source_engine.trim() !== ''
+      ? parsed.source_engine.trim().toLowerCase()
+      : 'sybase';
+  } catch {
+    return 'sybase';
+  }
+}
+
+export function validatePackFiles(
+  files: ValidatablePackFile[],
+  engine?: string,
+): string[] {
   const problems: string[] = [];
+  const sourceEngine = String(engine ?? packSourceEngine(files)).toLowerCase();
   const byPath = new Map(files.map((f) => [normalisePath(pathOf(f)), f]));
 
   const master = files.find((f) => pathOf(f).endsWith('db.changelog-master.xml'));
@@ -308,7 +336,7 @@ export function validatePackFiles(files: ValidatablePackFile[]): string[] {
     }
   }
 
-  // 4c) No Sybase system-catalog references in executable SQL (2026-08-07):
+  // 4c) No SOURCE system-catalog references in executable SQL (2026-08-07):
   //     a translated system view (dbo.sysquerymetrics selecting from
   //     sysqueryplans) was emitted as the live run's final post-load
   //     changeset and can NEVER build — ASE system catalogs are engine
@@ -318,11 +346,12 @@ export function validatePackFiles(files: ValidatablePackFile[]): string[] {
   //     NOTES may mention a system object; executable statements may not).
   for (const f of files) {
     if (!isExecutableSql(f)) continue;
-    const refs = findSybaseSystemReferences(f.content);
+    const refs = findSystemReferences(sourceEngine, f.content);
     if (refs.length > 0) {
+      const label = sourceEngine === 'mssql' ? 'SQL Server' : 'Sybase';
       problems.push(
-        `${pathOf(f)}: executable SQL references Sybase system catalog object(s) ` +
-          `${refs.join(', ')} — ASE system tables/views are engine infrastructure ` +
+        `${pathOf(f)}: executable SQL references ${label} system catalog object(s) ` +
+          `${refs.join(', ')} — source-engine system tables/views are engine infrastructure ` +
           `and can never exist on the Postgres target; the object must be excluded ` +
           `from the pack, not translated`
       );
@@ -348,8 +377,12 @@ export function validatePackFiles(files: ValidatablePackFile[]): string[] {
 }
 
 /** Throwing wrapper — the generation-side gate. */
-export function assertPackFilesValid(files: ValidatablePackFile[], stage: string): void {
-  const problems = validatePackFiles(files);
+export function assertPackFilesValid(
+  files: ValidatablePackFile[],
+  stage: string,
+  engine?: string,
+): void {
+  const problems = validatePackFiles(files, engine);
   if (problems.length > 0) {
     throw new Error(
       `DB migration pack failed the runnable-pack validation at ${stage} ` +

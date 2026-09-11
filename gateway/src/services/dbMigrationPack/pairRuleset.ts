@@ -17,6 +17,7 @@
  *   4. null — callers degrade honestly (no rule citations), never throw.
  */
 import {
+  activeRules,
   loadPairRuleset,
   loadPairRulesetById,
   resolvePairRuleset,
@@ -27,6 +28,37 @@ export interface PairManifestLike {
   pair_id?: unknown;
   source_engine?: unknown;
   target_engine?: unknown;
+}
+
+/**
+ * Look one rule up by its `divergence_class` and return its ID (Spec 5.5).
+ *
+ * The ruleset is DATA: the pack cites rule IDs, it never SPELLS them. A
+ * divergence_class (`temporal_table`, `fulltext`, `spatial`, `hierarchyid`,
+ * `sql_variant`, `xml_methods`, `collation_case`, …) is a stable vocabulary
+ * shared across pairs, so the same lookup finds the right rule whichever
+ * ruleset is loaded — and returns null, honestly, when the pair declares no
+ * rule for the class (the emitted text then simply carries no citation).
+ */
+export function ruleIdForDivergenceClass(
+  ruleset: MigrationPairRuleset | null | undefined,
+  divergenceClass: string,
+): string | null {
+  if (!ruleset) return null;
+  const cls = String(divergenceClass ?? '').trim().toLowerCase();
+  if (cls === '') return null;
+  for (const rule of activeRules(ruleset)) {
+    const rc = (rule as { divergence_class?: unknown }).divergence_class;
+    if (typeof rc === 'string' && rc.trim().toLowerCase() === cls) return rule.id;
+  }
+  return null;
+}
+
+/** A `ruleCite` closure for the emitters: divergence class -> rule id or null. */
+export function ruleCiteFor(
+  ruleset: MigrationPairRuleset | null | undefined,
+): (divergenceClass: string) => string | null {
+  return (divergenceClass: string) => ruleIdForDivergenceClass(ruleset, divergenceClass);
 }
 
 export function manifestSourceEngine(manifest: PairManifestLike | null | undefined): string | null {

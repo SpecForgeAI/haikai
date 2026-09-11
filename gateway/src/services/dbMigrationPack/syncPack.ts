@@ -175,12 +175,22 @@ export function emitSyncRunner(args: { strategies: DeltaStrategy[] }): string {
 export function emitReconciliationSql(args: {
   tableOrder: string[];
   strategies: DeltaStrategy[];
+  /** Source engine (Spec 5.6) — picks the SOURCE section's CLI + batch form. */
+  engine?: string;
+  /** Display name for the source engine (from the pair ruleset). */
+  sourceDisplay?: string | null;
 }): string {
   const keyByTable = new Map(args.strategies.map((s) => [s.table, s.deltaKey]));
+  const engineKey = String(args.engine ?? 'sybase').toLowerCase();
+  const isMssql = engineKey === 'mssql';
+  const sourceLabel =
+    args.sourceDisplay ?? (isMssql ? 'SQL Server' : 'Sybase ASE');
+  const sourceCli = isMssql ? 'sqlcmd -h -1 -W -s,' : 'isql';
+  const batchTerminator = isMssql ? 'GO' : 'go';
   const lines: string[] = [];
   lines.push(`-- ${RECONCILIATION_SQL_PATH}`);
   lines.push('-- Per-run reconciliation queries. Run the PostgreSQL section on the');
-  lines.push('-- TARGET and the Sybase section on the SOURCE; feed both CSV outputs to');
+  lines.push(`-- TARGET and the ${sourceLabel} section on the SOURCE; feed both CSV outputs to`);
   lines.push(`-- ${RECONCILIATION_REPORT_PATH} to produce the drift report.`);
   lines.push('-- v1 compares per-table ROW COUNTS plus max(delta_key) where a key');
   lines.push('-- exists; value checksums are a manual escalation (engine hash functions');
@@ -203,12 +213,22 @@ export function emitReconciliationSql(args: {
     );
   }
   lines.push('');
-  lines.push('-- ===== Sybase ASE (SOURCE) — isql, same column order =====');
+  lines.push(`-- ===== ${sourceLabel} (SOURCE) — ${sourceCli}, same column order =====`);
   for (const qn of args.tableOrder) {
     const key = keyByTable.get(qn) ?? null;
-    const maxExpr = key ? `convert(varchar(40), max(${key}))` : 'NULL';
-    lines.push(`SELECT '${qn}', convert(varchar(20), count(*)), ${maxExpr} FROM ${qn}`);
-    lines.push('go');
+    // SQL Server spells CONVERT in upper case in every emitted artefact and
+    // its batch terminator is GO; the ASE form is untouched.
+    const maxExpr = key
+      ? isMssql
+        ? `CONVERT(varchar(40), MAX(${key}))`
+        : `convert(varchar(40), max(${key}))`
+      : 'NULL';
+    lines.push(
+      isMssql
+        ? `SELECT '${qn}', CONVERT(varchar(20), COUNT_BIG(*)), ${maxExpr} FROM ${qn}`
+        : `SELECT '${qn}', convert(varchar(20), count(*)), ${maxExpr} FROM ${qn}`
+    );
+    lines.push(batchTerminator);
   }
   lines.push('');
   return lines.join('\n');

@@ -1,0 +1,1266 @@
+{
+  "manifest_version": 1,
+  "audit_sink_tables": [],
+  "parity_keys": [],
+  "source_charset": null,
+  "scope_receipt": null,
+  "source_engine": "mssql",
+  "target_engine": "postgres",
+  "pair_id": "sqlserver16-postgres18",
+  "ruleset_version": 2,
+  "source_engine_display": "SQL Server 2022 (16.x)",
+  "target_engine_display": "PostgreSQL 18",
+  "type_mapping_version": "v1",
+  "seed_margin": 1000,
+  "seed_margin_note": "Sequence/identity restart values = captured source high-water mark + 1000 (pack-level seed margin; default 1000).",
+  "phase_ordering": [
+    "Phase 1: apply structural changesets (tables, PKs, unique/check constraints) — NO foreign keys, NO non-PK indexes (run liquibase with --contexts=structural).",
+    "Phase 2: bulk load ALL tables in the FK-topological order listed in this manifest.",
+    "Phase 3: apply foreign keys + non-PK indexes ONCE (the consolidated foreign-keys and indexes changesets; --contexts=post-load).",
+    "Phase 4: reseed sequences/identities (the consolidated sequences-seed changeset; restart = captured high-water + seed margin).",
+    "Phase 5: all subsequent incremental runs execute WITH foreign keys and indexes enforced."
+  ],
+  "delete_propagation": "DELETE propagation is OUT OF SCOPE for incremental v1: incremental scripts insert and/or update only. Rows deleted at source after the bulk load are NOT removed by increments — tables configured for full reload each increment are the mechanism that catches deletes.",
+  "coverage": {
+    "translated_count": 33,
+    "skipped_count": 0,
+    "flagged_count": 0,
+    "objects": [
+      {
+        "objectType": "column",
+        "objectRef": "Ledger.Account.AccountID",
+        "disposition": "translated",
+        "provenance": {
+          "entityId": "e-account",
+          "attributeId": "a-a-1",
+          "findingIds": []
+        }
+      },
+      {
+        "objectType": "column",
+        "objectRef": "Ledger.Account.Balance",
+        "disposition": "translated",
+        "provenance": {
+          "entityId": "e-account",
+          "attributeId": "a-a-2",
+          "findingIds": []
+        }
+      },
+      {
+        "objectType": "column",
+        "objectRef": "Ledger.Account.ValidFrom",
+        "disposition": "translated",
+        "provenance": {
+          "entityId": "e-account",
+          "attributeId": "a-a-3",
+          "findingIds": []
+        }
+      },
+      {
+        "objectType": "column",
+        "objectRef": "Ledger.Account.ValidTo",
+        "disposition": "translated",
+        "provenance": {
+          "entityId": "e-account",
+          "attributeId": "a-a-4",
+          "findingIds": []
+        }
+      },
+      {
+        "objectType": "table",
+        "objectRef": "Ledger.Account",
+        "disposition": "translated",
+        "provenance": {
+          "entityId": "e-account",
+          "findingIds": [
+            "f-temporal-account"
+          ]
+        }
+      },
+      {
+        "objectType": "column",
+        "objectRef": "Ledger.AccountHistory.AccountID",
+        "disposition": "translated",
+        "provenance": {
+          "entityId": "e-account-history",
+          "attributeId": "a-h-1",
+          "findingIds": []
+        }
+      },
+      {
+        "objectType": "column",
+        "objectRef": "Ledger.AccountHistory.Balance",
+        "disposition": "translated",
+        "provenance": {
+          "entityId": "e-account-history",
+          "attributeId": "a-h-2",
+          "findingIds": []
+        }
+      },
+      {
+        "objectType": "column",
+        "objectRef": "Ledger.AccountHistory.ValidFrom",
+        "disposition": "translated",
+        "provenance": {
+          "entityId": "e-account-history",
+          "attributeId": "a-h-3",
+          "findingIds": []
+        }
+      },
+      {
+        "objectType": "column",
+        "objectRef": "Ledger.AccountHistory.ValidTo",
+        "disposition": "translated",
+        "provenance": {
+          "entityId": "e-account-history",
+          "attributeId": "a-h-4",
+          "findingIds": []
+        }
+      },
+      {
+        "objectType": "column",
+        "objectRef": "Ledger.AccountHistory.id",
+        "disposition": "translated",
+        "provenance": {
+          "entityId": "e-account-history",
+          "attributeId": "surrogate:Ledger.AccountHistory.id",
+          "findingIds": []
+        }
+      },
+      {
+        "objectType": "table",
+        "objectRef": "Ledger.AccountHistory",
+        "disposition": "translated",
+        "provenance": {
+          "entityId": "e-account-history",
+          "findingIds": [
+            "f-temporal-history"
+          ]
+        }
+      },
+      {
+        "objectType": "column",
+        "objectRef": "Ops.SensorArchive.SensorArchiveID",
+        "disposition": "translated",
+        "provenance": {
+          "entityId": "e-sensor",
+          "attributeId": "a-s-1",
+          "findingIds": []
+        }
+      },
+      {
+        "objectType": "column",
+        "objectRef": "Ops.SensorArchive.ReadingNote",
+        "disposition": "translated",
+        "provenance": {
+          "entityId": "e-sensor",
+          "attributeId": "a-s-2",
+          "findingIds": []
+        }
+      },
+      {
+        "objectType": "column",
+        "objectRef": "Ops.SensorArchive.ReadingSummary",
+        "disposition": "translated",
+        "provenance": {
+          "entityId": "e-sensor",
+          "attributeId": "a-s-3",
+          "findingIds": [
+            "f-computed"
+          ]
+        }
+      },
+      {
+        "objectType": "column",
+        "objectRef": "Ops.SensorArchive.UpdatedAt",
+        "disposition": "translated",
+        "provenance": {
+          "entityId": "e-sensor",
+          "attributeId": "a-s-4",
+          "findingIds": []
+        }
+      },
+      {
+        "objectType": "table",
+        "objectRef": "Ops.SensorArchive",
+        "disposition": "translated",
+        "provenance": {
+          "entityId": "e-sensor",
+          "findingIds": [
+            "f-fulltext",
+            "f-memopt-sensor"
+          ]
+        }
+      },
+      {
+        "objectType": "column",
+        "objectRef": "Ledger.Postings.PostingID",
+        "disposition": "translated",
+        "provenance": {
+          "entityId": "e-postings",
+          "attributeId": "a-p-1",
+          "findingIds": []
+        }
+      },
+      {
+        "objectType": "column",
+        "objectRef": "Ledger.Postings.PostedBy",
+        "disposition": "translated",
+        "provenance": {
+          "entityId": "e-postings",
+          "attributeId": "a-p-2",
+          "findingIds": [
+            "f-coll-postedby"
+          ]
+        }
+      },
+      {
+        "objectType": "column",
+        "objectRef": "Ledger.Postings.IsVoided",
+        "disposition": "translated",
+        "provenance": {
+          "entityId": "e-postings",
+          "attributeId": "a-p-3",
+          "findingIds": []
+        }
+      },
+      {
+        "objectType": "column",
+        "objectRef": "Ledger.Postings.PayloadDocument",
+        "disposition": "translated",
+        "provenance": {
+          "entityId": "e-postings",
+          "attributeId": "a-p-4",
+          "findingIds": []
+        }
+      },
+      {
+        "objectType": "column",
+        "objectRef": "Ledger.Postings.LooseValue",
+        "disposition": "translated",
+        "provenance": {
+          "entityId": "e-postings",
+          "attributeId": "a-p-5",
+          "findingIds": []
+        }
+      },
+      {
+        "objectType": "column",
+        "objectRef": "Ledger.Postings.OrgNode",
+        "disposition": "translated",
+        "provenance": {
+          "entityId": "e-postings",
+          "attributeId": "a-p-6",
+          "findingIds": []
+        }
+      },
+      {
+        "objectType": "column",
+        "objectRef": "Ledger.Postings.SiteShape",
+        "disposition": "translated",
+        "provenance": {
+          "entityId": "e-postings",
+          "attributeId": "a-p-7",
+          "findingIds": []
+        }
+      },
+      {
+        "objectType": "column",
+        "objectRef": "Ledger.Postings.ScannedDocument",
+        "disposition": "translated",
+        "provenance": {
+          "entityId": "e-postings",
+          "attributeId": "a-p-8",
+          "findingIds": [
+            "f-filestream"
+          ]
+        }
+      },
+      {
+        "objectType": "column",
+        "objectRef": "Ledger.Postings.RowGuid",
+        "disposition": "translated",
+        "provenance": {
+          "entityId": "e-postings",
+          "attributeId": "a-p-9",
+          "findingIds": [
+            "f-npd-rowguid",
+            "f-rowguid"
+          ]
+        }
+      },
+      {
+        "objectType": "column",
+        "objectRef": "Ledger.Postings.PostedOn",
+        "disposition": "translated",
+        "provenance": {
+          "entityId": "e-postings",
+          "attributeId": "a-p-10",
+          "findingIds": []
+        }
+      },
+      {
+        "objectType": "column",
+        "objectRef": "Ledger.Postings.PostedOffset",
+        "disposition": "translated",
+        "provenance": {
+          "entityId": "e-postings",
+          "attributeId": "a-p-11",
+          "findingIds": []
+        }
+      },
+      {
+        "objectType": "column",
+        "objectRef": "Ledger.Postings.Amount",
+        "disposition": "translated",
+        "provenance": {
+          "entityId": "e-postings",
+          "attributeId": "a-p-12",
+          "findingIds": []
+        }
+      },
+      {
+        "objectType": "column",
+        "objectRef": "Ledger.Postings.ShortCode",
+        "disposition": "translated",
+        "provenance": {
+          "entityId": "e-postings",
+          "attributeId": "a-p-13",
+          "findingIds": [
+            "f-coll-shortcode"
+          ]
+        }
+      },
+      {
+        "objectType": "column",
+        "objectRef": "Ledger.Postings.DisplayName",
+        "disposition": "translated",
+        "provenance": {
+          "entityId": "e-postings",
+          "attributeId": "a-p-14",
+          "findingIds": []
+        }
+      },
+      {
+        "objectType": "column",
+        "objectRef": "Ledger.Postings.RowVersion",
+        "disposition": "translated",
+        "provenance": {
+          "entityId": "e-postings",
+          "attributeId": "a-p-15",
+          "findingIds": []
+        }
+      },
+      {
+        "objectType": "column",
+        "objectRef": "Ledger.Postings.Tier",
+        "disposition": "translated",
+        "provenance": {
+          "entityId": "e-postings",
+          "attributeId": "a-p-16",
+          "findingIds": []
+        }
+      },
+      {
+        "objectType": "table",
+        "objectRef": "Ledger.Postings",
+        "disposition": "translated",
+        "provenance": {
+          "entityId": "e-postings",
+          "findingIds": []
+        }
+      }
+    ]
+  },
+  "requires_translation_spec_2": [
+    {
+      "kind": "clr_object",
+      "object_ref": "Ledger.RiskScore",
+      "finding_ids": [
+        "f-clr"
+      ],
+      "source_body": "-- CLR assembly LedgerRiskScoring (managed .NET)",
+      "untranslatable_reason": "clr_object"
+    },
+    {
+      "kind": "service_broker_object",
+      "object_ref": "Ops.SensorIngestQueue",
+      "finding_ids": [
+        "f-broker"
+      ],
+      "untranslatable_reason": "service_broker_object"
+    },
+    {
+      "kind": "synonym",
+      "object_ref": "Ledger.StagedPostings",
+      "finding_ids": [
+        "f-synonym"
+      ]
+    },
+    {
+      "kind": "user_defined_table_type",
+      "object_ref": "Ledger.PostingBatchType",
+      "finding_ids": [
+        "f-udtt"
+      ]
+    }
+  ],
+  "manual_recreation": [],
+  "sybase_system_exclusions": [
+    {
+      "kind": "table",
+      "object_ref": "dbo.sysdiagrams"
+    },
+    {
+      "kind": "view",
+      "object_ref": "sys.objects"
+    }
+  ],
+  "cycle_breaks": [],
+  "cluster_notes": [],
+  "index_notes": [
+    "Ops.SensorArchive.CCI_Ops_SensorArchive: columnstore_dropped_to_btree — the source clustered columnstore index is emitted as a plain b-tree over its key columns; the analytic query profile it served must be re-planned."
+  ],
+  "relation_name_renames": [],
+  "collation_notes": [
+    "Ledger.Postings.PostedBy: citext per the pack-wide collation posture (case-insensitive equality, uniqueness, LIKE and index behaviour all preserved).",
+    "Ledger.Postings.ShortCode: char(8) -> citext + a length CHECK (citext is variable-length, so the declared width is preserved by the constraint rather than by the type)."
+  ],
+  "collation_affected_columns": [
+    "Ledger.Postings.PostedBy",
+    "Ledger.Postings.ShortCode"
+  ],
+  "collation_posture": "citext",
+  "precision_loss_columns": [
+    {
+      "column": "Ledger.Account.ValidFrom",
+      "source_type": "datetime2(7)",
+      "note": "precision_loss: 100ns -> 1us"
+    },
+    {
+      "column": "Ledger.Account.ValidTo",
+      "source_type": "datetime2(7)",
+      "note": "precision_loss: 100ns -> 1us"
+    },
+    {
+      "column": "Ledger.AccountHistory.ValidFrom",
+      "source_type": "datetime2(7)",
+      "note": "precision_loss: 100ns -> 1us"
+    },
+    {
+      "column": "Ledger.AccountHistory.ValidTo",
+      "source_type": "datetime2(7)",
+      "note": "precision_loss: 100ns -> 1us"
+    },
+    {
+      "column": "Ledger.Postings.PostedOffset",
+      "source_type": "datetimeoffset(7)",
+      "note": "precision_loss: 100ns -> 1us"
+    },
+    {
+      "column": "Ledger.Postings.PostedOn",
+      "source_type": "datetime2(7)",
+      "note": "precision_loss: 100ns -> 1us"
+    }
+  ],
+  "target_extensions_required": [
+    "citext",
+    "ltree",
+    "postgis"
+  ],
+  "emulations": [
+    {
+      "kind": "fulltext_index",
+      "object_ref": "Ops.SensorArchive.FT_Ops_SensorArchive_ReadingNote",
+      "decision_key": "fulltext_index--Ops.SensorArchive",
+      "option": "tsvector_gin",
+      "file_path": "liquibase/changesets/015-emulations.sql",
+      "note": "Generated tsvector column FT_Ops_SensorArchive_ReadingNote_tsv (configuration 'english') + GIN index over ReadingNote, ReadingSummary."
+    },
+    {
+      "kind": "temporal_table",
+      "object_ref": "Ledger.Account",
+      "decision_key": "temporal_table--Ledger.Account",
+      "option": "emulate_history_table",
+      "file_path": "liquibase/changesets/015-emulations.sql",
+      "note": "History table Ledger.AccountHistory (the migrated source history table), period columns ValidFrom/ValidTo, trigger pair installed."
+    }
+  ],
+  "extended_objects": [
+    {
+      "kind": "clr_object_detected",
+      "object_ref": "Ledger.RiskScore",
+      "decision_key": "clr_object--Ledger.RiskScore",
+      "untranslatable_reason": "clr_object",
+      "note": "clr_object_detected: 'rewrite_in_app' per resolved decision 'clr_object--Ledger.RiskScore'."
+    },
+    {
+      "kind": "cross_database_reference",
+      "object_ref": "Ledger.usp_SyncWarehouse",
+      "decision_key": "cross_database_reference--Ledger.usp_SyncWarehouse",
+      "untranslatable_reason": "cross_database_reference",
+      "note": "cross_database_reference: 'rewrite_in_app' per resolved decision 'cross_database_reference--Ledger.usp_SyncWarehouse'."
+    },
+    {
+      "kind": "filestream",
+      "object_ref": "Ledger.Postings.ScannedDocument",
+      "decision_key": "filestream--Ledger.Postings.ScannedDocument",
+      "untranslatable_reason": null,
+      "note": "filestream: 'rewrite_in_app' per resolved decision 'filestream--Ledger.Postings.ScannedDocument'."
+    },
+    {
+      "kind": "indexed_view",
+      "object_ref": "Ledger.vwPostingTotals",
+      "decision_key": "indexed_view--Ledger.vwPostingTotals",
+      "untranslatable_reason": "indexed_view",
+      "note": "indexed_view: 'rewrite_in_app' per resolved decision 'indexed_view--Ledger.vwPostingTotals'."
+    },
+    {
+      "kind": "service_broker_detected",
+      "object_ref": "Ops.SensorIngestQueue",
+      "decision_key": "service_broker--Ops.SensorIngestQueue",
+      "untranslatable_reason": "service_broker_object",
+      "note": "service_broker_detected: 'rewrite_in_app' per resolved decision 'service_broker--Ops.SensorIngestQueue'."
+    },
+    {
+      "kind": "synonym_detected",
+      "object_ref": "Ledger.StagedPostings",
+      "decision_key": "synonym--Ledger.StagedPostings",
+      "untranslatable_reason": null,
+      "note": "synonym_detected: 'view' per resolved decision 'synonym--Ledger.StagedPostings'."
+    },
+    {
+      "kind": "user_defined_table_type",
+      "object_ref": "Ledger.PostingBatchType",
+      "decision_key": "user_defined_table_type--Ledger.PostingBatchType",
+      "untranslatable_reason": null,
+      "note": "user_defined_table_type: 'composite_type' per resolved decision 'user_defined_table_type--Ledger.PostingBatchType'."
+    }
+  ],
+  "delta_strategies": [
+    {
+      "table": "Ledger.Account",
+      "strategy": "full_reload",
+      "deltaKey": null,
+      "source": "resolved_decision"
+    },
+    {
+      "table": "Ledger.AccountHistory",
+      "strategy": "full_reload",
+      "deltaKey": null,
+      "source": "resolved_decision"
+    },
+    {
+      "table": "Ops.SensorArchive",
+      "strategy": "insert_only",
+      "deltaKey": "SensorArchiveID",
+      "source": "identity_column"
+    },
+    {
+      "table": "Ledger.Postings",
+      "strategy": "full_reload",
+      "deltaKey": null,
+      "source": "resolved_decision"
+    }
+  ],
+  "bulk_load": {
+    "table_order": [
+      "Ledger.Account",
+      "Ledger.AccountHistory",
+      "Ops.SensorArchive",
+      "Ledger.Postings"
+    ],
+    "expected_row_counts": {},
+    "cast_notes": {
+      "Ledger.Account": [
+        "ValidFrom: datetime2(7) -> timestamp(6) without time zone; extract with CONVERT(varchar(27), <col>, 121)",
+        "ValidTo: datetime2(7) -> timestamp(6) without time zone; extract with CONVERT(varchar(27), <col>, 121)"
+      ],
+      "Ledger.AccountHistory": [
+        "ValidFrom: datetime2(7) -> timestamp(6) without time zone; extract with CONVERT(varchar(27), <col>, 121)",
+        "ValidTo: datetime2(7) -> timestamp(6) without time zone; extract with CONVERT(varchar(27), <col>, 121)"
+      ],
+      "Ops.SensorArchive": [
+        "ReadingNote: nvarchar(n) -> varchar(n): UTF-16 source characters load as UTF-8 (declared width is in CHARACTERS on both sides)",
+        "ReadingSummary: nvarchar(n) -> varchar(n): UTF-16 source characters load as UTF-8 (declared width is in CHARACTERS on both sides)",
+        "UpdatedAt: datetime2(3) -> timestamp(3) without time zone; extract with CONVERT(varchar(27), <col>, 121)"
+      ],
+      "Ledger.Postings": [
+        "PostedBy: nvarchar(n) -> varchar(n): UTF-16 source characters load as UTF-8 (declared width is in CHARACTERS on both sides)",
+        "IsVoided: bit -> boolean: extract with CAST(<col> AS int); 0/1 are valid Postgres boolean literals",
+        "PayloadDocument: xml -> xml: extract with CONVERT(nvarchar(max), <col>). The SQL Server XML METHODS (.value/.query/.nodes/.exist/.modify) and XML SCHEMA COLLECTIONs have no target equivalent — routines using them are queued as xml_method rewrite sites.",
+        "LooseValue: sql_variant -> jsonb: load form {\"type\": <base type>, \"value\": <text>}",
+        "OrgNode: hierarchyid -> ltree: extract with <col>.ToString() ('/1/2/'); '/'-paths convert to '.'-labels",
+        "SiteShape: geometry -> PostGIS geometry: extract as WKT (<col>.STAsText()) with the SRID (<col>.STSrid); load with ST_GeomFromText(wkt, srid)",
+        "ScannedDocument: varbinary -> bytea: extract as '\\x' + LOWER(CONVERT(varchar(max), <col>, 2)) (the Postgres bytea hex text form)",
+        "RowGuid: uniqueidentifier -> uuid: extract with LOWER(CONVERT(char(36), <col>)) (Postgres renders uuid lowercase)",
+        "PostedOn: datetime2(7) -> timestamp(6) without time zone; extract with CONVERT(varchar(27), <col>, 121)",
+        "PostedOffset: datetimeoffset(7) -> timestamptz(6): the value is an INSTANT (offset-normalised); extract with CONVERT(varchar(34), <col>, 127)",
+        "Amount: money -> numeric(19,4): extract with CONVERT(numeric(19,4), <col>)",
+        "DisplayName: nvarchar(max) -> text (unbounded on the target)",
+        "Tier: tinyint -> smallint (Postgres has no unsigned 1-byte integer; the 0..255 domain still fits)"
+      ]
+    }
+  },
+  "expected_schema": {
+    "tables": [
+      {
+        "schemaName": "Ledger",
+        "tableName": "Account"
+      },
+      {
+        "schemaName": "Ledger",
+        "tableName": "AccountHistory"
+      },
+      {
+        "schemaName": "Ops",
+        "tableName": "SensorArchive"
+      },
+      {
+        "schemaName": "Ledger",
+        "tableName": "Postings"
+      }
+    ],
+    "columns": [
+      {
+        "schemaName": "Ledger",
+        "tableName": "Account",
+        "columnName": "AccountID",
+        "dataType": "integer",
+        "isNullable": false,
+        "isPrimaryKey": true,
+        "defaultExpression": null,
+        "isIdentity": true,
+        "isGenerated": false,
+        "generationExpression": null
+      },
+      {
+        "schemaName": "Ledger",
+        "tableName": "Account",
+        "columnName": "Balance",
+        "dataType": "numeric(19,4)",
+        "isNullable": false,
+        "isPrimaryKey": false,
+        "defaultExpression": null,
+        "isIdentity": false,
+        "isGenerated": false,
+        "generationExpression": null
+      },
+      {
+        "schemaName": "Ledger",
+        "tableName": "Account",
+        "columnName": "ValidFrom",
+        "dataType": "timestamp(6)",
+        "isNullable": false,
+        "isPrimaryKey": false,
+        "defaultExpression": null,
+        "isIdentity": false,
+        "isGenerated": false,
+        "generationExpression": null
+      },
+      {
+        "schemaName": "Ledger",
+        "tableName": "Account",
+        "columnName": "ValidTo",
+        "dataType": "timestamp(6)",
+        "isNullable": false,
+        "isPrimaryKey": false,
+        "defaultExpression": null,
+        "isIdentity": false,
+        "isGenerated": false,
+        "generationExpression": null
+      },
+      {
+        "schemaName": "Ledger",
+        "tableName": "AccountHistory",
+        "columnName": "AccountID",
+        "dataType": "integer",
+        "isNullable": false,
+        "isPrimaryKey": false,
+        "defaultExpression": null,
+        "isIdentity": false,
+        "isGenerated": false,
+        "generationExpression": null
+      },
+      {
+        "schemaName": "Ledger",
+        "tableName": "AccountHistory",
+        "columnName": "Balance",
+        "dataType": "numeric(19,4)",
+        "isNullable": false,
+        "isPrimaryKey": false,
+        "defaultExpression": null,
+        "isIdentity": false,
+        "isGenerated": false,
+        "generationExpression": null
+      },
+      {
+        "schemaName": "Ledger",
+        "tableName": "AccountHistory",
+        "columnName": "ValidFrom",
+        "dataType": "timestamp(6)",
+        "isNullable": false,
+        "isPrimaryKey": false,
+        "defaultExpression": null,
+        "isIdentity": false,
+        "isGenerated": false,
+        "generationExpression": null
+      },
+      {
+        "schemaName": "Ledger",
+        "tableName": "AccountHistory",
+        "columnName": "ValidTo",
+        "dataType": "timestamp(6)",
+        "isNullable": false,
+        "isPrimaryKey": false,
+        "defaultExpression": null,
+        "isIdentity": false,
+        "isGenerated": false,
+        "generationExpression": null
+      },
+      {
+        "schemaName": "Ledger",
+        "tableName": "AccountHistory",
+        "columnName": "id",
+        "dataType": "bigint",
+        "isNullable": false,
+        "isPrimaryKey": true,
+        "defaultExpression": null,
+        "isIdentity": true,
+        "isGenerated": false,
+        "generationExpression": null,
+        "isSurrogate": true
+      },
+      {
+        "schemaName": "Ops",
+        "tableName": "SensorArchive",
+        "columnName": "SensorArchiveID",
+        "dataType": "bigint",
+        "isNullable": false,
+        "isPrimaryKey": true,
+        "defaultExpression": null,
+        "isIdentity": true,
+        "isGenerated": false,
+        "generationExpression": null
+      },
+      {
+        "schemaName": "Ops",
+        "tableName": "SensorArchive",
+        "columnName": "ReadingNote",
+        "dataType": "varchar(400)",
+        "isNullable": true,
+        "isPrimaryKey": false,
+        "defaultExpression": null,
+        "isIdentity": false,
+        "isGenerated": false,
+        "generationExpression": null
+      },
+      {
+        "schemaName": "Ops",
+        "tableName": "SensorArchive",
+        "columnName": "ReadingSummary",
+        "dataType": "varchar(80)",
+        "isNullable": true,
+        "isPrimaryKey": false,
+        "defaultExpression": null,
+        "isIdentity": false,
+        "isGenerated": true,
+        "generationExpression": "left(ReadingNote, 80)"
+      },
+      {
+        "schemaName": "Ops",
+        "tableName": "SensorArchive",
+        "columnName": "UpdatedAt",
+        "dataType": "timestamp(3)",
+        "isNullable": false,
+        "isPrimaryKey": false,
+        "defaultExpression": null,
+        "isIdentity": false,
+        "isGenerated": false,
+        "generationExpression": null
+      },
+      {
+        "schemaName": "Ledger",
+        "tableName": "Postings",
+        "columnName": "PostingID",
+        "dataType": "bigint",
+        "isNullable": false,
+        "isPrimaryKey": true,
+        "defaultExpression": null,
+        "isIdentity": true,
+        "isGenerated": false,
+        "generationExpression": null
+      },
+      {
+        "schemaName": "Ledger",
+        "tableName": "Postings",
+        "columnName": "PostedBy",
+        "dataType": "citext",
+        "isNullable": false,
+        "isPrimaryKey": false,
+        "defaultExpression": null,
+        "isIdentity": false,
+        "isGenerated": false,
+        "generationExpression": null
+      },
+      {
+        "schemaName": "Ledger",
+        "tableName": "Postings",
+        "columnName": "IsVoided",
+        "dataType": "boolean",
+        "isNullable": false,
+        "isPrimaryKey": false,
+        "defaultExpression": null,
+        "isIdentity": false,
+        "isGenerated": false,
+        "generationExpression": null
+      },
+      {
+        "schemaName": "Ledger",
+        "tableName": "Postings",
+        "columnName": "PayloadDocument",
+        "dataType": "xml",
+        "isNullable": true,
+        "isPrimaryKey": false,
+        "defaultExpression": null,
+        "isIdentity": false,
+        "isGenerated": false,
+        "generationExpression": null
+      },
+      {
+        "schemaName": "Ledger",
+        "tableName": "Postings",
+        "columnName": "LooseValue",
+        "dataType": "jsonb",
+        "isNullable": true,
+        "isPrimaryKey": false,
+        "defaultExpression": null,
+        "isIdentity": false,
+        "isGenerated": false,
+        "generationExpression": null
+      },
+      {
+        "schemaName": "Ledger",
+        "tableName": "Postings",
+        "columnName": "OrgNode",
+        "dataType": "ltree",
+        "isNullable": true,
+        "isPrimaryKey": false,
+        "defaultExpression": null,
+        "isIdentity": false,
+        "isGenerated": false,
+        "generationExpression": null
+      },
+      {
+        "schemaName": "Ledger",
+        "tableName": "Postings",
+        "columnName": "SiteShape",
+        "dataType": "geometry",
+        "isNullable": true,
+        "isPrimaryKey": false,
+        "defaultExpression": null,
+        "isIdentity": false,
+        "isGenerated": false,
+        "generationExpression": null
+      },
+      {
+        "schemaName": "Ledger",
+        "tableName": "Postings",
+        "columnName": "ScannedDocument",
+        "dataType": "bytea",
+        "isNullable": true,
+        "isPrimaryKey": false,
+        "defaultExpression": null,
+        "isIdentity": false,
+        "isGenerated": false,
+        "generationExpression": null
+      },
+      {
+        "schemaName": "Ledger",
+        "tableName": "Postings",
+        "columnName": "RowGuid",
+        "dataType": "uuid",
+        "isNullable": false,
+        "isPrimaryKey": false,
+        "defaultExpression": "gen_random_uuid()",
+        "isIdentity": false,
+        "isGenerated": false,
+        "generationExpression": null
+      },
+      {
+        "schemaName": "Ledger",
+        "tableName": "Postings",
+        "columnName": "PostedOn",
+        "dataType": "timestamp(6)",
+        "isNullable": false,
+        "isPrimaryKey": false,
+        "defaultExpression": null,
+        "isIdentity": false,
+        "isGenerated": false,
+        "generationExpression": null
+      },
+      {
+        "schemaName": "Ledger",
+        "tableName": "Postings",
+        "columnName": "PostedOffset",
+        "dataType": "timestamptz(6)",
+        "isNullable": true,
+        "isPrimaryKey": false,
+        "defaultExpression": null,
+        "isIdentity": false,
+        "isGenerated": false,
+        "generationExpression": null
+      },
+      {
+        "schemaName": "Ledger",
+        "tableName": "Postings",
+        "columnName": "Amount",
+        "dataType": "numeric(19,4)",
+        "isNullable": false,
+        "isPrimaryKey": false,
+        "defaultExpression": null,
+        "isIdentity": false,
+        "isGenerated": false,
+        "generationExpression": null
+      },
+      {
+        "schemaName": "Ledger",
+        "tableName": "Postings",
+        "columnName": "ShortCode",
+        "dataType": "citext",
+        "isNullable": true,
+        "isPrimaryKey": false,
+        "defaultExpression": null,
+        "isIdentity": false,
+        "isGenerated": false,
+        "generationExpression": null
+      },
+      {
+        "schemaName": "Ledger",
+        "tableName": "Postings",
+        "columnName": "DisplayName",
+        "dataType": "text",
+        "isNullable": true,
+        "isPrimaryKey": false,
+        "defaultExpression": null,
+        "isIdentity": false,
+        "isGenerated": false,
+        "generationExpression": null
+      },
+      {
+        "schemaName": "Ledger",
+        "tableName": "Postings",
+        "columnName": "RowVersion",
+        "dataType": "bytea",
+        "isNullable": true,
+        "isPrimaryKey": false,
+        "defaultExpression": null,
+        "isIdentity": false,
+        "isGenerated": false,
+        "generationExpression": null
+      },
+      {
+        "schemaName": "Ledger",
+        "tableName": "Postings",
+        "columnName": "Tier",
+        "dataType": "smallint",
+        "isNullable": true,
+        "isPrimaryKey": false,
+        "defaultExpression": null,
+        "isIdentity": false,
+        "isGenerated": false,
+        "generationExpression": null
+      }
+    ],
+    "keysAndIndexes": [
+      {
+        "schemaName": "Ledger",
+        "tableName": "Account",
+        "kind": "primary_key",
+        "name": "PK_Ledger_Account",
+        "columns": [
+          "AccountID"
+        ],
+        "referencedSchema": null,
+        "referencedTable": null,
+        "referencedColumns": null,
+        "onDelete": null,
+        "onUpdate": null,
+        "isUnique": true,
+        "columnDirections": null
+      },
+      {
+        "schemaName": "Ledger",
+        "tableName": "AccountHistory",
+        "kind": "primary_key",
+        "name": "pk_AccountHistory_surrogate",
+        "columns": [
+          "id"
+        ],
+        "referencedSchema": null,
+        "referencedTable": null,
+        "referencedColumns": null,
+        "onDelete": null,
+        "onUpdate": null,
+        "isUnique": true,
+        "columnDirections": null,
+        "isSurrogate": true
+      },
+      {
+        "schemaName": "Ops",
+        "tableName": "SensorArchive",
+        "kind": "primary_key",
+        "name": "PK_Ops_SensorArchive",
+        "columns": [
+          "SensorArchiveID"
+        ],
+        "referencedSchema": null,
+        "referencedTable": null,
+        "referencedColumns": null,
+        "onDelete": null,
+        "onUpdate": null,
+        "isUnique": true,
+        "columnDirections": null
+      },
+      {
+        "schemaName": "Ops",
+        "tableName": "SensorArchive",
+        "kind": "index",
+        "name": "CCI_Ops_SensorArchive",
+        "columns": [
+          "ReadingNote"
+        ],
+        "referencedSchema": null,
+        "referencedTable": null,
+        "referencedColumns": null,
+        "onDelete": null,
+        "onUpdate": null,
+        "isUnique": false,
+        "columnDirections": null
+      },
+      {
+        "schemaName": "Ops",
+        "tableName": "SensorArchive",
+        "kind": "index",
+        "name": "FT_Ops_SensorArchive_ReadingNote",
+        "columns": [
+          "ReadingNote"
+        ],
+        "referencedSchema": null,
+        "referencedTable": null,
+        "referencedColumns": null,
+        "onDelete": null,
+        "onUpdate": null,
+        "isUnique": false,
+        "columnDirections": null
+      },
+      {
+        "schemaName": "Ledger",
+        "tableName": "Postings",
+        "kind": "primary_key",
+        "name": "PK_Ledger_Postings",
+        "columns": [
+          "PostingID"
+        ],
+        "referencedSchema": null,
+        "referencedTable": null,
+        "referencedColumns": null,
+        "onDelete": null,
+        "onUpdate": null,
+        "isUnique": true,
+        "columnDirections": null
+      },
+      {
+        "schemaName": "Ledger",
+        "tableName": "Postings",
+        "kind": "check_constraint",
+        "name": "CK_Postings_Amount",
+        "columns": [],
+        "referencedSchema": null,
+        "referencedTable": null,
+        "referencedColumns": null,
+        "onDelete": null,
+        "onUpdate": null,
+        "isUnique": false,
+        "columnDirections": null
+      },
+      {
+        "schemaName": "Ledger",
+        "tableName": "Postings",
+        "kind": "check_constraint",
+        "name": "CK_Postings_PostedBy",
+        "columns": [],
+        "referencedSchema": null,
+        "referencedTable": null,
+        "referencedColumns": null,
+        "onDelete": null,
+        "onUpdate": null,
+        "isUnique": false,
+        "columnDirections": null
+      },
+      {
+        "schemaName": "Ledger",
+        "tableName": "Postings",
+        "kind": "index",
+        "name": "IX_Ledger_Postings_Active",
+        "columns": [
+          "PostedBy"
+        ],
+        "referencedSchema": null,
+        "referencedTable": null,
+        "referencedColumns": null,
+        "onDelete": null,
+        "onUpdate": null,
+        "isUnique": false,
+        "columnDirections": [
+          "ASC"
+        ]
+      },
+      {
+        "schemaName": "Ledger",
+        "tableName": "Postings",
+        "kind": "index",
+        "name": "IX_Ledger_Postings_Exotic",
+        "columns": [
+          "PostedBy"
+        ],
+        "referencedSchema": null,
+        "referencedTable": null,
+        "referencedColumns": null,
+        "onDelete": null,
+        "onUpdate": null,
+        "isUnique": false,
+        "columnDirections": null
+      },
+      {
+        "schemaName": "Ledger",
+        "tableName": "Postings",
+        "kind": "foreign_key",
+        "name": "fk_ledger_postings__ops_sensorarchive__postingid__ref__6f7fd0ae",
+        "columns": [
+          "PostingID"
+        ],
+        "referencedSchema": "Ops",
+        "referencedTable": "SensorArchive",
+        "referencedColumns": [
+          "SensorArchiveID"
+        ],
+        "onDelete": "SET_DEFAULT",
+        "onUpdate": "NO_ACTION",
+        "isUnique": false,
+        "columnDirections": null
+      }
+    ],
+    "sequences": [
+      {
+        "schemaName": "Ledger",
+        "sequenceName": "Account_AccountID_seq",
+        "restartWith": "1077",
+        "ownedByTable": "Account",
+        "ownedByColumn": "AccountID"
+      },
+      {
+        "schemaName": "Ledger",
+        "sequenceName": "Postings_PostingID_seq",
+        "restartWith": "10000",
+        "ownedByTable": "Postings",
+        "ownedByColumn": "PostingID"
+      },
+      {
+        "schemaName": "Ops",
+        "sequenceName": "SensorArchive_SensorArchiveID_seq",
+        "restartWith": "1042",
+        "ownedByTable": "SensorArchive",
+        "ownedByColumn": "SensorArchiveID"
+      },
+      {
+        "schemaName": "Ledger",
+        "sequenceName": "PostingBatchNumber",
+        "restartWith": "3500",
+        "ownedByTable": null,
+        "ownedByColumn": null
+      },
+      {
+        "schemaName": "Ledger",
+        "sequenceName": "PostingBatchNumber",
+        "restartWith": null,
+        "ownedByTable": null,
+        "ownedByColumn": null
+      }
+    ]
+  },
+  "structural_accounting": {
+    "tables_total": 4,
+    "view_entities_total": 0,
+    "tables_with_constraints_metadata": 4,
+    "tables_with_primary_key": 4,
+    "unique_constraints_total": 0,
+    "check_constraints_total": 2,
+    "indexes_total": 4,
+    "relationships_total": 1,
+    "relationships_with_fk_columns": 1,
+    "tables_without_primary_key": [],
+    "relationships_without_fk_details": [],
+    "collation_hazard_columns": 2,
+    "generated_columns": 1,
+    "sequences_captured": 4,
+    "code_objects_captured": {
+      "stored_procedure": 0,
+      "trigger": 0,
+      "view": 0,
+      "scheduled_job": 0
+    }
+  },
+  "structural_warnings": [
+    "discovery captured NO stored-procedure / trigger / view / scheduled-job objects — if the source database contains DB code objects they are MISSING from this pack (no translation, no finding). Re-run discovery with DB code capture, or sign the absence off explicitly."
+  ],
+  "structural_findings": [
+    {
+      "kind": "no_code_objects",
+      "subject": "all_code_objects",
+      "message": "discovery captured NO stored-procedure / trigger / view / scheduled-job objects — if the source database contains DB code objects they are MISSING from this pack (no translation, no finding). Re-run discovery with DB code capture, or sign the absence off explicitly."
+    }
+  ],
+  "target_db": {
+    "engine": "postgresql",
+    "host": "localhost",
+    "port": 5432,
+    "database": "haikai_target",
+    "schema": "public",
+    "username": "postgres",
+    "note": "Declared by the migration plan — the schema-apply seed CREATES this database at these coordinates. Confirm in the seed story spec; override at apply time only when reality differs. Credentials are NEVER stored here."
+  },
+  "sync": {
+    "cadence_default": "daily",
+    "state_table": "haikai_sync_state",
+    "runner_path": "sync/run-incremental-sync.sh",
+    "state_ddl_path": "sync/000-sync-state.sql",
+    "reconciliation_paths": [
+      "reconcile/reconciliation.sql",
+      "reconcile/build-report.sh"
+    ],
+    "runbook_path": "cutover/swap-over-runbook.md",
+    "tables": [
+      {
+        "table": "Ledger.Account",
+        "strategy": "full_reload",
+        "delta_key": null
+      },
+      {
+        "table": "Ledger.AccountHistory",
+        "strategy": "full_reload",
+        "delta_key": null
+      },
+      {
+        "table": "Ops.SensorArchive",
+        "strategy": "insert_only",
+        "delta_key": "SensorArchiveID"
+      },
+      {
+        "table": "Ledger.Postings",
+        "strategy": "full_reload",
+        "delta_key": null
+      }
+    ]
+  }
+}

@@ -69,7 +69,10 @@ import {
   StructuralDispositionRow,
   StructuralFindingState,
 } from './migrationStructuralFindings';
-import type { SupportedDbEngine } from './dbMigrationPack/dbCredentialBlock';
+import {
+  SUPPORTED_DB_ENGINES,
+  type SupportedDbEngine,
+} from './dbMigrationPack/dbCredentialBlock';
 
 // ---------------------------------------------------------------------------
 // Wire shapes
@@ -83,12 +86,23 @@ export interface HarvestConnection {
   username: string;
   /** Request-lifetime only — see module doc comment. */
   password: string;
-  /** Source engine key; defaults to 'sybase' (the original harvest flow). */
+  /**
+   * Source engine key. When absent the harvest reads it from the project's
+   * DB migration pack manifest (`source_engine`) — the pack IS the context
+   * that knows which engine this project migrates from — and only then falls
+   * back to 'sybase' (Spec 5.7, 2026-09-11). Hard-defaulting to Sybase would
+   * run ASE catalog SQL against a SQL Server and report the empty result as
+   * though the database had no tables.
+   */
   dbEngine?: SupportedDbEngine;
   /** Sybase driver selection; discovery-service defaults 'auto'. Ignored by other engines. */
   sybaseDriver?: string;
-  /** SQL Server connection extras (discovery-service `mssqlAuth` shape); ignored by other engines. */
-  mssqlAuth?: Record<string, unknown> | null;
+  /**
+   * SQL-Server-only connection extras, forwarded verbatim to the
+   * discovery-service `DatabaseDiscoveryConfig.mssqlAuth`. Ignored by every
+   * other engine; never persisted (the run's secrets live in-memory).
+   */
+  mssqlAuth?: Record<string, unknown>;
   /** Optional schema include filter for the catalog walk. */
   includeSchemas?: string[] | null;
 }
@@ -147,6 +161,13 @@ export interface StructuralHarvestResult {
 // ---------------------------------------------------------------------------
 
 export interface HarvestDeps {
+  /**
+   * Step 0 — resolve the project's SOURCE engine when the caller supplies
+   * none (Spec 5.7): the DB migration pack manifest's `source_engine` is the
+   * project's own record of which engine it migrates from. Returns null when
+   * there is no pack yet (the caller then keeps the historical default).
+   */
+  resolveSourceEngine?: (projectId: string) => Promise<SupportedDbEngine | null>;
   /** Step 1 — create the metadata-only database discovery run. */
   createRun?: (args: RunStructuralHarvestArgs) => Promise<DiscoveryRunRow>;
   /** Step 2 — read the run row (status polling). */
@@ -190,6 +211,52 @@ export interface HarvestDeps {
 // Default deps — real HTTP / in-process calls
 // ---------------------------------------------------------------------------
 
+/**
+ * Read `manifest.json`'s `source_engine` from the project's most recent DB
+ * migration pack. Fail-soft in every direction: no pack, no manifest, an
+ * unparseable manifest or an unsupported engine key all return null, and the
+ * caller keeps the historical Sybase default rather than failing a harvest.
+ */
+const defaultResolveSourceEngine: NonNullable<HarvestDeps['resolveSourceEngine']> = async (
+  projectId,
+) => {
+  const base = getConfig().architectureModelServiceBaseUrl;
+  try {
+    const packsResponse = await fetch(
+      `${base}/api/projects/${encodeURIComponent(projectId)}/db-migration-packs`,
+      { headers: { Accept: 'application/json' } },
+    );
+    if (!packsResponse.ok) return null;
+    const packs = (await packsResponse.json()) as Array<{ id?: string }>;
+    const packId = Array.isArray(packs) && packs.length > 0 ? packs[0]?.id : null;
+    if (!packId) return null;
+    const filesResponse = await fetch(
+      `${base}/api/projects/${encodeURIComponent(projectId)}` +
+        `/db-migration-packs/${encodeURIComponent(packId)}/files`,
+      { headers: { Accept: 'application/json' } },
+    );
+    if (!filesResponse.ok) return null;
+    const files = (await filesResponse.json()) as Array<{
+      file_path?: string;
+      content?: string;
+    }>;
+    const manifest = (Array.isArray(files) ? files : []).find(
+      (f) => f.file_path === 'manifest.json',
+    );
+    if (!manifest?.content) return null;
+    const parsed = JSON.parse(manifest.content.replace(/^﻿/, '')) as {
+      source_engine?: unknown;
+    };
+    const engine =
+      typeof parsed.source_engine === 'string' ? parsed.source_engine.trim().toLowerCase() : '';
+    return SUPPORTED_DB_ENGINES.includes(engine as SupportedDbEngine)
+      ? (engine as SupportedDbEngine)
+      : null;
+  } catch {
+    return null;
+  }
+};
+
 const defaultCreateRun: NonNullable<HarvestDeps['createRun']> = async (args) => {
   const base = getConfig().discoveryServiceBaseUrl;
   const url =
@@ -209,6 +276,9 @@ const defaultCreateRun: NonNullable<HarvestDeps['createRun']> = async (args) => 
         port: connection.port,
         databaseName: connection.databaseName,
         includeSchemas: connection.includeSchemas ?? undefined,
+        ...((connection.dbEngine ?? 'sybase') === 'mssql' && connection.mssqlAuth
+          ? { mssqlAuth: connection.mssqlAuth }
+          : {}),
         // Metadata-only: the orchestrator skips the profiling stage entirely
         // for 'none' (databasePackOrchestrator checks profilingMode !== 'none'),
         // so this run reads ONLY catalog tables, never row data.
@@ -217,9 +287,6 @@ const defaultCreateRun: NonNullable<HarvestDeps['createRun']> = async (args) => 
         readOnlyConfirmed: true,
         ...((connection.dbEngine ?? 'sybase') === 'sybase'
           ? { sybaseDriver: connection.sybaseDriver ?? 'auto' }
-          : {}),
-        ...(connection.dbEngine === 'mssql' && connection.mssqlAuth
-          ? { mssqlAuth: connection.mssqlAuth }
           : {}),
       },
       // The password lives in this request body ONLY; discovery-service stores
@@ -409,20 +476,41 @@ export async function runStructuralHarvest(
   const regeneratePack = deps.regeneratePack ?? generateDbMigrationPack;
   const fetchDispositions = deps.fetchDispositions ?? defaultFetchDispositions;
   const sleep = deps.sleep ?? defaultSleep;
+  const resolveSourceEngine = deps.resolveSourceEngine ?? defaultResolveSourceEngine;
 
   const settings = getPollSettings();
   const intervalMs = args.pollIntervalMs ?? settings.intervalMs;
   const timeoutMs = args.pollTimeoutMs ?? settings.timeoutMs;
   const { projectId, architectureId } = args;
 
+  // The harvest reads the SOURCE catalog, so it must run the SOURCE engine's
+  // catalog SQL. With no engine on the request the project's own pack
+  // manifest is the context that knows which one this project migrates from
+  // (Spec 5.7); Sybase remains the last-resort default for a project with no
+  // pack yet, which is the historical behaviour.
+  const harvestArgs: RunStructuralHarvestArgs =
+    args.connection.dbEngine !== undefined
+      ? args
+      : {
+          ...args,
+          connection: {
+            ...args.connection,
+            dbEngine: (await resolveSourceEngine(projectId)) ?? undefined,
+          },
+        };
+
   // -------------------------------------------------------------------------
   // Stage 1 — create the metadata-only run.
   // -------------------------------------------------------------------------
-  diag('create_run', `projectId=${projectId} architectureId=${architectureId}`);
+  diag(
+    'create_run',
+    `projectId=${projectId} architectureId=${architectureId} ` +
+      `engine=${harvestArgs.connection.dbEngine ?? 'sybase'}`
+  );
   let runId: string;
   let runStatus: string;
   try {
-    const run = await createRun(args);
+    const run = await createRun(harvestArgs);
     runId = run.id;
     runStatus = run.status ?? 'RUNNING';
   } catch (error) {

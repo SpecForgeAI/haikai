@@ -27,7 +27,7 @@
 import * as crypto from 'crypto';
 import { getConfig } from '../../config';
 import { logger } from '../logger';
-import { isSybaseSystemObject } from './sybaseSystemObjects';
+import { isSystemObjectFor } from './systemObjects';
 import {
   fetchActiveTargetArchitectureId,
   fetchLatestCapturedDecisions,
@@ -37,6 +37,7 @@ import {
 import {
   IrColumn,
   IrDbDecision,
+  IrExtendedObject,
   IrForeignKey,
   IrSequence,
   IrTable,
@@ -97,6 +98,7 @@ export interface RawDataEntityRelationship {
     referenced_columns?: string[];
     on_delete?: string | null;
     on_update?: string | null;
+    is_not_trusted?: boolean;
   } | null;
 }
 
@@ -323,7 +325,7 @@ export function computeInputSnapshotHash(inputs: GenerationInputs): string {
  * the GENERATOR knows the source dialect (type map, DDL rules, extract
  * expressions). SQL Server joins the list in Spec 5 of the pair programme.
  */
-export const GENERATOR_SUPPORTED_SOURCE_ENGINES: readonly string[] = ['sybase'];
+export const GENERATOR_SUPPORTED_SOURCE_ENGINES: readonly string[] = ['sybase', 'mssql'];
 
 export interface ResolvedEnginePair {
   /** Engine KEY (`sybase`, `mssql`, …) — the pair-resolution vocabulary. */
@@ -431,6 +433,8 @@ export function buildSourceSchemaIr(inputs: GenerationInputs): SourceSchemaIr {
   const tables: IrTable[] = [];
   const tablesByKey = new Map<string, IrTable>();
   const columnsByKey = new Map<string, IrColumn>();
+  const extendedObjects: IrExtendedObject[] = [];
+  let databaseCollation: string | null = null;
 
   const sortedEntities = [...inputs.model.physicalDataEntities].sort((a, b) =>
     a.name.localeCompare(b.name)
@@ -444,7 +448,7 @@ export function buildSourceSchemaIr(inputs: GenerationInputs): SourceSchemaIr {
 
   for (const entity of sortedEntities) {
     const { schemaName, tableName } = parseQualifiedName(entity.name);
-    if (isSybaseSystemObject(tableName)) {
+    if (isSystemObjectFor(sourceEngine, schemaName, tableName)) {
       const physicalType = entity.physical_type ?? '';
       sybaseSystemExclusions.push({
         kind: /view/i.test(physicalType) ? 'view' : 'table',
@@ -455,7 +459,12 @@ export function buildSourceSchemaIr(inputs: GenerationInputs): SourceSchemaIr {
     const cm = (entity.constraints_metadata ?? {}) as {
       primary_key?: { name: string; columns: string[] } | null;
       unique_constraints?: Array<{ name: string; columns: string[] }>;
-      check_constraints?: Array<{ name: string; expression: string | null }>;
+      check_constraints?: Array<{
+        name: string;
+        expression: string | null;
+        is_disabled?: boolean;
+        is_not_trusted?: boolean;
+      }>;
       indexes?: Array<{
         name: string;
         columns: string[];
@@ -487,7 +496,12 @@ export function buildSourceSchemaIr(inputs: GenerationInputs): SourceSchemaIr {
         ((cm as { parity_key?: IrTable['parityKey'] }).parity_key ?? null),
       auditSink: (cm as { audit_sink?: unknown }).audit_sink === true,
       uniqueConstraints: cm.unique_constraints ?? [],
-      checkConstraints: cm.check_constraints ?? [],
+      checkConstraints: (cm.check_constraints ?? []).map((c) => ({
+        name: c.name,
+        expression: c.expression ?? null,
+        ...(c.is_disabled === true ? { isDisabled: true } : {}),
+        ...(c.is_not_trusted === true ? { isNotTrusted: true } : {}),
+      })),
       indexes: (cm.indexes ?? []).map((i) => ({
         name: i.name,
         columns: i.columns ?? [],
@@ -496,6 +510,11 @@ export function buildSourceSchemaIr(inputs: GenerationInputs): SourceSchemaIr {
         columnDirections: i.column_directions ?? null,
         method: i.method ?? null,
         predicate: i.predicate ?? null,
+        // Covering (`INCLUDE`) columns + the disabled flag are additive keys
+        // in the free-form constraints_metadata JSONB; absent on engines /
+        // scans that do not report them (Spec 5.1).
+        includeColumns: (i as { include_columns?: string[] }).include_columns ?? null,
+        isDisabled: (i as { is_disabled?: boolean }).is_disabled === true,
       })),
       estimatedRowCount: null,
       findingIds: [],
@@ -566,6 +585,7 @@ export function buildSourceSchemaIr(inputs: GenerationInputs): SourceSchemaIr {
       referencedColumns: fk.referenced_columns ?? [],
       onDelete: fk.on_delete ?? null,
       onUpdate: fk.on_update ?? null,
+      ...(fk.is_not_trusted === true ? { isNotTrusted: true } : {}),
     });
   }
 
@@ -581,17 +601,146 @@ export function buildSourceSchemaIr(inputs: GenerationInputs): SourceSchemaIr {
     return columnsByKey.get(columnKey(schema, table, column)) ?? null;
   };
 
+  /** Record one no-like-for-like object from its finding (Spec 5.5). */
+  const pushExtended = (
+    finding: RawDiscoveryFinding,
+    detail: Record<string, unknown>,
+    kind: string,
+  ): void => {
+    const schemaName = asString(detail['schemaName']);
+    // A COLUMN-shaped extended object (a FILESTREAM column) is identified by
+    // its column, not its table: two filestream columns on one table are two
+    // objects with two decisions.
+    const columnName = asString(detail['columnName']);
+    const objectName =
+      (asString(detail['tableName']) ??
+        asString(detail['objectName']) ??
+        asString(detail['viewName']) ??
+        'unknown') + (columnName ? `.${columnName}` : '');
+    const existing = extendedObjects.find(
+      (e) => e.kind === kind && e.schemaName === schemaName && e.objectName === objectName,
+    );
+    if (existing) {
+      existing.findingIds.push(finding.id);
+      return;
+    }
+    const nested = detail['detail'];
+    extendedObjects.push({
+      kind,
+      schemaName,
+      objectName,
+      detail:
+        nested !== null && typeof nested === 'object'
+          ? (nested as Record<string, unknown>)
+          : { ...detail },
+      sourceBody: asString(detail['bodySnippet']) ?? asString(detail['body']),
+      untranslatableReason: asString(detail['untranslatableReason']),
+      findingIds: [finding.id],
+    });
+  };
+
   const sortedFindings = [...inputs.findings].sort((a, b) => a.id.localeCompare(b.id));
   for (const finding of sortedFindings) {
     const detail = finding.detail_json ?? {};
     switch (finding.finding_type) {
       case 'collation_case_sensitivity_hazard': {
+        const dbCollation = asString(detail['databaseCollation']);
+        if (dbCollation && !databaseCollation) databaseCollation = dbCollation;
         const col = resolveColumn(detail);
         if (col) {
           col.collation = asString(detail['collation']);
           col.collationCaseInsensitive = true;
+          col.databaseCollation = dbCollation;
           col.findingIds.push(finding.id);
         }
+        break;
+      }
+      // --- SQL-Server-only shapes (Spec 5.1/5.5) ---------------------------
+      // Each of these facts exists ONLY in findings (the committed model has
+      // no column for it). The merge is by object identity, exactly like the
+      // collation / computed-column / sequence merges above.
+      case 'temporal_table_detected': {
+        const schema = asString(detail['schemaName']) ?? 'dbo';
+        const tableName = asString(detail['tableName']);
+        if (!tableName) break;
+        const t = tablesByKey.get(`${schema}.${tableName}`.toLowerCase());
+        if (!t) break;
+        t.temporal = {
+          temporalType: asString(detail['temporalType']) ?? 'system_versioned',
+          historyTable: asString(detail['historyTable']),
+          periodStartColumn: asString(detail['periodStartColumn']),
+          periodEndColumn: asString(detail['periodEndColumn']),
+        };
+        t.findingIds.push(finding.id);
+        break;
+      }
+      case 'memory_optimized_table': {
+        const schema = asString(detail['schemaName']) ?? 'dbo';
+        const tableName = asString(detail['tableName']);
+        if (!tableName) break;
+        const t = tablesByKey.get(`${schema}.${tableName}`.toLowerCase());
+        if (!t) break;
+        t.memoryOptimized = true;
+        t.findingIds.push(finding.id);
+        break;
+      }
+      case 'computed_column_not_persisted': {
+        const col = resolveColumn(detail);
+        if (col) {
+          col.computedPersisted = false;
+          // The same finding carries the generation expression, so merge it
+          // here too: this case never falls through to the tolerant default
+          // branch below.
+          const expression =
+            asString(detail['generationExpression']) ??
+            asString(detail['generation_expression']);
+          if (expression) {
+            col.isGenerated = true;
+            col.generationExpression = expression;
+          }
+          col.findingIds.push(finding.id);
+        }
+        break;
+      }
+      case 'filestream_column': {
+        const col = resolveColumn(detail);
+        if (col) {
+          col.isFilestream = true;
+          col.findingIds.push(finding.id);
+        }
+        pushExtended(finding, detail, 'filestream');
+        break;
+      }
+      case 'fulltext_index_detected': {
+        const schema = asString(detail['schemaName']) ?? 'dbo';
+        const tableName = asString(detail['tableName']);
+        const indexName = asString(detail['indexName']) ?? tableName ?? 'fulltext';
+        const t = tableName
+          ? tablesByKey.get(`${schema}.${tableName}`.toLowerCase())
+          : undefined;
+        if (t) {
+          const columns = Array.isArray(detail['columns'])
+            ? (detail['columns'] as unknown[]).map((c) => String(c)).filter((c) => c.length > 0)
+            : [];
+          t.fullTextIndexes = [
+            ...(t.fullTextIndexes ?? []),
+            { name: indexName, catalog: asString(detail['fulltextCatalog']), columns },
+          ];
+          t.findingIds.push(finding.id);
+          break;
+        }
+        // A catalog-level full-text object with no table: an extended object.
+        pushExtended(finding, detail, 'fulltext_catalog');
+        break;
+      }
+      case 'columnstore_index':
+      case 'clr_object_detected':
+      case 'service_broker_detected':
+      case 'synonym_detected':
+      case 'user_defined_table_type':
+      case 'indexed_view':
+      case 'cross_database_reference': {
+        pushExtended(finding, detail, finding.finding_type);
         break;
       }
       case 'non_portable_default': {
@@ -636,6 +785,14 @@ export function buildSourceSchemaIr(inputs: GenerationInputs): SourceSchemaIr {
         seq.startValue = seq.startValue ?? asString(detail['startValue']);
         seq.ownedByTable = seq.ownedByTable ?? asString(detail['ownedByTable']);
         seq.ownedByColumn = seq.ownedByColumn ?? asString(detail['ownedByColumn']);
+        // Full generation detail (Spec 5.3). The identity-backed rows carry
+        // the IDENTITY(seed, increment) parameters in exactly these fields,
+        // which is how per-column identity seed/increment reaches the IR.
+        seq.increment = seq.increment ?? asString(detail['increment']);
+        seq.minValue = seq.minValue ?? asString(detail['minValue']);
+        seq.maxValue = seq.maxValue ?? asString(detail['maxValue']);
+        seq.dataType = seq.dataType ?? asString(detail['dataType']);
+        if (detail['cycle'] === true) seq.cycle = true;
         seq.findingIds.push(finding.id);
         sequencesByKey.set(key, seq);
         break;
@@ -661,10 +818,10 @@ export function buildSourceSchemaIr(inputs: GenerationInputs): SourceSchemaIr {
           asString(detail['objectName']) ??
           'unknown';
         const objectRef = `${schema}.${objectName}`;
-        // ASE system objects (2026-08-07): a system view/proc finding must
-        // never enter the translation queue — it references Sybase-internal
+        // Source system objects (2026-08-07): a system view/proc finding must
+        // never enter the translation queue — it references engine-internal
         // catalogs that cannot exist on the target.
-        if (isSybaseSystemObject(objectName)) {
+        if (isSystemObjectFor(sourceEngine, schema, objectName)) {
           if (!sybaseSystemExclusions.some((e) => e.kind === kind && e.objectRef === objectRef)) {
             sybaseSystemExclusions.push({ kind, objectRef });
           }
@@ -689,6 +846,28 @@ export function buildSourceSchemaIr(inputs: GenerationInputs): SourceSchemaIr {
           if (col) {
             col.isGenerated = true;
             col.generationExpression = generationExpression;
+            col.findingIds.push(finding.id);
+          }
+        }
+        // Storage attributes ride ALONGSIDE whichever column-shaped finding
+        // reported them (Spec 5.1) — the same tolerant by-key merge the
+        // generation expression above uses. They change no VALUE on the
+        // target (ROWGUIDCOL drives merge replication; SPARSE is a NULL
+        // storage optimisation), so they become emitted notes, never DDL;
+        // `isPersistedComputed` is the one that DOES change emission
+        // (STORED vs PostgreSQL 18 VIRTUAL).
+        if (
+          detail['isRowGuidCol'] !== undefined ||
+          detail['isSparse'] !== undefined ||
+          detail['isPersistedComputed'] !== undefined
+        ) {
+          const col = resolveColumn(detail);
+          if (col) {
+            if (detail['isRowGuidCol'] === true) col.isRowGuidCol = true;
+            if (detail['isSparse'] === true) col.isSparse = true;
+            if (typeof detail['isPersistedComputed'] === 'boolean') {
+              col.computedPersisted = detail['isPersistedComputed'] as boolean;
+            }
             col.findingIds.push(finding.id);
           }
         }
@@ -725,6 +904,21 @@ export function buildSourceSchemaIr(inputs: GenerationInputs): SourceSchemaIr {
   // oracle.
   applySurrogatePkDecision(tables, resolvedDecisions);
 
+  // Identity seed / increment reach the IR through the sequence findings the
+  // scan synthesizes per identity column (`ownedByTable` / `ownedByColumn`).
+  // Fold them onto the owning column so the emitter can spell
+  // `GENERATED BY DEFAULT AS IDENTITY (START WITH s INCREMENT BY i)`.
+  for (const seq of sequencesByKey.values()) {
+    if (!seq.ownedByTable || !seq.ownedByColumn) continue;
+    const owner = parseQualifiedName(seq.ownedByTable);
+    const col =
+      columnsByKey.get(columnKey(owner.schemaName, owner.tableName, seq.ownedByColumn)) ??
+      columnsByKey.get(columnKey(seq.schemaName, owner.tableName, seq.ownedByColumn));
+    if (!col || !col.isIdentity) continue;
+    if (seq.startValue) col.identitySeed = seq.startValue;
+    if (seq.increment) col.identityIncrement = seq.increment;
+  }
+
   const ir: SourceSchemaIr = {
     scopeReceipt: inputs.model.scopeReceipt ?? null,
     sourceCharset: null,
@@ -745,6 +939,12 @@ export function buildSourceSchemaIr(inputs: GenerationInputs): SourceSchemaIr {
     sybaseSystemExclusions: sybaseSystemExclusions.sort(
       (a, b) => a.kind.localeCompare(b.kind) || a.objectRef.localeCompare(b.objectRef)
     ),
+    extendedObjects: extendedObjects.sort(
+      (a, b) =>
+        a.kind.localeCompare(b.kind) ||
+        `${a.schemaName ?? ''}.${a.objectName}`.localeCompare(`${b.schemaName ?? ''}.${b.objectName}`),
+    ),
+    databaseCollation,
     dbDecisions: inputs.dbDecisions,
     resolvedDecisions,
   };

@@ -643,6 +643,17 @@ export function transformMssqlIntrospection(
         k.columnDirections.length > 0
           ? k.columnDirections.map((d) => String(d))
           : null,
+      // Covering columns + the enforcement flags are engine-NEUTRAL facts
+      // (PostgreSQL has INCLUDE and NOT VALID too), so they ride the shared
+      // IR into `constraints_metadata` / `fk_columns` rather than the
+      // pack-private extras: the pack generator needs them to emit
+      // `INCLUDE (...)` and `NOT VALID`.
+      includeColumns:
+        (k.includeColumns ?? []).length > 0
+          ? (k.includeColumns ?? []).map((c) => String(c))
+          : null,
+      isDisabled: bool(k.isDisabled),
+      isNotTrusted: bool(k.isNotTrusted),
     };
   });
 

@@ -76,6 +76,23 @@ export type DbMigrationPackDecisionCategory =
   | 'pk_composition'
   /** Target-only surrogate identity PK for no-PK tables (2026-08-08). */
   | 'surrogate_pk'
+  /** SQL Server pair (Spec 5, AMS changeset 234). */
+  | 'temporal_table'
+  | 'fulltext_index'
+  | 'xml_method'
+  | 'hierarchyid_column'
+  | 'spatial_column'
+  | 'sql_variant_column'
+  | 'clr_object'
+  | 'service_broker'
+  | 'filestream'
+  | 'memory_optimized_table'
+  | 'synonym'
+  | 'user_defined_table_type'
+  | 'index_predicate'
+  | 'columnstore_index'
+  | 'cross_database_reference'
+  | 'indexed_view'
   | 'other';
 
 export type DbMigrationPackDecisionStatus = 'open' | 'resolved';

@@ -50,23 +50,43 @@ import {
   SURROGATE_PK_OPTIONS,
 } from './dbMigrationPack/inputs';
 import {
+  charWidthOf,
   COLLATION_OPTIONS,
   collationDecisionQuestion,
+  ICU_COLLATION_DDL,
+  ICU_COLLATION_NAME,
+  ICU_COLLATION_RESTRICTION_NOTE,
+  isCitextReplaceable,
   mapSourceType,
+  PACK_COLLATION_DECISION_KEY,
+  PACK_COLLATION_DEFAULT_OPTION,
+  PACK_COLLATION_OPTIONS,
+  packCollationDecisionQuestion,
   translateCheckExpression,
   translateComputedExpression,
   translateDefault,
   TYPE_MAPPING_VERSION,
 } from './dbMigrationPack/typeMapping';
+import { rulesetForManifest, ruleCiteFor } from './dbMigrationPack/pairRuleset';
+import {
+  EXTENDED_OBJECT_DISPOSITIONS,
+  buildExtendedObjectOutcomes,
+  type ExtendedObjectOutcome,
+} from './dbMigrationPack/extendedObjects';
 import {
   detectDroppedKeyConstraints,
+  emitEmulationsChangeset,
+  emitStandaloneSequenceDdl,
   emitForeignKeysChangeset,
   emitIndexesChangeset,
   emitMasterChangelog,
   emitSchemasChangeset,
   emitSequencesSeedChangeset,
   emitTableChangeset,
+  EMULATIONS_CHANGESET_PATH,
   EmittableColumn,
+  type FullTextEmulation,
+  type TemporalEmulation,
   PK_COMPOSITION_OPTIONS,
   FOREIGN_KEYS_CHANGESET_PATH,
   foreignKeyName,
@@ -135,6 +155,28 @@ import {
   UnsupportedEnginePairError,
 } from './dbMigrationPack/types';
 
+/**
+ * Per-run translation context threaded through `translateColumn` (SQL Server
+ * pair programme, Spec 5.2/5.4/5.5). It carries the engine, the pack-wide
+ * collation posture and the rule-citation closure IN, and collects the
+ * manifest-visible consequences (affected columns, precision loss, required
+ * target extensions, per-table extra constraints and notes) OUT — so a
+ * mapping's side effects are never invisible.
+ */
+interface ColumnTranslationContext {
+  engine: string;
+  /** The resolved pack-wide collation posture; null while the decision is open. */
+  collationPosture: string | null;
+  collationAffected: string[];
+  precisionLoss: Array<{ column: string; source_type: string; note: string }>;
+  extensions: Set<string>;
+  /** Extra CREATE TABLE constraint lines, keyed by `schema.table`. */
+  extraConstraints: Map<string, string[]>;
+  /** Extra provenance comment lines, keyed by `schema.table`. */
+  extraNotes: Map<string, string[]>;
+  ruleCite: (divergenceClass: string) => string | null;
+}
+
 export {
   buildSourceSchemaIr,
   canonicalSerialize,
@@ -199,6 +241,29 @@ export interface PackArtifacts {
   counts: { translated: number; skipped: number; flagged: number };
 }
 
+/** One resolved pack-decision option, or null while the decision is open. */
+function optionOf(ir: SourceSchemaIr, decisionKey: string): string | null {
+  const resolution = ir.resolvedDecisions[decisionKey];
+  return resolution && typeof resolution['option'] === 'string'
+    ? (resolution['option'] as string)
+    : null;
+}
+
+/** Split `[schema.]object` using a default schema (pack-side parse). */
+function parseObjectRef(
+  ref: string,
+  defaultSchema: string,
+): { schemaName: string; tableName: string } {
+  const parts = String(ref ?? '')
+    .replace(/[[\]"]/g, '')
+    .split('.')
+    .filter((p) => p.length > 0);
+  if (parts.length >= 2) {
+    return { schemaName: parts[parts.length - 2], tableName: parts[parts.length - 1] };
+  }
+  return { schemaName: defaultSchema, tableName: parts[0] ?? ref };
+}
+
 interface TranslatedColumn {
   column: IrColumn;
   emitted: EmittableColumn | null;
@@ -218,7 +283,8 @@ function translateColumn(
   ir: SourceSchemaIr,
   decisions: PackDecision[],
   collationNotes: string[],
-  seedDecisionKeysByColumn: Map<string, string[]>
+  seedDecisionKeysByColumn: Map<string, string[]>,
+  ctx: ColumnTranslationContext
 ): TranslatedColumn {
   const tableRef = qualifiedName(table.schemaName, table.tableName);
   const colRef = `${tableRef}.${column.columnName}`;
@@ -250,12 +316,61 @@ function translateColumn(
     coverage: coverage('skipped', reason),
   });
 
-  // --- 1) Type mapping (v1, deterministic; resolutions consulted first) ----
+  const isMssql = ctx.engine === 'mssql';
+  const addNote = (note: string): void => {
+    ctx.extraNotes.set(tableRef, [...(ctx.extraNotes.get(tableRef) ?? []), note]);
+  };
+
+  // --- 1) Type mapping (deterministic; resolutions consulted first) --------
   let postgresType: string | null = null;
+  let flaggedByFeature = false;
   const typeKey = `type_mapping--${colRef}`;
-  const typeMapping = mapSourceType(column);
+  const typeMapping = mapSourceType(ctx.engine, column);
   if (typeMapping.kind === 'mapped') {
     postgresType = typeMapping.postgresType;
+    // Sub-microsecond source precision the target cannot hold: recorded on
+    // the manifest so the loader's truncation is CITED, never discovered.
+    if (typeMapping.precisionLoss) {
+      ctx.precisionLoss.push({
+        column: colRef,
+        source_type: column.dataType,
+        note: typeMapping.precisionLoss,
+      });
+    }
+    // A column FEATURE with no like-for-like form (sql_variant / hierarchyid
+    // / spatial): the pack emits its deterministic DEFAULT so the pack is
+    // runnable, AND raises the decision that confirms or changes it. The
+    // column is flagged, so an unresolved decision blocks Migrate.
+    const feature = typeMapping.featureDecision;
+    if (feature) {
+      const featureKey = `${feature.keyPrefix}--${colRef}`;
+      const resolution = ir.resolvedDecisions[featureKey];
+      const option =
+        resolution && typeof resolution['option'] === 'string'
+          ? (resolution['option'] as string)
+          : null;
+      if (option !== null && Object.prototype.hasOwnProperty.call(feature.typeByOption, option)) {
+        const resolvedType = feature.typeByOption[option];
+        if (resolvedType === null) {
+          return skippedResult(`dropped by resolved decision '${featureKey}' (option ${option})`);
+        }
+        postgresType = resolvedType;
+      } else {
+        const cite = ctx.ruleCite(feature.divergenceClass);
+        raise({
+          decisionKey: featureKey,
+          objectRef: colRef,
+          category: feature.category,
+          question: feature.question + (cite ? ` See ${cite}.` : ''),
+          options: [...feature.options],
+        });
+        flaggedByFeature = true;
+      }
+      const chosen = option ?? feature.defaultOption;
+      if (feature.prerequisite && feature.typeByOption[chosen] !== null) {
+        ctx.extensions.add(feature.prerequisite);
+      }
+    }
   } else {
     const resolution = ir.resolvedDecisions[typeKey];
     const option = typeof resolution?.['option'] === 'string' ? (resolution['option'] as string) : null;
@@ -290,9 +405,107 @@ function translateColumn(
     }
   }
 
+  // --- 1b) FILESTREAM storage — an item-5 decision, never silent ----------
+  let flagged = flaggedByFeature;
+  if (column.isFilestream === true) {
+    const fsKey = `filestream--${colRef}`;
+    const fsResolution = ir.resolvedDecisions[fsKey];
+    const fsOption =
+      fsResolution && typeof fsResolution['option'] === 'string'
+        ? (fsResolution['option'] as string)
+        : null;
+    if (fsOption === 'drop') {
+      return skippedResult(`FILESTREAM content dropped by resolved decision '${fsKey}'`);
+    }
+    if (fsOption === null) {
+      raise({
+        decisionKey: fsKey,
+        objectRef: colRef,
+        category: 'filestream',
+        question:
+          `Column ${colRef} is FILESTREAM: its bytes live on the server filesystem, not in the ` +
+          `table, and every application path that opens the Win32 file handle depends on that. ` +
+          `PostgreSQL has no FILESTREAM. Choose rewrite_in_app (RECOMMENDED — the content loads ` +
+          `into this bytea column and the file-handle paths become ordinary reads and writes), ` +
+          `external_service (an object store; this column keeps the key) or drop (the content ` +
+          `is not migrated, on record).`,
+        options: [...EXTENDED_OBJECT_DISPOSITIONS.filestream.options],
+      });
+      flagged = true;
+    }
+    addNote(
+      `-- FILESTREAM column ${colRef}: the source stores the bytes on the filesystem. The ` +
+        `target column is an ordinary bytea and the extract must read the content itself ` +
+        `(decision '${fsKey}').`
+    );
+  }
+
+  // --- 1c) Storage attributes with no target form — notes, never DDL ------
+  if (column.isRowGuidCol === true) {
+    addNote(
+      `-- ROWGUIDCOL ${colRef}: a SQL Server storage attribute used by merge replication only. ` +
+        `It has no target equivalent and no effect on values; the uuid column itself migrates ` +
+        `unchanged.`
+    );
+  }
+  if (column.isSparse === true) {
+    addNote(
+      `-- SPARSE ${colRef}: a SQL Server NULL-storage optimisation, not a semantic. The target ` +
+        `column is a plain column — values and nullability are identical.`
+    );
+  }
+
   // --- 2) Collation hazard — a decision, never a silent default -----------
-  let flagged = false;
-  if (column.collationCaseInsensitive) {
+  if (isMssql && column.collationCaseInsensitive) {
+    // Pack-WIDE posture (Spec 5.4 / owner ruling 5): on an estate whose
+    // default collation is case-insensitive EVERY string column is affected,
+    // so one decision governs them all. The decision itself is raised once,
+    // by the caller; here each affected column is recorded and emitted
+    // according to the resolved posture (or flagged while it is open).
+    ctx.collationAffected.push(colRef);
+    if (ctx.collationPosture === 'citext') {
+      if (isCitextReplaceable(postgresType ?? '')) {
+        const width = charWidthOf(postgresType ?? '');
+        postgresType = 'citext';
+        ctx.extensions.add('citext');
+        if (width !== null) {
+          // citext is VARIABLE length: the blank-padded width a char(n)
+          // column guaranteed would be lost silently without this CHECK.
+          const checkName = `${table.tableName}_${column.columnName}_len_chk`.slice(0, 63);
+          ctx.extraConstraints.set(tableRef, [
+            ...(ctx.extraConstraints.get(tableRef) ?? []),
+            `    CONSTRAINT ${quoteIdent(checkName)} CHECK (length(${quoteIdent(column.columnName)}) <= ${width})`,
+          ]);
+          collationNotes.push(
+            `${colRef}: char(${width}) -> citext + a length CHECK (citext is variable-length, so ` +
+              `the declared width is preserved by the constraint rather than by the type).`
+          );
+        } else {
+          collationNotes.push(
+            `${colRef}: citext per the pack-wide collation posture (case-insensitive equality, ` +
+              `uniqueness, LIKE and index behaviour all preserved).`
+          );
+        }
+      } else {
+        collationNotes.push(
+          `${colRef}: case-insensitive at source but mapped to ${postgresType} — not a character ` +
+            `type citext can replace; comparison semantics are unchanged by the posture.`
+        );
+      }
+    } else if (ctx.collationPosture === 'icu_nondeterministic') {
+      collationNotes.push(
+        `${colRef}: COLLATE "${ICU_COLLATION_NAME}" per the pack-wide collation posture. ` +
+          ICU_COLLATION_RESTRICTION_NOTE
+      );
+    } else if (ctx.collationPosture === 'accept_case_sensitive_change') {
+      collationNotes.push(
+        `${colRef}: case-SENSITIVE change ACCEPTED by the pack-wide collation posture.`
+      );
+    } else {
+      decisionKeys.push(PACK_COLLATION_DECISION_KEY);
+      flagged = true;
+    }
+  } else if (column.collationCaseInsensitive) {
     const collationKey = `collation--${colRef}`;
     const resolution = ir.resolvedDecisions[collationKey];
     const option = typeof resolution?.['option'] === 'string' ? (resolution['option'] as string) : null;
@@ -390,6 +603,39 @@ function translateColumn(
   for (const k of seedKeys) decisionKeys.push(k);
   if (seedKeys.length > 0) flagged = true;
 
+  // --- 6) Engine-shaped emission detail (Spec 5.3) ------------------------
+  // A NON-persisted source computed column is evaluated on READ at source;
+  // PostgreSQL 18 VIRTUAL generated columns are the exact equivalent, and a
+  // STORED column would silently change WHEN the expression is evaluated.
+  const generationStorage: 'STORED' | 'VIRTUAL' | undefined = generationExpression
+    ? column.computedPersisted === false
+      ? 'VIRTUAL'
+      : 'STORED'
+    : undefined;
+  // IDENTITY(seed, increment) -> GENERATED BY DEFAULT AS IDENTITY (START
+  // WITH seed INCREMENT BY inc). BY DEFAULT (not ALWAYS) on SQL Server
+  // because SET IDENTITY_INSERT loads are routine there and the target must
+  // accept the source ids without an OVERRIDING clause on every statement.
+  let identityClause: string | null = null;
+  if (isMssql && column.isIdentity) {
+    const seed = column.identitySeed;
+    const increment = column.identityIncrement;
+    const detail =
+      seed || increment
+        ? ` (${[
+            seed ? `START WITH ${seed}` : null,
+            increment ? `INCREMENT BY ${increment}` : null,
+          ]
+            .filter((p) => p !== null)
+            .join(' ')})`
+        : '';
+    identityClause = `GENERATED BY DEFAULT AS IDENTITY${detail}`;
+  }
+  const collate =
+    isMssql && column.collationCaseInsensitive && ctx.collationPosture === 'icu_nondeterministic'
+      ? ICU_COLLATION_NAME
+      : null;
+
   return {
     column,
     emitted: {
@@ -399,6 +645,9 @@ function translateColumn(
       isIdentity: column.isIdentity,
       defaultExpression,
       generationExpression,
+      ...(generationStorage ? { generationStorage } : {}),
+      ...(identityClause ? { identityClause } : {}),
+      ...(collate ? { collate } : {}),
     },
     omitted: null,
     skippedNote: null,
@@ -694,6 +943,58 @@ export function buildDbMigrationPackArtifacts(
   const decisions: PackDecision[] = [];
   const coverage: CoverageEntry[] = [];
   const collationNotes: string[] = [];
+  const engine = String(ir.sourceEngine ?? '').toLowerCase();
+
+  // The pair ruleset is DATA: rule IDs are looked up by divergence_class, so
+  // the emitted citations follow whichever pair the pack was generated for
+  // and no rule-id prefix is ever spelled in code. A pack with no resolvable
+  // ruleset simply carries no citations (honest, never invented).
+  const ruleset = rulesetForManifest(
+    { pair_id: ir.pairId, source_engine: ir.sourceEngine, target_engine: ir.targetEngine },
+    () => null,
+  );
+  const ruleCite = ruleCiteFor(ruleset);
+
+  // --- pack-wide collation posture (Spec 5.4, owner ruling 5) -------------
+  // ONE decision for the whole pack: on an estate whose default collation is
+  // case-insensitive, every string column relies on it, so a per-column
+  // question would be thousands of identical questions.
+  const caseInsensitiveColumns = ir.tables
+    .flatMap((t) => t.columns)
+    .filter((c) => c.collationCaseInsensitive === true);
+  const collationResolution = ir.resolvedDecisions[PACK_COLLATION_DECISION_KEY];
+  const collationPosture =
+    collationResolution && typeof collationResolution['option'] === 'string'
+      ? (collationResolution['option'] as string)
+      : null;
+  if (engine === 'mssql' && caseInsensitiveColumns.length > 0 && collationPosture === null) {
+    const cite = ruleCite('collation_case');
+    decisions.push({
+      decisionKey: PACK_COLLATION_DECISION_KEY,
+      objectRef: 'database',
+      category: 'collation',
+      question:
+        packCollationDecisionQuestion({
+          databaseCollation:
+            ir.databaseCollation ?? caseInsensitiveColumns[0]?.databaseCollation ?? null,
+          affectedColumnCount: caseInsensitiveColumns.length,
+        }) +
+        ` The recommended resolution is ${PACK_COLLATION_DEFAULT_OPTION}.` +
+        (cite ? ` See ${cite}.` : ''),
+      options: [...PACK_COLLATION_OPTIONS],
+    });
+  }
+
+  const translationCtx: ColumnTranslationContext = {
+    engine,
+    collationPosture,
+    collationAffected: [],
+    precisionLoss: [],
+    extensions: new Set<string>(),
+    extraConstraints: new Map<string, string[]>(),
+    extraNotes: new Map<string, string[]>(),
+    ruleCite,
+  };
 
   // --- sequences-seed first: identity seed decisions flag their columns ---
   const { statements: seedStatements, seedDecisionKeysByColumn } = buildSequenceSeeds(
@@ -750,7 +1051,19 @@ export function buildDbMigrationPackArtifacts(
   // `relation "deal_book_ak1" already exists` on the first clean apply (the
   // live 2026-08-06 schema-apply halt). Resolve ONCE across all emitted
   // tables; colliders rename deterministically to <table>_<name>.
-  const relationNames = resolveRelationNames(realTables);
+  const relationNames = resolveRelationNames(realTables, engine);
+
+  // --- item-5 objects with no like-for-like target shape (Spec 5.5) -------
+  // Each raises its decision while unresolved and yields the outcome rows the
+  // manifest + translation queue consume. Nothing here is manual residue:
+  // every option is actionable and the OUT-by-ruling shapes carry their named
+  // untranslatable reason.
+  const extendedOutcome = buildExtendedObjectOutcomes({
+    extendedObjects: ir.extendedObjects ?? [],
+    resolvedDecisions: ir.resolvedDecisions,
+    ruleCite,
+  });
+  for (const d of extendedOutcome.decisions) decisions.push(d);
 
   // --- per-table translation + structural changesets ----------------------
   const files: PackFile[] = [];
@@ -760,6 +1073,8 @@ export function buildDbMigrationPackArtifacts(
   };
 
   const emittedTableNames = new Set<string>();
+  /** Table-level item-5 decision keys, folded into the table's coverage row. */
+  const tableDecisionKeysExtra = new Map<string, string[]>();
   const emittedColumnsByTable = new Map<string, EmittableColumn[]>();
   const translatedByTable = new Map<string, TranslatedColumn[]>();
   const tableChangesets: Array<{ path: string; content: string }> = [];
@@ -799,7 +1114,7 @@ export function buildDbMigrationPackArtifacts(
   for (const table of orderedTables) {
     const qn = qualifiedName(table.schemaName, table.tableName);
     const translated = table.columns.map((c) =>
-      translateColumn(table, c, ir, decisions, collationNotes, seedDecisionKeysByColumn)
+      translateColumn(table, c, ir, decisions, collationNotes, seedDecisionKeysByColumn, translationCtx)
     );
     translatedByTable.set(qn, translated);
     for (const t of translated) coverage.push(t.coverage);
@@ -840,6 +1155,42 @@ export function buildDbMigrationPackArtifacts(
       }
     }
 
+    // --- item-5 TABLE shapes (Spec 5.5) ------------------------------------
+    const tableNotes: string[] = [];
+    if (table.memoryOptimized === true) {
+      const moKey = `memory_optimized_table--${qn}`;
+      const moOption = optionOf(ir, moKey);
+      if (moOption === null) {
+        decisions.push({
+          decisionKey: moKey,
+          objectRef: qn,
+          category: 'memory_optimized_table',
+          question:
+            `Table ${qn} is MEMORY_OPTIMIZED (In-Memory OLTP) at source. PostgreSQL has no ` +
+            `equivalent storage engine, so it migrates as an ordinary heap table: the VALUES and ` +
+            `the constraints are identical, but the latency profile and the lock-free ` +
+            `(optimistic multi-version) concurrency semantics are not. Choose ` +
+            `accept_plain_table (RECOMMENDED — the table migrates as a plain table and the ` +
+            `workload is re-measured on the target) or exclude_from_migration (tag the table ` +
+            `excluded in the migration scope; it is then not migrated at all, on record).`,
+          options: ['accept_plain_table', 'exclude_from_migration'],
+        });
+        tableDecisionKeysExtra.set(qn, [...(tableDecisionKeysExtra.get(qn) ?? []), moKey]);
+      }
+      tableNotes.push(
+        `-- MEMORY_OPTIMIZED at source: emitted as an ordinary heap table (decision '${moKey}'). ` +
+          `Values and constraints are identical; the latency profile and the lock-free ` +
+          `concurrency semantics are not.`
+      );
+    }
+    if (table.temporal?.temporalType === 'history') {
+      tableNotes.push(
+        `-- TEMPORAL HISTORY table: this is the history half of a system-versioned pair. Its ` +
+          `rows are LOADED like any other table's, and the versioning emulation in ` +
+          `${EMULATIONS_CHANGESET_PATH} writes new versions into it — it is never re-derived.`
+      );
+    }
+
     tableChangesets.push({
       path: tableChangesetPath(table),
       content: emitTableChangeset({
@@ -849,15 +1200,20 @@ export function buildDbMigrationPackArtifacts(
         skipped: translated.filter((t) => t.skippedNote !== null).map((t) => t.skippedNote!),
         relationNames,
         resolvedDecisions: ir.resolvedDecisions,
+        extraConstraints: translationCtx.extraConstraints.get(qn) ?? [],
+        extraNotes: [...(translationCtx.extraNotes.get(qn) ?? []), ...tableNotes],
       }),
     });
 
     // --- delta-key detection (Q5a) + table-level coverage ------------------
     const deltaKey = `delta_key--${qn}`;
-    const detection = detectDeltaKey(table);
+    const detection = detectDeltaKey(table, engine);
     const strategy = resolveDeltaStrategy(table, detection, ir.resolvedDecisions[deltaKey]);
     deltaStrategies.push(strategy);
-    const tableDecisionKeys: string[] = [...keyDecisionKeys];
+    const tableDecisionKeys: string[] = [
+      ...keyDecisionKeys,
+      ...(tableDecisionKeysExtra.get(qn) ?? []),
+    ];
     if (strategy.strategy === 'needs_decision') {
       decisions.push(deltaKeyDecision(table));
       tableDecisionKeys.push(deltaKey);
@@ -892,6 +1248,32 @@ export function buildDbMigrationPackArtifacts(
     }
   }
 
+  // --- item-5 objects → the SAME translation queue (Spec 5.5) -------------
+  // A synonym becomes a view, a table type becomes a composite type, and the
+  // shapes that are never ATTEMPTED (CLR, Service Broker, the OUT-by-ruling
+  // items) are queued with their NAMED untranslatable reason so the
+  // workbench shows them for what they are rather than parking them as a
+  // silent needs_manual. Nothing here is manual residue.
+  for (const outcome of extendedOutcome.outcomes) {
+    if (!outcome.translationKind) continue;
+    const existing = requiresTranslation.find(
+      (r) => r.kind === outcome.translationKind && r.object_ref === outcome.objectRef
+    );
+    if (existing) {
+      existing.finding_ids.push(...outcome.findingIds);
+      continue;
+    }
+    requiresTranslation.push({
+      kind: outcome.translationKind,
+      object_ref: outcome.objectRef,
+      finding_ids: [...outcome.findingIds],
+      ...(outcome.sourceBody ? { source_body: outcome.sourceBody } : {}),
+      ...(outcome.untranslatableReason
+        ? { untranslatable_reason: outcome.untranslatableReason }
+        : {}),
+    });
+  }
+
   // --- non-portable CHECK constraints → translation queue (2026-08-07) ----
   // The table changesets SKIP checks whose expressions the deterministic
   // translator refuses; each one used to end as a "translate manually and
@@ -916,8 +1298,212 @@ export function buildDbMigrationPackArtifacts(
   }
 
   // --- consolidated changesets ---------------------------------------------
+  // --- item-5 emulations the pack BUILDS (Spec 5.5) -----------------------
+  const emulationRows: NonNullable<PackManifest['emulations']> = [];
+  const temporalEmulations: TemporalEmulation[] = [];
+  const fullTextEmulations: FullTextEmulation[] = [];
+  const emittedTableSet = new Set(
+    orderedTables.map((t) => qualifiedName(t.schemaName, t.tableName).toLowerCase()),
+  );
+  for (const table of orderedTables) {
+    const qn = qualifiedName(table.schemaName, table.tableName);
+    // TEMPORAL: only the CURRENT half drives an emulation — the history half
+    // is an ordinary loaded table that the trigger writes into.
+    if (table.temporal && table.temporal.temporalType !== 'history') {
+      const key = `temporal_table--${qn}`;
+      const option = optionOf(ir, key) ?? 'emulate_history_table';
+      if (optionOf(ir, key) === null) {
+        const cite = ruleCite('temporal_table');
+        decisions.push({
+          decisionKey: key,
+          objectRef: qn,
+          category: 'temporal_table',
+          question:
+            `Table ${qn} is SYSTEM_VERSIONED (temporal) at source: the engine maintains a full ` +
+            `row history and FOR SYSTEM_TIME queries read it. PostgreSQL has no SYSTEM_VERSIONING ` +
+            `clause. Choose emulate_history_table (RECOMMENDED — the pack BUILDS the emulation: a ` +
+            `history table, a BEFORE trigger that stamps the period columns and an AFTER ` +
+            `UPDATE/DELETE trigger that archives the superseded version, plus the FOR SYSTEM_TIME ` +
+            `rewrite guidance the translation queue applies), drop_history (only the CURRENT rows ` +
+            `migrate — the history is NOT carried, on record) or application_managed (the ` +
+            `application writes its own versions; the pack emits no triggers).`,
+          options: ['emulate_history_table', 'drop_history', 'application_managed'],
+        });
+        const existing = coverage.find((c) => c.objectType === 'table' && c.objectRef === qn);
+        if (existing) {
+          existing.disposition = 'flagged';
+          existing.decisionKeys = [...(existing.decisionKeys ?? []), key];
+        }
+      }
+      if (option === 'emulate_history_table') {
+        const periodStart = table.temporal.periodStartColumn ?? 'valid_from';
+        const periodEnd = table.temporal.periodEndColumn ?? 'valid_to';
+        const history = table.temporal.historyTable
+          ? parseObjectRef(table.temporal.historyTable, table.schemaName)
+          : { schemaName: table.schemaName, tableName: `${table.tableName}_history` };
+        const historyMigrated = emittedTableSet.has(
+          `${history.schemaName}.${history.tableName}`.toLowerCase(),
+        );
+        const baseColumns = emittedColumnsByTable.get(qn) ?? [];
+        const historyColumns: EmittableColumn[] = baseColumns
+          // A history row is a plain archived copy: no identity, no generated
+          // columns (their expressions are re-evaluated per row at source).
+          .map((c) => ({
+            columnName: c.columnName,
+            postgresType: c.postgresType,
+            isNullable: true,
+            isIdentity: false,
+            defaultExpression: null,
+            generationExpression: null,
+          }));
+        for (const period of [periodStart, periodEnd]) {
+          if (!historyColumns.some((c) => c.columnName.toLowerCase() === period.toLowerCase())) {
+            historyColumns.push({
+              columnName: period,
+              postgresType: 'timestamptz',
+              isNullable: true,
+              isIdentity: false,
+              defaultExpression: null,
+              generationExpression: null,
+            });
+          }
+        }
+        temporalEmulations.push({
+          schemaName: table.schemaName,
+          tableName: table.tableName,
+          historySchema: history.schemaName,
+          historyTable: history.tableName,
+          historyTableMigrated: historyMigrated,
+          periodStartColumn: periodStart,
+          periodEndColumn: periodEnd,
+          historyColumns,
+          decisionKey: key,
+        });
+        emulationRows.push({
+          kind: 'temporal_table',
+          object_ref: qn,
+          decision_key: key,
+          option,
+          file_path: EMULATIONS_CHANGESET_PATH,
+          note:
+            `History table ${history.schemaName}.${history.tableName} (` +
+            `${historyMigrated ? 'the migrated source history table' : 'created by the pack'}), ` +
+            `period columns ${periodStart}/${periodEnd}, trigger pair installed.`,
+        });
+      } else {
+        emulationRows.push({
+          kind: 'temporal_table',
+          object_ref: qn,
+          decision_key: key,
+          option,
+          file_path: null,
+          note:
+            option === 'drop_history'
+              ? 'Only the CURRENT rows migrate; the row history is NOT carried (resolved decision).'
+              : 'Versioning is application-managed; the pack emits no triggers (resolved decision).',
+        });
+      }
+    }
+    // FULL-TEXT: a tsvector + GIN emulation per source full-text index.
+    for (const ft of table.fullTextIndexes ?? []) {
+      const key = `fulltext_index--${qn}`;
+      const resolvedOption = optionOf(ir, key);
+      const option = resolvedOption ?? 'tsvector_gin';
+      if (resolvedOption === null) {
+        const cite = ruleCite('fulltext');
+        decisions.push({
+          decisionKey: key,
+          objectRef: `${qn}.${ft.name}`,
+          category: 'fulltext_index',
+          question:
+            `Table ${qn} carries the FULL-TEXT index '${ft.name}'` +
+            (ft.columns.length > 0 ? ` over ${ft.columns.join(', ')}` : '') +
+            `. PostgreSQL has no full-text INDEX type, but it has full-text SEARCH: choose ` +
+            `tsvector_gin (RECOMMENDED — the pack BUILDS a generated tsvector column plus a GIN ` +
+            `index, and CONTAINS / FREETEXT predicates are rewritten to to_tsquery / ` +
+            `plainto_tsquery; ranking and stemming differ, so result ORDER is advisory) or ` +
+            `drop_index (full-text search is not reproduced on the target, on record). Set ` +
+            `resolution_json.text_search_config to pick a configuration other than 'english'.`,
+          options: ['tsvector_gin', 'drop_index'],
+        });
+        const existing = coverage.find((c) => c.objectType === 'table' && c.objectRef === qn);
+        if (existing) {
+          existing.disposition = 'flagged';
+          existing.decisionKeys = [...(existing.decisionKeys ?? []), key];
+        }
+      }
+      if (option !== 'tsvector_gin' || ft.columns.length === 0) {
+        emulationRows.push({
+          kind: 'fulltext_index',
+          object_ref: `${qn}.${ft.name}`,
+          decision_key: key,
+          option,
+          file_path: null,
+          note:
+            ft.columns.length === 0
+              ? 'The scan did not report the indexed columns, so no tsvector expression could be built deterministically; resolve the decision naming them.'
+              : 'Full-text search is NOT reproduced on the target (resolved decision).',
+        });
+        continue;
+      }
+      const resolution = ir.resolvedDecisions[key];
+      const config =
+        resolution && typeof resolution['text_search_config'] === 'string'
+          ? (resolution['text_search_config'] as string)
+          : 'english';
+      const tsvColumn = `${ft.name}_tsv`.slice(0, 63);
+      fullTextEmulations.push({
+        schemaName: table.schemaName,
+        tableName: table.tableName,
+        indexName: ft.name,
+        tsvColumn,
+        columns: ft.columns,
+        textSearchConfig: config,
+        decisionKey: key,
+      });
+      emulationRows.push({
+        kind: 'fulltext_index',
+        object_ref: `${qn}.${ft.name}`,
+        decision_key: key,
+        option,
+        file_path: EMULATIONS_CHANGESET_PATH,
+        note:
+          `Generated tsvector column ${tsvColumn} (configuration '${config}') + GIN index over ` +
+          `${ft.columns.join(', ')}.`,
+      });
+    }
+  }
+  const hasEmulations = temporalEmulations.length > 0 || fullTextEmulations.length > 0;
+
   const schemas = [...new Set(orderedTables.map((t) => t.schemaName))];
-  const schemasContent = emitSchemasChangeset(schemas);
+  // The ICU posture needs its collation to exist before any column declares
+  // it, so it rides the 000 prologue alongside the required extensions.
+  if (collationPosture === 'icu_nondeterministic' && caseInsensitiveColumns.length > 0) {
+    collationNotes.push(ICU_COLLATION_RESTRICTION_NOTE);
+  }
+  // NATIVE standalone sequences (Spec 5.3). A sequence the source declares in
+  // its own right — SQL Server `CREATE SEQUENCE`, not an identity column —
+  // would otherwise be silently dropped: no identity column owns it, so the
+  // seed pass never sees it. It is created with its FULL generation detail in
+  // the structural prologue and reseeded post-load like any other. Gated to
+  // engines that HAVE native sequences: on ASE a sequence with no owning
+  // column is the sequence-TABLE idiom, which has its own decision path.
+  const standaloneSequences =
+    engine === 'mssql'
+      ? ir.sequences.filter((s) => !s.ownedByTable || !s.ownedByColumn)
+      : [];
+  const schemasContent = emitSchemasChangeset(schemas, {
+    trailingStatements: standaloneSequences.map((s) => emitStandaloneSequenceDdl(s)),
+    extensions: [...translationCtx.extensions],
+    statements:
+      collationPosture === 'icu_nondeterministic' && caseInsensitiveColumns.length > 0
+        ? [ICU_COLLATION_DDL]
+        : [],
+    notes:
+      collationPosture === 'icu_nondeterministic' && caseInsensitiveColumns.length > 0
+        ? [ICU_COLLATION_RESTRICTION_NOTE]
+        : [],
+  });
   // Structural accounting hoisted (2026-08-30): the FK emitter's empty-file
   // banner names how many relationships carry no join metadata.
   const structuralAccounting = ir.structuralAccounting ?? accountingFromIr(ir);
@@ -935,12 +1521,50 @@ export function buildDbMigrationPackArtifacts(
     tables: orderedTables,
     emittedTables: emittedTableNames,
     relationNames,
+    engine,
+    resolvedDecisions: ir.resolvedDecisions,
+    ruleCite,
   });
+  for (const d of indexResult.decisions) decisions.push(d);
+  for (const s of standaloneSequences) {
+    const ref = `${s.schemaName}.${s.sequenceName}`;
+    seedStatements.push(
+      s.currentValueAvailable && s.currentValue !== null
+        ? {
+            objectRef: ref,
+            sql:
+              `SELECT setval('${quotedQualifiedName(s.schemaName, s.sequenceName).replace(/'/g, "''")}', ` +
+              `${(BigInt(s.currentValue) + BigInt(seedMargin)).toString()}, false);`,
+            note: `native sequence reseeded from its captured high-water mark + the seed margin.`,
+          }
+        : {
+            objectRef: ref,
+            sql: null,
+            note:
+              `native sequence ${ref}: NO high-water mark was captured, so no reseed is ` +
+              `emitted — it restarts at its declared START WITH, which will re-issue values ` +
+              `the source already handed out. Capture the current value (or set it manually at ` +
+              `swap-over) before the cutover.`,
+          },
+    );
+  }
   const seedContent = emitSequencesSeedChangeset({ statements: seedStatements, seedMargin });
+
+  const emulationsContent = hasEmulations
+    ? emitEmulationsChangeset({
+        temporal: temporalEmulations,
+        fullText: fullTextEmulations,
+        ruleCite,
+      })
+    : null;
 
   const orderedChangesetPaths = [
     SCHEMAS_CHANGESET_PATH,
     ...tableChangesets.map((t) => t.path),
+    // The emulations ALTER the tables they follow and CREATE history tables
+    // that the bulk load fills, so they belong with the structural phase,
+    // immediately after the tables and before the post-load changesets.
+    ...(emulationsContent !== null ? [EMULATIONS_CHANGESET_PATH] : []),
     FOREIGN_KEYS_CHANGESET_PATH,
     INDEXES_CHANGESET_PATH,
     SEQUENCES_SEED_CHANGESET_PATH,
@@ -949,6 +1573,9 @@ export function buildDbMigrationPackArtifacts(
   push(MASTER_CHANGELOG_PATH, 'liquibase_master', emitMasterChangelog(orderedChangesetPaths));
   push(SCHEMAS_CHANGESET_PATH, 'liquibase_changeset', schemasContent);
   for (const t of tableChangesets) push(t.path, 'liquibase_changeset', t.content);
+  if (emulationsContent !== null) {
+    push(EMULATIONS_CHANGESET_PATH, 'liquibase_changeset', emulationsContent);
+  }
   push(FOREIGN_KEYS_CHANGESET_PATH, 'liquibase_changeset', fkContent);
   push(INDEXES_CHANGESET_PATH, 'liquibase_changeset', indexResult.content);
   push(SEQUENCES_SEED_CHANGESET_PATH, 'liquibase_changeset', seedContent);
@@ -969,7 +1596,7 @@ export function buildDbMigrationPackArtifacts(
     const qn = qualifiedName(table.schemaName, table.tableName);
     const translated = translatedByTable.get(qn) ?? [];
     const loadableColumns = translated.filter((t) => t.emitted !== null).map((t) => t.column);
-    const plans = planBulkColumns(loadableColumns);
+    const plans = planBulkColumns(loadableColumns, engine);
     if (table.estimatedRowCount !== null) expectedRowCounts[qn] = table.estimatedRowCount;
     const notes = plans.filter((p) => p.castNote).map((p) => `${p.columnName}: ${p.castNote}`);
     if (notes.length > 0) castNotes[qn] = notes;
@@ -981,6 +1608,7 @@ export function buildDbMigrationPackArtifacts(
         columns: plans,
         positionInOrder: position,
         totalTables: orderedTables.length,
+        engine,
       })
     );
   });
@@ -997,9 +1625,15 @@ export function buildDbMigrationPackArtifacts(
     const strategy = deltaStrategies.find((d) => d.table === qn)!;
     const translated = translatedByTable.get(qn) ?? [];
     const plans = planBulkColumns(
-      translated.filter((t) => t.emitted !== null).map((t) => t.column)
+      translated.filter((t) => t.emitted !== null).map((t) => t.column),
+      engine
     );
-    const script = emitIncrementalScript({ table, strategy, columns: plans });
+    const script = emitIncrementalScript({
+      table,
+      strategy,
+      columns: plans,
+      engine,
+    });
     if (script !== null) {
       push(incrementalScriptPath(table), 'incremental_script', script);
     }
@@ -1016,7 +1650,11 @@ export function buildDbMigrationPackArtifacts(
   push(
     RECONCILIATION_SQL_PATH,
     'reconciliation_script',
-    emitReconciliationSql({ tableOrder, strategies: deltaStrategies })
+    emitReconciliationSql({
+      tableOrder,
+      strategies: deltaStrategies,
+      engine,
+    })
   );
   push(RECONCILIATION_REPORT_PATH, 'reconciliation_script', emitReconciliationReportBuilder());
   push(
@@ -1134,6 +1772,10 @@ export function buildDbMigrationPackArtifacts(
     })),
     cycle_breaks: cycleBreaks,
     cluster_notes: indexResult.clusterNotes,
+    // Index-shaped engine differences the emitter resolved or noted
+    // (columnstore dropped to b-tree, a DISABLED source index emitted,
+    // a typed index mapped to GIN/GiST). Visible accounting, never silent.
+    index_notes: indexResult.notes,
     // Schema-scoped relation renames (2026-08-06): PK/UNIQUE/index names that
     // collided within their schema's relation namespace and were renamed
     // <table>_<name>. Provenance for constraints_metadata consumers.
@@ -1145,6 +1787,28 @@ export function buildDbMigrationPackArtifacts(
       to: r.to,
     })),
     collation_notes: collationNotes,
+    // The comparator enables `collation-case` on EXACTLY these columns
+    // (Spec 5.4) — never estate-wide, never guessed.
+    collation_affected_columns: [...new Set(translationCtx.collationAffected)].sort(),
+    collation_posture: collationPosture,
+    // Sub-microsecond source precision the target cannot hold: the loader
+    // TRUNCATES the 7th fractional digit and the pair rule governs parity.
+    precision_loss_columns: [...translationCtx.precisionLoss].sort((a, b) =>
+      a.column.localeCompare(b.column),
+    ),
+    // A loud runbook prerequisite: the target must carry these extensions
+    // before the structural changesets can apply.
+    target_extensions_required: [...translationCtx.extensions].sort(),
+    emulations: emulationRows.sort(
+      (a, b) => a.kind.localeCompare(b.kind) || a.object_ref.localeCompare(b.object_ref),
+    ),
+    extended_objects: extendedOutcome.outcomes.map((o) => ({
+      kind: o.kind,
+      object_ref: o.objectRef,
+      decision_key: o.decisionKey,
+      untranslatable_reason: o.untranslatableReason,
+      note: o.note,
+    })),
     delta_strategies: deltaStrategies,
     bulk_load: {
       table_order: tableOrder,

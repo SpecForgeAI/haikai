@@ -77,10 +77,28 @@ const TIMESTAMP_NAME_FAMILY = new Set([
   'rowupdatets',
 ]);
 
-const DATETIME_FAMILY_BASES = new Set(['datetime', 'smalldatetime', 'bigdatetime']);
+/**
+ * Datetime-family base types PER ENGINE (Spec 5.6). The delta-key heuristic
+ * and the extract-expression planner both read this, so an engine whose
+ * `updated_at` column is a `datetime2` must list it or the column would not
+ * be recognised as a timestamp at all.
+ */
+const DATETIME_FAMILY_BASES_BY_ENGINE: Record<string, ReadonlySet<string>> = {
+  sybase: new Set(['datetime', 'smalldatetime', 'bigdatetime']),
+  mssql: new Set(['datetime', 'smalldatetime', 'datetime2', 'datetimeoffset']),
+};
 
-function isDatetimeFamily(column: IrColumn): boolean {
-  return DATETIME_FAMILY_BASES.has(parseSourceType(column.dataType).base);
+/** The ASE family stays the default for any engine without its own row. */
+const DATETIME_FAMILY_BASES = DATETIME_FAMILY_BASES_BY_ENGINE.sybase;
+
+export function datetimeFamilyBases(engine?: string): ReadonlySet<string> {
+  return (
+    DATETIME_FAMILY_BASES_BY_ENGINE[String(engine ?? '').toLowerCase()] ?? DATETIME_FAMILY_BASES
+  );
+}
+
+function isDatetimeFamily(column: IrColumn, engine?: string): boolean {
+  return datetimeFamilyBases(engine).has(parseSourceType(column.dataType).base);
 }
 
 function isTimestampNameMatch(column: IrColumn): boolean {
@@ -99,7 +117,7 @@ export interface DeltaKeyDetection {
  * timestamp-name heuristic when both exist. Ties inside a class resolve by
  * ordinal position then name (deterministic).
  */
-export function detectDeltaKey(table: IrTable): DeltaKeyDetection {
+export function detectDeltaKey(table: IrTable, engine?: string): DeltaKeyDetection {
   const sorted = [...table.columns].sort(
     (a, b) => (a.ordinalPosition ?? 0) - (b.ordinalPosition ?? 0) ||
       a.columnName.localeCompare(b.columnName)
@@ -111,7 +129,7 @@ export function detectDeltaKey(table: IrTable): DeltaKeyDetection {
   if (identity) {
     return { strategy: 'insert_only', deltaKey: identity.columnName, source: 'identity_column' };
   }
-  const timestamp = sorted.find((c) => isTimestampNameMatch(c) && isDatetimeFamily(c));
+  const timestamp = sorted.find((c) => isTimestampNameMatch(c) && isDatetimeFamily(c, engine));
   if (timestamp) {
     return {
       strategy: 'insert_update',
@@ -189,7 +207,7 @@ export function bulkScriptPath(table: IrTable, position: number): string {
 
 export interface BulkColumnPlan {
   columnName: string;
-  /** The Sybase-side extract expression (cast-aligned to the v1 mapping). */
+  /** The SOURCE-side extract expression (cast-aligned to the type mapping). */
   extractExpression: string;
   /** Excluded from the COPY column list (Postgres computes generated columns). */
   excludedAsGenerated: boolean;
@@ -203,17 +221,21 @@ export interface BulkColumnPlan {
  * (open needs_decision) or dropped never reach the plan — the caller passes
  * only the columns that were actually emitted in the DDL.
  */
-export function planBulkColumns(columns: IrColumn[]): BulkColumnPlan[] {
+export function planBulkColumns(columns: IrColumn[], engine?: string): BulkColumnPlan[] {
+  const engineKey = String(engine ?? 'sybase').toLowerCase();
+  const datetimeBases = datetimeFamilyBases(engineKey);
   return columns.map((c) => {
-    const mapping = mapSourceType(c);
+    const mapping = mapSourceType(engineKey, c);
     const base = parseSourceType(c.dataType).base;
     let extractExpression = c.columnName;
     let castNote: string | null = null;
     if (mapping.kind === 'mapped') {
       castNote = mapping.castNote;
-      if (base === 'money' || base === 'smallmoney') {
+      if (engineKey === 'mssql') {
+        extractExpression = mssqlExtractExpression(c, base, mapping.postgresType, datetimeBases);
+      } else if (base === 'money' || base === 'smallmoney') {
         extractExpression = `convert(${mapping.postgresType}, ${c.columnName}) AS ${c.columnName}`;
-      } else if (DATETIME_FAMILY_BASES.has(base)) {
+      } else if (datetimeBases.has(base)) {
         extractExpression = `convert(char(23), ${c.columnName}, 23) AS ${c.columnName}`;
       } else if (base === 'bit') {
         extractExpression = `${c.columnName} /* 0/1 -> boolean */`;
@@ -238,6 +260,64 @@ export function planBulkColumns(columns: IrColumn[]): BulkColumnPlan[] {
 }
 
 /**
+ * SQL Server extract expressions (Spec 5.6). Every one of these renders the
+ * value in EXACTLY the canonical text form the AMVS sidecar wire produces, so
+ * a manual bcp/sqlcmd extract and the tool-driven load are byte-identical:
+ *
+ *   money/smallmoney  CONVERT(numeric(19,4), c)       fixed 4-decimal scale
+ *   datetime family   CONVERT(varchar(27), c, 121)    ODBC canonical, full fraction
+ *   datetimeoffset    CONVERT(varchar(34), c, 127)    ISO 8601 with the offset
+ *   binary family     '\x' + LOWER(CONVERT(varchar(max), c, 2))   PG bytea hex
+ *   bit               CAST(c AS int)                  0/1 COPY literals
+ *   uniqueidentifier  LOWER(CONVERT(char(36), c))     PG renders uuid lowercase
+ *   xml               CONVERT(nvarchar(max), c)       the document as text
+ *   geography/geometry c.STAsText() + c.STSrid        WKT + SRID for ST_GeomFromText
+ *   hierarchyid       c.ToString()                    the '/1/2/' path form
+ */
+function mssqlExtractExpression(
+  c: IrColumn,
+  base: string,
+  postgresType: string,
+  datetimeBases: ReadonlySet<string>,
+): string {
+  const col = c.columnName;
+  if (base === 'money' || base === 'smallmoney') {
+    return `CONVERT(${postgresType}, ${col}) AS ${col}`;
+  }
+  if (base === 'datetimeoffset') {
+    return `CONVERT(varchar(34), ${col}, 127) AS ${col}`;
+  }
+  if (datetimeBases.has(base) || base === 'time') {
+    return `CONVERT(varchar(27), ${col}, 121) AS ${col}`;
+  }
+  if (base === 'bit') {
+    return `CAST(${col} AS int) AS ${col} /* 0/1 -> boolean */`;
+  }
+  if (base === 'uniqueidentifier') {
+    return `LOWER(CONVERT(char(36), ${col})) AS ${col}`;
+  }
+  if (base === 'xml') {
+    return `CONVERT(nvarchar(max), ${col}) AS ${col}`;
+  }
+  if (base === 'geography' || base === 'geometry') {
+    return (
+      `${col}.STAsText() AS ${col}, ${col}.STSrid AS ${col}_srid ` +
+      `/* load with ST_GeomFromText(${col}, ${col}_srid) */`
+    );
+  }
+  if (base === 'hierarchyid') {
+    return `${col}.ToString() AS ${col} /* '/1/2/' path form -> ltree '1.2' */`;
+  }
+  if (base === 'binary' || base === 'varbinary' || base === 'image' || base === 'rowversion') {
+    return (
+      `'\\x' + LOWER(CONVERT(varchar(max), ${col}, 2)) AS ${col} ` +
+      `/* bytea hex form: matches the AMVS wire ('\\x' + lowercase hex) */`
+    );
+  }
+  return col;
+}
+
+/**
  * Emit one per-table bulk load script: the Sybase extract SELECT (cast
  * expressions aligned to the mapping table) + the Postgres
  * `COPY ... FROM STDIN` template. The pack DOCUMENTS the pipe; it never
@@ -250,8 +330,19 @@ export function emitBulkLoadScript(args: {
   columns: BulkColumnPlan[];
   positionInOrder: number;
   totalTables: number;
+  /** Source engine (Spec 5.6) — names the extract heading + the CLI guidance. */
+  engine?: string;
+  /** Display name for the source engine (from the pair ruleset). */
+  sourceDisplay?: string | null;
 }): string {
   const { table, columns } = args;
+  const engineKey = String(args.engine ?? 'sybase').toLowerCase();
+  const sourceLabel =
+    args.sourceDisplay ?? (engineKey === 'mssql' ? 'SQL Server' : 'Sybase');
+  const extractTool =
+    engineKey === 'mssql'
+      ? 'bcp (queryout, -c -t, -r\\n) or sqlcmd -W -s, — bcp is the bulk path; sqlcmd is fine for small tables'
+      : 'isql / bcp';
   const qn = qualifiedName(table.schemaName, table.tableName);
   const copyColumns = columns.filter((c) => !c.excludedAsGenerated);
   const identityColumns = columns.filter((c) => c.isIdentity).map((c) => c.columnName);
@@ -274,8 +365,11 @@ export function emitBulkLoadScript(args: {
     );
   }
   lines.push(`-- This pack documents the extract -> COPY pipe; it does NOT execute it.`);
+  lines.push(`-- Source-side extract tool: ${extractTool}.`);
   lines.push('');
-  lines.push(`-- 1) Sybase extract (run against the source; casts aligned to the v1 type mapping):`);
+  lines.push(
+    `-- 1) ${sourceLabel} extract (run against the source; casts aligned to the type mapping):`
+  );
   lines.push(`SELECT`);
   lines.push(copyColumns.map((c) => `    ${c.extractExpression}`).join(',\n'));
   lines.push(`FROM ${qn};`);
@@ -342,6 +436,10 @@ export function emitIncrementalScript(args: {
   strategy: DeltaStrategy;
   /** Columns actually emitted on the target (DDL-aligned). */
   columns: BulkColumnPlan[];
+  /** Source engine (Spec 5.6) — names the extract heading. */
+  engine?: string;
+  /** Display name for the source engine (from the pair ruleset). */
+  sourceDisplay?: string | null;
 }): string | null {
   const { table, strategy, columns } = args;
   const qn = qualifiedName(table.schemaName, table.tableName);
@@ -372,7 +470,7 @@ export function emitIncrementalScript(args: {
     return lines.join('\n') + '\n';
   }
 
-  lines.push(`-- 1) Sybase delta extract:`);
+  lines.push(`-- 1) ${args.sourceDisplay ?? (String(args.engine ?? 'sybase').toLowerCase() === 'mssql' ? 'SQL Server' : 'Sybase')} delta extract:`);
   lines.push(`SELECT`);
   lines.push(copyColumns.map((c) => `    ${c.extractExpression}`).join(',\n'));
   lines.push(`FROM ${qn}`);

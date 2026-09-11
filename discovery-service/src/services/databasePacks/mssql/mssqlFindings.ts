@@ -815,7 +815,17 @@ function emitColumnFeatureFindings(
         tableName: c.tableName,
         columnName: c.columnName,
         summary,
-        detailJson: { dataType: c.dataType, ...(detail ?? {}) },
+        // The STORAGE attributes ride every column-shaped finding (2026-09-11,
+        // Spec 5.1): the pack generator turns them into emitted notes, and
+        // carrying them here means the reviewer sees the full column picture
+        // on whichever hazard brought the column to their attention.
+        detailJson: {
+          dataType: c.dataType,
+          isRowGuidCol: c.isRowGuidCol,
+          isSparse: c.isSparse,
+          isPersistedComputed: c.isPersistedComputed,
+          ...(detail ?? {}),
+        },
       }),
     );
   };

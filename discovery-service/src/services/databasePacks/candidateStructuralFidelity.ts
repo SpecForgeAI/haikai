@@ -59,6 +59,15 @@ export interface ConstraintsIndexEntry {
    * e.g. `ASC` / `DESC NULLS FIRST`. Verbatim from the index DDL.
    */
   column_directions?: string[];
+  /**
+   * NON-KEY covering columns (`INCLUDE (...)`). Engine-neutral -- PostgreSQL
+   * and SQL Server both have the clause -- and additive into the existing
+   * free-form JSONB, so an engine that does not report it simply omits the
+   * key (2026-09-11, SQL Server pair programme).
+   */
+  include_columns?: string[];
+  /** TRUE when the engine reports the index as DISABLED (enforcing nothing). */
+  is_disabled?: boolean;
 }
 
 /**
@@ -69,7 +78,18 @@ export interface ConstraintsIndexEntry {
 export interface ConstraintsMetadata {
   primary_key: { name: string; columns: string[] } | null;
   unique_constraints: Array<{ name: string; columns: string[] }>;
-  check_constraints: Array<{ name: string; expression: string | null }>;
+  /**
+   * `is_not_trusted` (additive, 2026-09-11): the engine reports the check as
+   * never validated against the existing rows (SQL Server `WITH NOCHECK`).
+   * The migration emits such a constraint `NOT VALID` rather than failing the
+   * apply on data the source itself never checked.
+   */
+  check_constraints: Array<{
+    name: string;
+    expression: string | null;
+    is_disabled?: boolean;
+    is_not_trusted?: boolean;
+  }>;
   indexes: ConstraintsIndexEntry[];
 }
 
@@ -89,6 +109,13 @@ export interface FkColumnsMetadata {
   on_delete?: string;
   /** Verbatim ON UPDATE referential action (e.g. `CASCADE` / `NO ACTION`). */
   on_update?: string;
+  /**
+   * TRUE when the engine reports the FK as NOT TRUSTED (created / re-enabled
+   * WITH NOCHECK -- the existing rows were never validated against it). The
+   * migration emits such a constraint `NOT VALID` rather than failing the
+   * apply on data the source itself never checked (2026-09-11).
+   */
+  is_not_trusted?: boolean;
 }
 
 /**
@@ -124,13 +151,17 @@ export function buildConstraintsMetadata(
         uniqueConstraints.push({ name: k.name, columns: k.columns ?? [] });
         sawAny = true;
         break;
-      case 'check_constraint':
-        checkConstraints.push({
+      case 'check_constraint': {
+        const entry: ConstraintsMetadata['check_constraints'][number] = {
           name: k.name,
           expression: k.checkExpression ?? null,
-        });
+        };
+        if (k.isDisabled === true) entry.is_disabled = true;
+        if (k.isNotTrusted === true) entry.is_not_trusted = true;
+        checkConstraints.push(entry);
         sawAny = true;
         break;
+      }
       case 'index': {
         // Stable Spec-3 keys first, then Oracle-W3 additive ordering /
         // clustering / partial-predicate keys (only set when present so the
@@ -158,6 +189,16 @@ export function buildConstraintsMetadata(
           k.columnDirections.length > 0
         ) {
           entry.column_directions = k.columnDirections;
+        }
+        if (
+          k.includeColumns !== undefined &&
+          k.includeColumns !== null &&
+          k.includeColumns.length > 0
+        ) {
+          entry.include_columns = k.includeColumns;
+        }
+        if (k.isDisabled === true) {
+          entry.is_disabled = true;
         }
         indexes.push(entry);
         sawAny = true;
@@ -194,6 +235,8 @@ export function buildFkColumnsMetadata(
   referentialActions?: {
     onDelete?: string | null;
     onUpdate?: string | null;
+    /** The engine reports the FK as NOT TRUSTED (never validated). */
+    isNotTrusted?: boolean | null;
   },
 ): FkColumnsMetadata | null {
   const join = (joinColumns ?? []).filter((c) => typeof c === 'string' && c.length > 0);
@@ -212,6 +255,9 @@ export function buildFkColumnsMetadata(
   const onUpdate = referentialActions?.onUpdate;
   if (typeof onUpdate === 'string' && onUpdate.length > 0) {
     out.on_update = onUpdate;
+  }
+  if (referentialActions?.isNotTrusted === true) {
+    out.is_not_trusted = true;
   }
   return out;
 }

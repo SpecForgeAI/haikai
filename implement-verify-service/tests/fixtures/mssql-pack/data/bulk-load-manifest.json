@@ -1,0 +1,49 @@
+{
+  "source_charset": null,
+  "phase_ordering": [
+    "Phase 1: apply structural changesets (tables, PKs, unique/check constraints) — NO foreign keys, NO non-PK indexes (run liquibase with --contexts=structural).",
+    "Phase 2: bulk load ALL tables in the FK-topological order listed in this manifest.",
+    "Phase 3: apply foreign keys + non-PK indexes ONCE (the consolidated foreign-keys and indexes changesets; --contexts=post-load).",
+    "Phase 4: reseed sequences/identities (the consolidated sequences-seed changeset; restart = captured high-water + seed margin).",
+    "Phase 5: all subsequent incremental runs execute WITH foreign keys and indexes enforced."
+  ],
+  "delete_propagation": "DELETE propagation is OUT OF SCOPE for incremental v1: incremental scripts insert and/or update only. Rows deleted at source after the bulk load are NOT removed by increments — tables configured for full reload each increment are the mechanism that catches deletes.",
+  "seed_margin": 1000,
+  "table_order": [
+    "Ledger.Account",
+    "Ledger.AccountHistory",
+    "Ops.SensorArchive",
+    "Ledger.Postings"
+  ],
+  "expected_source_row_counts": {},
+  "cast_notes": {
+    "Ledger.Account": [
+      "ValidFrom: datetime2(7) -> timestamp(6) without time zone; extract with CONVERT(varchar(27), <col>, 121)",
+      "ValidTo: datetime2(7) -> timestamp(6) without time zone; extract with CONVERT(varchar(27), <col>, 121)"
+    ],
+    "Ledger.AccountHistory": [
+      "ValidFrom: datetime2(7) -> timestamp(6) without time zone; extract with CONVERT(varchar(27), <col>, 121)",
+      "ValidTo: datetime2(7) -> timestamp(6) without time zone; extract with CONVERT(varchar(27), <col>, 121)"
+    ],
+    "Ops.SensorArchive": [
+      "ReadingNote: nvarchar(n) -> varchar(n): UTF-16 source characters load as UTF-8 (declared width is in CHARACTERS on both sides)",
+      "ReadingSummary: nvarchar(n) -> varchar(n): UTF-16 source characters load as UTF-8 (declared width is in CHARACTERS on both sides)",
+      "UpdatedAt: datetime2(3) -> timestamp(3) without time zone; extract with CONVERT(varchar(27), <col>, 121)"
+    ],
+    "Ledger.Postings": [
+      "PostedBy: nvarchar(n) -> varchar(n): UTF-16 source characters load as UTF-8 (declared width is in CHARACTERS on both sides)",
+      "IsVoided: bit -> boolean: extract with CAST(<col> AS int); 0/1 are valid Postgres boolean literals",
+      "PayloadDocument: xml -> xml: extract with CONVERT(nvarchar(max), <col>). The SQL Server XML METHODS (.value/.query/.nodes/.exist/.modify) and XML SCHEMA COLLECTIONs have no target equivalent — routines using them are queued as xml_method rewrite sites.",
+      "LooseValue: sql_variant -> jsonb: load form {\"type\": <base type>, \"value\": <text>}",
+      "OrgNode: hierarchyid -> ltree: extract with <col>.ToString() ('/1/2/'); '/'-paths convert to '.'-labels",
+      "SiteShape: geometry -> PostGIS geometry: extract as WKT (<col>.STAsText()) with the SRID (<col>.STSrid); load with ST_GeomFromText(wkt, srid)",
+      "ScannedDocument: varbinary -> bytea: extract as '\\x' + LOWER(CONVERT(varchar(max), <col>, 2)) (the Postgres bytea hex text form)",
+      "RowGuid: uniqueidentifier -> uuid: extract with LOWER(CONVERT(char(36), <col>)) (Postgres renders uuid lowercase)",
+      "PostedOn: datetime2(7) -> timestamp(6) without time zone; extract with CONVERT(varchar(27), <col>, 121)",
+      "PostedOffset: datetimeoffset(7) -> timestamptz(6): the value is an INSTANT (offset-normalised); extract with CONVERT(varchar(34), <col>, 127)",
+      "Amount: money -> numeric(19,4): extract with CONVERT(numeric(19,4), <col>)",
+      "DisplayName: nvarchar(max) -> text (unbounded on the target)",
+      "Tier: tinyint -> smallint (Postgres has no unsigned 1-byte integer; the 0..255 domain still fits)"
+    ]
+  }
+}

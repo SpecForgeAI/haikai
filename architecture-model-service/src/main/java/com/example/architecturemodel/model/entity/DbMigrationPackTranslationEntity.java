@@ -72,14 +72,42 @@ public class DbMigrationPackTranslationEntity {
      */
     public static final String KIND_CHECK_CONSTRAINT = "check_constraint";
     public static final String KIND_SCHEDULED_JOB = "scheduled_job";
+    /**
+     * 2026-09-11 (SQL Server 16 -> PostgreSQL 18 pair programme, Spec 5,
+     * changeset 234): the object kinds SQL Server carries that ASE does not,
+     * so each rides the SAME review-and-emit queue instead of ending as
+     * manual residue. Approved results are a set-returning function
+     * (table-valued), a scalar function, a view standing in for a synonym, a
+     * composite type for a table type, and the sequence's full generation
+     * detail. {@code KIND_CLR_OBJECT} / {@code KIND_SERVICE_BROKER_OBJECT}
+     * rows are seeded with a NAMED untranslatable_reason (changeset 233) and
+     * the rewrite_in_app disposition -- queued so the workbench SHOWS them,
+     * never attempted.
+     */
+    public static final String KIND_TABLE_VALUED_FUNCTION = "table_valued_function";
+    public static final String KIND_SCALAR_FUNCTION = "scalar_function";
+    public static final String KIND_SYNONYM = "synonym";
+    public static final String KIND_USER_DEFINED_TABLE_TYPE = "user_defined_table_type";
+    public static final String KIND_SEQUENCE = "sequence";
+    public static final String KIND_CLR_OBJECT = "clr_object";
+    public static final String KIND_SERVICE_BROKER_OBJECT = "service_broker_object";
+    public static final String KIND_TEMPORAL_HISTORY = "temporal_history";
 
-    /** All allowed object kinds, mirroring chk_dmpt_kind (changeset 220). */
+    /** All allowed object kinds, mirroring chk_dmpt_kind (changeset 234). */
     public static final Set<String> ALL_KINDS = Set.of(
         KIND_STORED_PROCEDURE,
         KIND_TRIGGER,
         KIND_VIEW,
         KIND_CHECK_CONSTRAINT,
-        KIND_SCHEDULED_JOB
+        KIND_SCHEDULED_JOB,
+        KIND_TABLE_VALUED_FUNCTION,
+        KIND_SCALAR_FUNCTION,
+        KIND_SYNONYM,
+        KIND_USER_DEFINED_TABLE_TYPE,
+        KIND_SEQUENCE,
+        KIND_CLR_OBJECT,
+        KIND_SERVICE_BROKER_OBJECT,
+        KIND_TEMPORAL_HISTORY
     );
 
     public static final String DISPOSITION_TRANSLATE = "translate";

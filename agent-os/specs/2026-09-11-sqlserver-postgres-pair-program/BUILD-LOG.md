@@ -12,7 +12,7 @@ doctrine, the owner rulings, hard-item designs, the user prerequisite).
 | 2 | Discovery `mssql` pack + scan UI | L | 1 | `feat/mssql-pair-s2-discovery-pack` | built 2026-09-11 (a0859238) |
 | 3 | Ruleset + `MssqlAdapter` + data plane | L | 1 (contract) | `feat/mssql-pair-s3-ruleset-data-plane` | built 2026-09-11 |
 | 4 | State discipline on SQL Server | M | 3 | `feat/mssql-pair-s4-state-discipline` | built 2026-09-11 |
-| 5 | Pack generation for SQL Server | L | 2 | | pending |
+| 5 | Pack generation for SQL Server | L | 2 | `feat/mssql-pair-s5-pack-generation` | built 2026-09-11 |
 | 6 | Translation dialect (items 3, 7) + code tier | L | 4, 5 | `feat/mssql-pair-s6-translation-dialect` | built 2026-09-11 (merged 6627893b; new-kind text with S5) |
 | 7 | Frontend + ops + shakedown | M | 6 | `feat/mssql-pair-s7-final` | built 2026-09-11 |
 
@@ -367,7 +367,201 @@ sibling dependencies present the whole suite passes. frontend: 32 Discovery
 suites + `coreTechPersistenceCheck` (273 tests) green; `tsc --noEmit` clean
 for every touched file (whole-repo baseline stays red for unrelated reasons).
 
-*Decisions worth carrying forward.*
+### S5 — Pack generation for SQL Server (2026-09-11)
+
+**As-built.** A SQL Server scan now produces a complete, validated Liquibase +
+data + sync + translation-queue pack, and every SQL-Server-only object shape is
+either EMULATED by the pack with a confirmable default or gated by a decision
+whose options are all actionable. No manual residue, no silent drop.
+
+*Gate + IR (5.1).* `GENERATOR_SUPPORTED_SOURCE_ENGINES = ['sybase', 'mssql']`.
+New `dbMigrationPack/systemObjects.ts` keys the system-object exclusion by
+engine: Sybase keeps its CURATED exact-name list verbatim (ASE does not
+reserve the `sys` prefix, so `sys_config` must never be dropped), MSSQL is
+schema-first (`sys` / `INFORMATION_SCHEMA`) plus the tool-owned names
+(`sysdiagrams`, `dtproperties`, `MSreplication_*`, `__RefactorLog`, `spt_*`);
+`sybaseSystemObjects.ts` keeps every export and is re-exported. IR gains
+per-column `computedPersisted` / `identitySeed` / `identityIncrement` /
+`isRowGuidCol` / `isSparse` / `isFilestream` / `databaseCollation`, per-index
+`includeColumns` / `isDisabled`, per-table `temporal` / `memoryOptimized` /
+`fullTextIndexes`, per-FK + per-CHECK `isNotTrusted`, `SourceSchemaIr.
+extendedObjects[]` and `databaseCollation`, and `IrSequence` gains the full
+generation detail (increment / min / max / cycle / dataType).
+
+*How the SQL-Server-only facts REACH the gateway.* AMS persists no column for
+collation, temporal periods or feature objects, so — exactly like the existing
+collation / computed-column / sequence merges — they arrive through discovery
+FINDINGS and are merged by object identity. Identity seed/increment ride the
+`sequence_definition` finding the scan synthesizes per identity column
+(`ownedByTable`/`ownedByColumn`), which is why no new channel was needed.
+Two genuinely NEUTRAL facts were added to the shared discovery IR instead
+(PostgreSQL has both): `KeyOrIndexMetadata.includeColumns` / `isDisabled` /
+`isNotTrusted` → `constraints_metadata.indexes[].include_columns` /
+`is_disabled`, `check_constraints[].is_disabled` / `is_not_trusted`, and
+`fk_columns.is_not_trusted`. All additive into existing free-form JSONB — no
+AMS schema change.
+
+*Type table (5.2).* `mapSourceType(engine, column)`; the ASE table is
+byte-for-byte unchanged. The MSSQL table is the full spec row list including
+`float(n≤24)→real`, `varchar(max)/nvarchar(max)→text`, `sysname→varchar(128)`,
+`datetime→timestamp(3)`, `smalldatetime→timestamp(0)`,
+`datetime2(p)/time(p)/datetimeoffset(p)→min(p,6)` with p=7 (and an OMITTED
+`(p)`, which the engine defaults to 7) flagged `precision_loss`, and
+`rowversion` as a decision. `parseSourceType` learned `(max)` (arg `-1`, the
+`sys.columns.max_length` sentinel). THREE column features map to a
+deterministic DEFAULT *and* raise their own decision — `sql_variant`→jsonb,
+`hierarchyid`→ltree, `geography`/`geometry`→PostGIS — so the pack is runnable
+while the open decision still blocks Migrate. `SAFE_DEFAULT_REWRITES` gained
+the SQL Server built-ins (incl. `newsequentialid`→`gen_random_uuid()` with the
+"this is RANDOM, not sequential" note) plus a global-token table for `@@spid`.
+`IIF(a,b,c)` REWRITES structurally to `CASE WHEN a THEN b ELSE c END`
+(balanced-paren, string-literal aware, nested inside-out) rather than punting
+the expression to a decision. `routineInvocationDescriptor.mapRoutineArgType`
+is unified onto `mapSourceType` — it was a second hand-maintained copy that had
+already drifted (it guessed `char(1)` for a bare `char`).
+
+*DDL (5.3).* Filtered index → partial index through the check-expression
+translator (non-portable → `index_predicate` decision with
+provide_predicate / emit_without_predicate / drop_index, each honoured);
+`INCLUDE (...)`; columnstore → btree + `columnstore_dropped_to_btree` note +
+decision; xml/spatial → GIN/GiST via decision; fulltext → deferred to the
+emulation with a pointer. The ASE filtered-index/unknown-method THROWs are
+kept for `sybase` ONLY. Name scoping is engine-keyed: SQL Server already
+scopes PK/UNIQUE/FK/CHECK per schema, so only INDEX collisions rename.
+Persisted computed → `GENERATED ALWAYS AS (…) STORED`, non-persisted → PG 18
+`VIRTUAL`. Identity → `GENERATED BY DEFAULT AS IDENTITY (START WITH s
+INCREMENT BY i)` (BY DEFAULT, because `SET IDENTITY_INSERT` loads are routine
+on this engine). FK referential actions normalise the catalog's underscore
+spelling (`SET_DEFAULT` → `SET DEFAULT`) and refuse anything outside the
+portable set with a note. A NOT TRUSTED FK or CHECK emits `NOT VALID` + the
+named `VALIDATE CONSTRAINT` promotion step (a CHECK moves to its own ALTER
+TABLE — PostgreSQL refuses NOT VALID inside CREATE TABLE). `rowguidcol` /
+`sparse` become notes, never DDL. NATIVE standalone sequences (no owning
+column) are created with their full generation detail in the 000 prologue and
+reseeded post-load — they were previously invisible to the seed pass, which
+only walks identity columns.
+
+*Collation (5.4, owner ruling 5).* ONE pack-wide decision
+`collation--database` (`citext` | `icu_nondeterministic` |
+`accept_case_sensitive_change`) instead of thousands of identical per-column
+questions — on a `_CI_` estate every string column is affected. `citext`
+rewrites each affected character column and gives a `char(n)` its length CHECK
+(citext is variable-length); `icu_nondeterministic` emits
+`CREATE COLLATION IF NOT EXISTS haikai_ci (provider = icu, locale =
+'und-u-ks-level2', deterministic = false)` in changeset 000 plus
+`COLLATE "haikai_ci"` per column and the documented LIKE/regex restriction in
+the manifest. Manifest gains `collation_affected_columns` (the comparator
+enables `collation-case` on EXACTLY these), `collation_posture`,
+`precision_loss_columns`, `target_extensions_required`, `emulations`,
+`extended_objects` and `index_notes`. The Sybase per-column collation path is
+untouched.
+
+*Item 5 (5.5).* New pack decision categories (AMS changeset **234** extends
+`chk_dmpd_category` + the Java `ALL_CATEGORIES`): `temporal_table`,
+`fulltext_index`, `xml_method`, `hierarchyid_column`, `spatial_column`,
+`sql_variant_column`, `clr_object`, `service_broker`, `filestream`,
+`memory_optimized_table`, `synonym`, `user_defined_table_type`,
+`index_predicate`, `columnstore_index`, plus the two OUT-by-ruling reasons
+`cross_database_reference` and `indexed_view`. The finding-kind → disposition
+mapping lives in ONE table (`dbMigrationPack/extendedObjects.ts`). EMULATIONS
+the pack BUILDS land in a new structural changeset
+`liquibase/changesets/015-emulations.sql`, ordered after the tables and before
+the post-load phase:
+  - temporal → a generic trigger PAIR (`haikai_temporal_row_start()` BEFORE
+    INSERT OR UPDATE stamps the period columns; `haikai_temporal_versioning()`
+    AFTER UPDATE OR DELETE archives the superseded version), both driven by
+    trigger ARGUMENTS and a jsonb round-trip so ONE pair serves every
+    versioned table, writing into the MIGRATED source history table (it is
+    loaded like any other table, never re-derived) + the FOR SYSTEM_TIME
+    rewrite guidance, citing `MSPG.TEMPORAL.001`;
+  - full-text → a generated `tsvector` column + GIN index +
+    CONTAINS/FREETEXT rewrite guidance, citing `MSPG.FULLTEXT.001`.
+Translation kinds extended (same changeset 234 + gateway `TRANSLATION_KINDS` +
+`FINDING_TYPE_BY_KIND` + the 050 callee-first order, which now covers every
+routine kind): `table_valued_function`, `scalar_function`, `synonym`,
+`user_defined_table_type`, `sequence`, `clr_object`,
+`service_broker_object`, `temporal_history`. `kindInstructions` gained
+SPECIFIC text for the four author-facing kinds (RETURNS TABLE contract,
+scalar volatility + NULL semantics, synonym→view, table type→composite +
+the array signature change). `clr_object` / `service_broker_object` and the
+two OUT items are queued with their NAMED `untranslatable_reason`
+(changeset 233) — shown in the workbench, never attempted.
+
+*Data + sync (5.6).* `planBulkColumns(columns, engine)` with the SQL Server
+extract expressions (money `CONVERT(numeric(19,4), …)`, datetime family
+`CONVERT(varchar(27), …, 121)`, datetimeoffset style 127, binary
+`'\x' + LOWER(CONVERT(varchar(max), …, 2))`, bit `CAST(… AS int)`,
+uniqueidentifier `LOWER(CONVERT(char(36), …))`, xml
+`CONVERT(nvarchar(max), …)`, spatial `.STAsText()` + `.STSrid`, hierarchyid
+`.ToString()`); `DATETIME_FAMILY_BASES` per engine (so a `datetime2`
+`updated_at` is recognised by the delta-key heuristic); the bulk script names
+the engine and `bcp`; `reconcile/reconciliation.sql` gets a
+"SQL Server (SOURCE) — sqlcmd …" section with `COUNT_BIG` and `GO`.
+
+*Validation + harvest (5.7).* `findSystemReferences(engine, sql)` — MSSQL
+matches the QUALIFIED `sys.<name>` / `INFORMATION_SCHEMA.<name>` forms plus the
+tool-owned names (a bare `sys` is an ordinary identifier and is NOT flagged).
+`validatePackFiles` derives the engine from the pack's OWN `manifest.json`, so
+every caller stays correct with no new argument. The 63-byte identifier gate is
+unchanged. `dbSchemaHarvest` resolves the source engine from the project's pack
+manifest when the caller supplies none (hard-defaulting to Sybase would run ASE
+catalog SQL against a SQL Server and report the empty result as an empty
+database) and forwards `mssqlAuth`. `callSiteCompatibility` error-number
+detection is engine-keyed (`SQLServerException`, `getErrorCode()`, ≥50000 for
+THROW, 547 / 2627 / 2601).
+
+*Tests.* gateway `dbMigrationPackGenerationMssql.test.ts` — **81 tests**
+covering 5.1-5.7 over a fixture that mirrors the S2
+`hard-features-introspect.json` vocabulary. gateway `npx jest --silent`:
+**519 suites / 4227 tests**, 2 suites red and PRE-EXISTING on this branch
+point (`job-proxy-routes`, `migrationProcParityReconcile` — 16 tests, same
+before any S5 edit); `tsc --noEmit` clean. discovery `npx jest --silent`:
+294 suites / 2193 tests (one load-flaky suite that passes in isolation);
+`tsc --noEmit` clean. AMS `mvn -Dtest='DbMigrationPack*' test`: **18 tests, 0
+failures**, including the new `DbMigrationPackMssqlKindsChangesetTest` (every
+new category + kind accepted, every ORIGINAL one still accepted, an unknown
+one still rejected, and the Java constant sets mirroring the SQL exactly).
+IVS `pytest tests/job_queue/`: **274 passed**, including the new
+`test_assembly_mssql_pack.py`, which runs `validate_pack_on_disk` over a
+REAL generated SQL Server pack vendored under
+`implement-verify-service/tests/fixtures/mssql-pack/` (regenerate with
+`HAIKAI_DUMP_MSSQL_PACK=1 npx jest dbMigrationPackGenerationMssql`) and proves
+the gate still bites on each of the three 2026-07-30 defect shapes.
+
+*Decisions / deviations.*
+1. The manifest keeps its `sybase_system_exclusions` KEY for an mssql pack
+   rather than growing a second field: it is an established wire name with
+   downstream readers, and the rows it carries are exactly what it always
+   carried (system objects excluded from the pack).
+2. `rowguidcol` / `sparse` reach the IR on whichever COLUMN-shaped feature
+   finding reported the column, not through a finding of their own. They are
+   pure storage attributes with no effect on target VALUES (the emitted note
+   says so), so a dedicated finding type — and its frontend label, which is
+   S7's surface — would have bought nothing. `isPersistedComputed` rides the
+   same channel but DOES change emission (STORED vs VIRTUAL) and has its own
+   `computed_column_not_persisted` finding from S2.
+3. `datalength` and `getutcdate` are deliberately ABSENT from the 1:1 function
+   tables. SQL Server's `DATALENGTH` counts BYTES (2 per character for
+   nvarchar/UTF-16) while `octet_length` counts UTF-8 bytes — they disagree on
+   every non-ASCII value — and `GETUTCDATE()` needs the `AT TIME ZONE`
+   rewrite that a token rename cannot express. Both stay non-portable so the
+   expression reaches a human instead of changing meaning silently.
+   `CHARINDEX` and `FORMAT` are absent for the same class of reason (argument
+   order; locale dependence).
+4. Native standalone sequences are gated to `mssql`. On ASE a sequence with no
+   owning column is the sequence-TABLE idiom, which already has its own
+   `sequenceGenerator` decision path — emitting `CREATE SEQUENCE` there would
+   be a behaviour change to a green corpus.
+5. `memory_optimized_table`'s options are `accept_plain_table` |
+   `exclude_from_migration`. The spec called it "a note"; a note alone would
+   have been the only item-5 shape with no way to act on it, and the second
+   option routes to the existing migration-scope exclusion rather than
+   inventing a mechanism.
+6. The pack-wide `collation` decision is raised ONLY on `mssql`. The Sybase
+   per-column `collation--<column>` path is byte-for-byte untouched, because
+   the ASE corpus is the regression gate.
+
+### S2 (continued) — decisions worth carrying forward
 1. `tsqlRoutineProfiler.ts` stays in `sybase/` and the `mssql` pack imports
    it. T-SQL is genuinely one dialect; moving the file would rewrite every
    importer for no behavioural gain, and the SQL-Server-only constructs simply

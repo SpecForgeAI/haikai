@@ -17,10 +17,12 @@ const col = (dataType: string, maxLength: number | null = null) => ({
   scale: null,
 });
 
-describe('mapSourceType — char/varchar with no recorded length (2026-08-12)', () => {
+describe.each(['sybase', 'mssql'])(
+  'mapSourceType(%s) — char/varchar with no recorded length (2026-08-12)',
+  (engine) => {
   it('bare char/nchar is a needs_decision, NEVER a silent char(1)', () => {
     for (const t of ['char', 'nchar']) {
-      const result = mapSourceType(col(t));
+      const result = mapSourceType(engine, col(t));
       expect(result.kind).toBe('needs_decision');
       if (result.kind === 'needs_decision') {
         expect(result.question).toContain('char(1)');
@@ -30,24 +32,25 @@ describe('mapSourceType — char/varchar with no recorded length (2026-08-12)', 
   });
 
   it('char WITH a length still maps deterministically (inline and column length)', () => {
-    expect(mapSourceType(col('char(8)'))).toEqual(
+    expect(mapSourceType(engine, col('char(8)'))).toEqual(
       expect.objectContaining({ kind: 'mapped', postgresType: 'char(8)' }),
     );
-    expect(mapSourceType(col('char', 8))).toEqual(
+    expect(mapSourceType(engine, col('char', 8))).toEqual(
       expect.objectContaining({ kind: 'mapped', postgresType: 'char(8)' }),
     );
   });
 
   it('bare varchar maps UNBOUNDED (safe: no value can truncate) with a cast note', () => {
-    const result = mapSourceType(col('varchar'));
+    const result = mapSourceType(engine, col('varchar'));
     expect(result).toEqual(
       expect.objectContaining({ kind: 'mapped', postgresType: 'varchar' }),
     );
     if (result.kind === 'mapped') {
       expect(result.castNote).toContain('UNBOUNDED');
     }
-    expect(mapSourceType(col('varchar', 50))).toEqual(
+    expect(mapSourceType(engine, col('varchar', 50))).toEqual(
       expect.objectContaining({ kind: 'mapped', postgresType: 'varchar(50)' }),
     );
   });
-});
+  },
+);

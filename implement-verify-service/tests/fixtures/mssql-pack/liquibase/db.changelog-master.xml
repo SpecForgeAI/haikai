@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+  <!-- Structural phase: run with contexts=structural (tables/PKs/constraints; no FKs, no non-PK indexes). -->
+  <!-- Post-load phase: run with contexts=post-load AFTER the bulk load (FKs + indexes ONCE, then sequence reseed). -->
+  <include file="changesets/000-schemas.sql" relativeToChangelogFile="true"/>
+  <include file="changesets/010-tables/Ledger.Account.sql" relativeToChangelogFile="true"/>
+  <include file="changesets/010-tables/Ledger.AccountHistory.sql" relativeToChangelogFile="true"/>
+  <include file="changesets/010-tables/Ops.SensorArchive.sql" relativeToChangelogFile="true"/>
+  <include file="changesets/010-tables/Ledger.Postings.sql" relativeToChangelogFile="true"/>
+  <include file="changesets/015-emulations.sql" relativeToChangelogFile="true"/>
+  <include file="changesets/020-foreign-keys.sql" relativeToChangelogFile="true"/>
+  <include file="changesets/030-indexes.sql" relativeToChangelogFile="true"/>
+  <include file="changesets/040-sequences-seed.sql" relativeToChangelogFile="true"/>
+</databaseChangeLog>
