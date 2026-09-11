@@ -9,13 +9,9 @@ doctrine, the owner rulings, hard-item designs, the user prerequisite).
 |---|------|------|------------|--------|--------|
 | 0 | Foundations (vocabulary, pair-per-project, rules lib, guard) | M | — | `feat/mssql-pair-s0-foundations` | built 2026-09-11 |
 | 1 | Sidecar multi-engine (`db-discovery-sidecar`) | L | 0 | `feat/mssql-pair-s1-sidecar` | built 2026-09-11 (5e8b9c25) |
-| 2 | Discovery `mssql` pack + scan UI | L | 1 | | pending |
+| 2 | Discovery `mssql` pack + scan UI | L | 1 | `feat/mssql-pair-s2-discovery-pack` | built 2026-09-11 (a0859238) |
 | 3 | Ruleset + `MssqlAdapter` + data plane | L | 1 (contract) | `feat/mssql-pair-s3-ruleset-data-plane` | built 2026-09-11 |
 | 4 | State discipline on SQL Server | M | 3 | `feat/mssql-pair-s4-state-discipline` | built 2026-09-11 |
-| 1 | Sidecar multi-engine (`db-discovery-sidecar`) | L | 0 | | pending |
-| 2 | Discovery `mssql` pack + scan UI | L | 1 | `worktree-agent-a21a029156a542a75` | built 2026-09-11 (a0859238) |
-| 3 | Ruleset + `MssqlAdapter` + data plane | L | 1 | | pending |
-| 4 | State discipline on SQL Server | M | 3 | | pending |
 | 5 | Pack generation for SQL Server | L | 2 | | pending |
 | 6 | Translation dialect (items 3, 7) + code tier | L | 4, 5 | | pending |
 | 7 | Frontend + ops + shakedown | M | 6 | | pending |
