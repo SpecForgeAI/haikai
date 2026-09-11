@@ -141,7 +141,7 @@ services:
       PORT: 8091
       ARCHITECTURE_MODEL_SERVICE_BASE_URL: http://architecture-model-service:8080
       GATEWAY_BASE_URL: http://gateway:8081
-      SYBASE_SIDECAR_URL: http://sybase-discovery-sidecar:8093
+      DB_SIDECAR_URL: http://db-discovery-sidecar:8093
       HAIKAI_TRACE: ${HAIKAI_TRACE:-off}
       HAIKAI_TRACE_FILE: /trace/trace.log
     networks:
@@ -171,7 +171,7 @@ services:
       ARCHITECTURE_MODEL_SERVICE_BASE_URL: http://architecture-model-service:8080
       GATEWAY_BASE_URL: http://gateway:8081
       DISCOVERY_SERVICE_BASE_URL: http://discovery-service:8091
-      SYBASE_SIDECAR_URL: http://sybase-discovery-sidecar:8093
+      DB_SIDECAR_URL: http://db-discovery-sidecar:8093
       OAS_SPECS_DIR: /app/oas-specs
       HAIKAI_TRACE: ${HAIKAI_TRACE:-off}
       HAIKAI_TRACE_FILE: /trace/trace.log
@@ -181,14 +181,16 @@ services:
       architecture-model-service:
         condition: service_healthy
 
-  # Sybase Discovery Sidecar (Spring Boot - Java)
+  # DB Discovery Sidecar (Spring Boot - Java)
   # JDBC introspection sidecar the discovery-service + validation-service call for
-  # Sybase ASE metadata. Builds a fat JAR from its production Dockerfile.
-  sybase-discovery-sidecar:
+  # SOURCE-database metadata: Sybase ASE (jTDS / jConnect) and SQL Server
+  # (mssql-jdbc / jTDS). Every request names its engine. Builds a fat JAR from
+  # its production Dockerfile.
+  db-discovery-sidecar:
     build:
-      context: ./sybase-discovery-sidecar
+      context: ./db-discovery-sidecar
       dockerfile: Dockerfile
-    container_name: arch-sybase-sidecar
+    container_name: arch-db-sidecar
     ports:
       - "8093:8093"
     environment:
