@@ -21,6 +21,7 @@
  */
 
 import { procRulePrefix, type MigrationPairRuleset } from '../../migrationPairRules';
+import { mapSourceType } from './typeMapping';
 
 export type RoutineShape = 'return_status' | 'single_result_set' | 'out_params' | 'rich';
 
@@ -102,66 +103,38 @@ function procRuleIds(ruleset: MigrationPairRuleset | null): { abi: string; err: 
 }
 
 /**
- * Source parameter type -> PostgreSQL argument type. Mirrors the pack's
- * column type mapping for the scalar families a routine argument can carry;
- * unknown tokens pass through verbatim (the apply step reports them).
+ * Source parameter type -> PostgreSQL argument type.
+ *
+ * UNIFIED onto the pack's column type table (Spec 5.2, 2026-09-11): this
+ * used to be a SECOND, hand-maintained copy of the same mapping, and the two
+ * had already drifted — the duplicate guessed `char(1)` for a bare `char`,
+ * the exact silently-truncating guess the column mapper refuses to make
+ * (2026-08-12). There is now one table; a routine argument whose type the
+ * table cannot answer keeps the old pass-through behaviour (the apply step
+ * reports it) rather than raising a decision, because a routine SIGNATURE is
+ * reviewed in the translation workbench, not gated by the pack decision queue.
+ *
+ * The `char` refusal is preserved by NOT inventing a width: a bare `char`
+ * renders as `char` and reads as PostgreSQL's own char(1) — but it reaches a
+ * human in the calling-convention contract instead of silently defining a
+ * column. A `double` alias (not a column type, but a legal parameter
+ * spelling) maps before the table is consulted.
  */
-export function mapRoutineArgType(sourceType: string): string {
-  const raw = sourceType.trim().toLowerCase();
-  const m = /^([a-z_]+)\s*(?:\(\s*(\d+)(?:\s*,\s*(\d+))?\s*\))?$/.exec(raw);
-  const base = m ? m[1] : raw;
-  const p = m && m[2] ? Number(m[2]) : null;
-  const s = m && m[3] ? Number(m[3]) : null;
-  switch (base) {
-    case 'int':
-    case 'integer':
-      return 'integer';
-    case 'smallint':
-    case 'tinyint':
-      return 'smallint';
-    case 'bigint':
-      return 'bigint';
-    case 'bit':
-      return 'boolean';
-    case 'numeric':
-    case 'decimal':
-      return p !== null ? `numeric(${p}${s !== null ? `,${s}` : ''})` : 'numeric';
-    case 'money':
-      return 'numeric(19,4)';
-    case 'smallmoney':
-      return 'numeric(10,4)';
-    case 'float':
-    case 'double':
-      return 'double precision';
-    case 'real':
-      return 'real';
-    case 'datetime':
-    case 'smalldatetime':
-    case 'bigdatetime':
-      return 'timestamp';
-    case 'date':
-      return 'date';
-    case 'time':
-    case 'bigtime':
-      return 'time';
-    case 'char':
-    case 'nchar':
-    case 'unichar':
-      return p !== null ? `char(${p})` : 'char(1)';
-    case 'varchar':
-    case 'nvarchar':
-    case 'univarchar':
-      return p !== null ? `varchar(${p})` : 'varchar';
-    case 'text':
-    case 'unitext':
-      return 'text';
-    case 'binary':
-    case 'varbinary':
-    case 'image':
-      return 'bytea';
-    default:
-      return raw;
-  }
+export function mapRoutineArgType(sourceType: string, engine?: string): string {
+  const raw = String(sourceType ?? '').trim().toLowerCase();
+  if (raw === '') return raw;
+  if (/^double(\s+precision)?$/.test(raw)) return 'double precision';
+  const mapped = mapSourceType(engine ?? 'sybase', {
+    dataType: raw,
+    maxLength: null,
+    precision: null,
+    scale: null,
+  });
+  if (mapped.kind === 'mapped') return mapped.postgresType;
+  // A type the deterministic table refuses (a bare `char` with no recorded
+  // width, `rowversion`, an unlisted type): pass the SOURCE spelling through
+  // verbatim so the contract shows exactly what the catalog reported.
+  return raw;
 }
 
 function argName(sourceParam: string): string {
@@ -209,7 +182,7 @@ export function deriveRoutineDescriptor(
     .sort((a, b) => a.ordinal - b.ordinal)
     .map((p) => ({
       name: argName(p.name),
-      pg_type: mapRoutineArgType(p.source_type),
+      pg_type: mapRoutineArgType(p.source_type, ruleset?.source?.engine),
       source_param: p.name,
       direction: p.direction === 'output' ? 'out' : 'in',
     }));

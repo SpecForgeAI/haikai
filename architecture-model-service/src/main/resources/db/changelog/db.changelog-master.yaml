@@ -5370,3 +5370,20 @@ databaseChangeLog:
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: true
+
+  # 234 -- second-pair programme, Spec 5 (2026-09-11): the item-5 pack
+  # decision categories (temporal_table, fulltext_index, xml_method,
+  # hierarchyid_column, spatial_column, sql_variant_column, clr_object,
+  # service_broker, filestream, memory_optimized_table, synonym,
+  # user_defined_table_type, index_predicate, columnstore_index, plus the two
+  # OUT-by-ruling reasons cross_database_reference and indexed_view) and the
+  # translation-queue kinds those objects ride.
+  - changeSet:
+      id: 234-db-pack-mssql-decision-and-translation-kinds
+      author: architecture-tool
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/234-db-pack-mssql-decision-and-translation-kinds.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true

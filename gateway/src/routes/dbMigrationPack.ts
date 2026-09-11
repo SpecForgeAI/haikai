@@ -1308,6 +1308,8 @@ dbMigrationPackRouter.post(`${BASE}/structural-harvest`, async (req, res) => {
     password?: string;
     db_engine?: string;
     sybase_driver?: string;
+    /** SQL-Server-only connection extras; forwarded verbatim, never persisted. */
+    mssql_auth?: Record<string, unknown>;
     include_schemas?: string[];
     service_id?: string;
   };
@@ -1359,6 +1361,13 @@ dbMigrationPackRouter.post(`${BASE}/structural-harvest`, async (req, res) => {
           : undefined,
         sybaseDriver:
           typeof body.sybase_driver === 'string' ? body.sybase_driver : undefined,
+        // SQL-Server-only connection extras (auth scheme, domain, named
+        // instance, encrypt / trustServerCertificate). Forwarded verbatim;
+        // never persisted (2026-09-11, Spec 5.7).
+        mssqlAuth:
+          body.mssql_auth !== null && typeof body.mssql_auth === 'object'
+            ? (body.mssql_auth as Record<string, unknown>)
+            : undefined,
         includeSchemas: Array.isArray(body.include_schemas)
           ? body.include_schemas
           : undefined,
@@ -1401,9 +1410,9 @@ dbMigrationPackRouter.post(`${BASE}/structural-harvest`, async (req, res) => {
  * POST /test-source-connection — thin pass-through to the discovery-service
  * connection probe so the harvest modal can pre-flight credentials before
  * committing to a scan. Body forwarded verbatim except `dbEngine`, which is
- * defaulted (not forced) to 'sybase' — the harvest flow is Sybase-scoped
- * today, but an explicit engine in the body wins so the route needs no change
- * when other source engines arrive. Upstream returns 200 {success:true,...}
+ * defaulted (not forced) to 'sybase' — an explicit engine in the body wins,
+ * which is how a SQL Server source reaches the probe. Upstream returns
+ * 200 {success:true,...}
  * or 400 {success:false, error} — both proxied byte-for-byte; credentials
  * exist only in the request body (discovery-service purges its in-memory
  * copy after the probe).

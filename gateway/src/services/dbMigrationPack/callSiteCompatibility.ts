@@ -74,10 +74,36 @@ export function classifyCallSitePattern(queryText: string | null | undefined): C
   return 'bare_reference';
 }
 
-/** TRUE when the call site's surrounding text branches on a Sybase error number. */
-function branchesOnErrorNumber(meta: Record<string, unknown> | null | undefined): boolean {
+/**
+ * Per-engine detectors for "this Java call site BRANCHES on a source error
+ * NUMBER" (Spec 5.7) — the pattern the pair's CALLSITE matrix judges hardest,
+ * because the number does not survive the migration unchanged.
+ *
+ *   sybase: `@@error`, jConnect's `getErrorCode()`, ASE's 1xxxx / 20xxx
+ *           message numbers.
+ *   mssql:  `SQLServerException`, `getErrorCode()`, RAISERROR/THROW's
+ *           user range (>= 50000) and the constraint families 547 (FK/CHECK
+ *           violation), 2627 (PK/UNIQUE violation) and 2601 (duplicate key
+ *           in a unique index).
+ *
+ * Engine-keyed rather than one union so a Sybase pack's verdicts cannot
+ * shift because a SQL Server pattern happened to match.
+ */
+const ERROR_NUMBER_PATTERNS: Record<string, RegExp> = {
+  sybase: /getErrorCode\s*\(\s*\)|@@error\b|SQLException.*\b(20\d{3}|1\d{4})\b/i,
+  mssql:
+    /SQLServerException|getErrorCode\s*\(\s*\)|@@error\b|\b(?:5[0-9]{4,}|547|2627|2601)\b/i,
+};
+
+/** TRUE when the call site's surrounding text branches on a source error number. */
+function branchesOnErrorNumber(
+  meta: Record<string, unknown> | null | undefined,
+  engine?: string
+): boolean {
   const text = String(meta?.['query_text'] ?? '') + ' ' + String(meta?.['context_snippet'] ?? '');
-  return /getErrorCode\s*\(\s*\)|@@error\b|SQLException.*\b(20\d{3}|1\d{4})\b/i.test(text);
+  const pattern =
+    ERROR_NUMBER_PATTERNS[String(engine ?? '').toLowerCase()] ?? ERROR_NUMBER_PATTERNS.sybase;
+  return pattern.test(text);
 }
 
 function matrixVerdict(
@@ -103,8 +129,11 @@ function matrixVerdict(
 export function computeCallSiteCompatibility(
   effects: CallSiteEffect[],
   descriptorsByRoutine: Map<string, RoutineDescriptor>,
-  ruleset: MigrationPairRuleset | null
+  ruleset: MigrationPairRuleset | null,
+  /** Source engine (Spec 5.7); defaults to the ruleset's own source engine. */
+  engine?: string
 ): CallSiteCompatibilitySummary {
+  const sourceEngine = String(engine ?? ruleset?.source?.engine ?? 'sybase').toLowerCase();
   const sites: CallSiteVerdict[] = [];
   const undescribed = new Set<string>();
   for (const e of effects) {
@@ -125,7 +154,7 @@ export function computeCallSiteCompatibility(
       });
       continue;
     }
-    const pattern: CallSitePattern = branchesOnErrorNumber(meta)
+    const pattern: CallSitePattern = branchesOnErrorNumber(meta, sourceEngine)
       ? 'error_number_branching'
       : classifyCallSitePattern(String(meta?.['query_text'] ?? ''));
     const { verdict, reason } = matrixVerdict(ruleset, descriptor.shape, pattern);

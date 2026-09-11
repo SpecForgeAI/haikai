@@ -66,12 +66,28 @@ import { NEUTRAL_TRANSLATION_PROFILE, renderConventions, translationProfileFor, 
  * used to land in `manual_recreation` — same residue; they now translate to
  * pg_cron schedules). AMS chk_dmpt_kind extended by changeset 220.
  */
+/**
+ * 2026-09-11 (SQL Server pair programme, Spec 5.5; AMS `chk_dmpt_kind`
+ * extended by changeset 234): the object kinds SQL Server carries that ASE
+ * does not, so that each rides the SAME review-and-emit queue instead of
+ * ending as manual residue. `clr_object` / `service_broker_object` are
+ * seeded with a NAMED untranslatable reason and the `rewrite_in_app`
+ * disposition — queued so the workbench SHOWS them, never attempted.
+ */
 export const TRANSLATION_KINDS = [
   'stored_procedure',
   'trigger',
   'view',
   'check_constraint',
   'scheduled_job',
+  'table_valued_function',
+  'scalar_function',
+  'synonym',
+  'user_defined_table_type',
+  'sequence',
+  'clr_object',
+  'service_broker_object',
+  'temporal_history',
 ] as const;
 export type TranslationKind = (typeof TRANSLATION_KINDS)[number];
 export type TranslationDisposition = 'translate' | 'rewrite_in_app' | 'drop';
@@ -213,6 +229,14 @@ export interface RequiresTranslationEntry {
    * full-fidelity (never truncated / legacy-redacted).
    */
   source_body?: string;
+  /**
+   * Named untranslatable reason carried by the manifest entry itself
+   * (2026-09-11, Spec 5.5): kinds whose object is never ATTEMPTED — CLR,
+   * Service Broker, and anything hitting an OUT-by-ruling construct — are
+   * seeded with the reason and the `rewrite_in_app` disposition, so the
+   * workbench shows them named rather than parked as a silent needs_manual.
+   */
+  untranslatable_reason?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -303,6 +327,11 @@ export interface SeedSource {
 const ROUTINE_KINDS_BY_TRANSLATION_KIND: Partial<Record<TranslationKind, Array<RoutineBodySource['routine_kind']>>> = {
   stored_procedure: ['procedure', 'function'],
   trigger: ['trigger'],
+  // The two function shapes source from the SAME catalog rows as a
+  // procedure: what differs is the target ABI the prompt asks for.
+  table_valued_function: ['function'],
+  scalar_function: ['function'],
+  clr_object: ['procedure', 'function'],
 };
 
 /** Bare lower-case tail of an object ref (`dbo.upd_x` -> `upd_x`). */
@@ -333,6 +362,17 @@ const FINDING_TYPE_BY_KIND: Record<TranslationKind, string> = {
   // check_constraint bodies ride the entry itself (`source_body`), never a
   // finding — the sentinel can never match a real finding_type.
   check_constraint: '__direct_source_body__',
+  // SQL Server kinds (Spec 5.5). The function shapes share the routine
+  // finding; the object-shaped kinds carry their own scan finding, and
+  // temporal_history is built by the pack itself (direct source body).
+  table_valued_function: 'stored_procedure_logic',
+  scalar_function: 'stored_procedure_logic',
+  synonym: 'synonym_detected',
+  user_defined_table_type: 'user_defined_table_type',
+  sequence: 'sequence_definition',
+  clr_object: 'clr_object_detected',
+  service_broker_object: 'service_broker_detected',
+  temporal_history: '__direct_source_body__',
 };
 
 /**
@@ -373,7 +413,10 @@ export function resolveSeedSources(
         legacy_redacted: false,
         terminal_needs_manual: false,
         routine_id: routine.id,
-        untranslatable_reason: untranslatableReasonForRoutine(routine),
+        // The manifest entry's named reason wins when the pack already knows
+        // one (an item-5 object kind); the routine profile is the fallback.
+        untranslatable_reason:
+          entry.untranslatable_reason ?? untranslatableReasonForRoutine(routine),
       });
       continue;
     }
@@ -390,6 +433,7 @@ export function resolveSeedSources(
         truncated: false,
         legacy_redacted: false,
         terminal_needs_manual: false,
+        untranslatable_reason: entry.untranslatable_reason ?? null,
       });
       continue;
     }
@@ -975,6 +1019,45 @@ export function kindInstructions(kind: TranslationKind, profile: TranslationProf
         '(<PostgreSQL boolean expression>); — QUOTE the table/constraint identifiers ' +
         `(double quotes, source case preserved) and translate ${profile.sourceDialect} built-ins to their ` +
         'PostgreSQL equivalents. The semantics of the check must be preserved exactly.'
+      );
+    case 'table_valued_function':
+      return (
+        `Translate the ${src} TABLE-VALUED function into ONE PostgreSQL set-returning function ` +
+        '(CREATE OR REPLACE FUNCTION ... RETURNS TABLE (<column> <type>, ...) LANGUAGE plpgsql — ' +
+        'or LANGUAGE sql for an inline single-SELECT source). The RETURNS TABLE column list is ' +
+        'the contract: names, order and types must match the source table type exactly, because ' +
+        'every call site selects from it by name. An inline table-valued function translates to ' +
+        'a single RETURN QUERY; a multi-statement one keeps its intermediate work and RETURN ' +
+        'QUERY / RETURN NEXT at the end. Call sites change from ' +
+        `SELECT * FROM dbo.f(args) to SELECT * FROM f(args) — state that in \`notes\`.`
+      );
+    case 'scalar_function':
+      return (
+        `Translate the ${src} SCALAR function into ONE PostgreSQL function returning that scalar ` +
+        '(CREATE OR REPLACE FUNCTION ... RETURNS <type> LANGUAGE plpgsql). Mark it IMMUTABLE or ' +
+        'STABLE when the body only reads its arguments or the database — a scalar function is ' +
+        'called once per ROW, and the default VOLATILE blocks the planner from hoisting it; say ' +
+        'in `notes` which volatility you chose and why. Preserve NULL-argument behaviour exactly ' +
+        `(${profile.sourceDialect} scalar functions are not STRICT by default, so do NOT add ` +
+        'RETURNS NULL ON NULL INPUT unless the body genuinely returns NULL for every NULL input).'
+      );
+    case 'synonym':
+      return (
+        `Translate the ${profile.sourceDisplay} SYNONYM into a PostgreSQL view. PostgreSQL has no ` +
+        'CREATE SYNONYM, so produce CREATE OR REPLACE VIEW <synonym schema>.<synonym name> AS ' +
+        'SELECT * FROM <base schema>.<base object>; — QUOTE both identifiers (double quotes, ' +
+        'source case preserved) so every existing reference to the synonym name keeps resolving. ' +
+        'If the base object is a TABLE that callers also WRITE through, note in `notes` that the ' +
+        'view is auto-updatable only while it stays a simple SELECT * over one table.'
+      );
+    case 'user_defined_table_type':
+      return (
+        `Translate the ${profile.sourceDisplay} user-defined TABLE TYPE into a PostgreSQL ` +
+        'composite type: CREATE TYPE <schema>.<name> AS (<column> <type>, ...); with the column ' +
+        'names, order and mapped types preserved exactly. Routines that took it as a ' +
+        'table-valued (READONLY) parameter take an ARRAY of this type instead ' +
+        '(<name>[]), and read it with unnest(...) — state that signature change in `notes` so ' +
+        'the call sites move with it. Do NOT emit a table: the type has no storage.'
       );
     case 'scheduled_job':
       return (

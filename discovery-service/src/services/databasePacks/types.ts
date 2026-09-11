@@ -680,6 +680,25 @@ export interface KeyOrIndexMetadata {
    * aligned with `columns[]` -- e.g. `ASC` / `DESC NULLS FIRST`. Verbatim.
    */
   columnDirections?: string[] | null;
+  /**
+   * NON-KEY covering columns (`INCLUDE (...)`). Engine-neutral: PostgreSQL
+   * has had the clause since 11 and SQL Server since 2005. Undefined/empty
+   * for a plain key-only index. Verbatim -- no normalization.
+   */
+  includeColumns?: string[] | null;
+  /**
+   * TRUE when the engine reports the index/constraint as DISABLED. A
+   * disabled index enforces nothing at source, so the migration must not
+   * silently turn it into an enforced target index.
+   */
+  isDisabled?: boolean | null;
+  /**
+   * TRUE when the engine reports a foreign key / check constraint as NOT
+   * TRUSTED (created or re-enabled WITH NOCHECK): the existing rows were
+   * never validated against it, so a plain target constraint would fail to
+   * apply. Such a constraint emits `NOT VALID`.
+   */
+  isNotTrusted?: boolean | null;
 }
 
 /**
@@ -924,6 +943,13 @@ export interface RelationshipInference {
    */
   onDelete?: string | null;
   onUpdate?: string | null;
+  /**
+   * TRUE when the declared FK is NOT TRUSTED (created / re-enabled WITH
+   * NOCHECK): the existing rows were never validated against it, so the
+   * migration must emit the target constraint `NOT VALID` rather than fail
+   * the apply on data the source itself never checked (2026-09-11).
+   */
+  isNotTrusted?: boolean | null;
 }
 
 /**

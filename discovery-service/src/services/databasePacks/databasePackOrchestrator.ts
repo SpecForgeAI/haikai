@@ -979,6 +979,7 @@ export function buildRelationshipCandidates(
     const fkColumns = buildFkColumnsMetadata(r.fromColumns, r.toColumns, {
       onDelete: r.onDelete ?? null,
       onUpdate: r.onUpdate ?? null,
+      isNotTrusted: r.isNotTrusted ?? null,
     });
 
     out.push({

@@ -73,9 +73,34 @@ public class DbMigrationPackDecisionEntity {
      * explicitly leave them without a PK.
      */
     public static final String CATEGORY_SURROGATE_PK = "surrogate_pk";
+    /**
+     * 2026-09-11 (SQL Server 16 -> PostgreSQL 18 pair programme, Spec 5,
+     * changeset 234): source object shapes with NO like-for-like PostgreSQL
+     * form. Each is either emulated by the pack with a confirmable default or
+     * gated here with named options -- never manual residue, never a silent
+     * drop. {@code CATEGORY_CROSS_DATABASE_REFERENCE} and
+     * {@code CATEGORY_INDEXED_VIEW} are OUT by owner ruling: their decisions
+     * carry the named untranslatable reason and offer no translate option.
+     */
+    public static final String CATEGORY_TEMPORAL_TABLE = "temporal_table";
+    public static final String CATEGORY_FULLTEXT_INDEX = "fulltext_index";
+    public static final String CATEGORY_XML_METHOD = "xml_method";
+    public static final String CATEGORY_HIERARCHYID_COLUMN = "hierarchyid_column";
+    public static final String CATEGORY_SPATIAL_COLUMN = "spatial_column";
+    public static final String CATEGORY_SQL_VARIANT_COLUMN = "sql_variant_column";
+    public static final String CATEGORY_CLR_OBJECT = "clr_object";
+    public static final String CATEGORY_SERVICE_BROKER = "service_broker";
+    public static final String CATEGORY_FILESTREAM = "filestream";
+    public static final String CATEGORY_MEMORY_OPTIMIZED_TABLE = "memory_optimized_table";
+    public static final String CATEGORY_SYNONYM = "synonym";
+    public static final String CATEGORY_USER_DEFINED_TABLE_TYPE = "user_defined_table_type";
+    public static final String CATEGORY_INDEX_PREDICATE = "index_predicate";
+    public static final String CATEGORY_COLUMNSTORE_INDEX = "columnstore_index";
+    public static final String CATEGORY_CROSS_DATABASE_REFERENCE = "cross_database_reference";
+    public static final String CATEGORY_INDEXED_VIEW = "indexed_view";
     public static final String CATEGORY_OTHER = "other";
 
-    /** All allowed decision categories, mirroring chk_dmpd_category (changeset 221). */
+    /** All allowed decision categories, mirroring chk_dmpd_category (changeset 234). */
     public static final Set<String> ALL_CATEGORIES = Set.of(
         CATEGORY_TYPE_MAPPING,
         CATEGORY_COMPUTED_COLUMN,
@@ -83,6 +108,22 @@ public class DbMigrationPackDecisionEntity {
         CATEGORY_DELTA_KEY,
         CATEGORY_PK_COMPOSITION,
         CATEGORY_SURROGATE_PK,
+        CATEGORY_TEMPORAL_TABLE,
+        CATEGORY_FULLTEXT_INDEX,
+        CATEGORY_XML_METHOD,
+        CATEGORY_HIERARCHYID_COLUMN,
+        CATEGORY_SPATIAL_COLUMN,
+        CATEGORY_SQL_VARIANT_COLUMN,
+        CATEGORY_CLR_OBJECT,
+        CATEGORY_SERVICE_BROKER,
+        CATEGORY_FILESTREAM,
+        CATEGORY_MEMORY_OPTIMIZED_TABLE,
+        CATEGORY_SYNONYM,
+        CATEGORY_USER_DEFINED_TABLE_TYPE,
+        CATEGORY_INDEX_PREDICATE,
+        CATEGORY_COLUMNSTORE_INDEX,
+        CATEGORY_CROSS_DATABASE_REFERENCE,
+        CATEGORY_INDEXED_VIEW,
         CATEGORY_OTHER
     );
 

@@ -94,6 +94,9 @@ function declaredForeignKeys(
       // referential actions for every constraint.
       onDelete: k.onDelete ?? null,
       onUpdate: k.onUpdate ?? null,
+      // WITH NOCHECK: the source itself never validated the existing rows
+      // against this FK, so the pack emits the target constraint NOT VALID.
+      isNotTrusted: k.isNotTrusted ?? null,
     });
   }
   return out;

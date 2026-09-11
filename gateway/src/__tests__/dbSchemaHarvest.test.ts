@@ -341,6 +341,10 @@ describe('runStructuralHarvest — credential safety', () => {
     const result = await runStructuralHarvest(baseArgs(), {
       // Everything downstream unreachable — createRun fails first.
       sleep: jest.fn().mockResolvedValue(undefined),
+      // The engine-resolution dep (2026-09-11) would otherwise make its own
+      // pack-manifest fetch; stubbing it keeps this test on the ONE call it
+      // is about (the create-run POST that carries the password).
+      resolveSourceEngine: jest.fn().mockResolvedValue(null),
     });
     expect(result.stage).toBe('scan_failed');
     expect(result.error).toContain('HTTP 401');
