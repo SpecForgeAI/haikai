@@ -80,8 +80,13 @@ import {
   type DiscoveryDatabaseEngine,
   type DiscoveryDatabaseProfilingMode,
   type DiscoveryDatabaseTestConnectionResult,
+  type DiscoveryMssqlAuthScheme,
   type DiscoverySybaseDriverChoice,
 } from '../../api/discoveryApi';
+import {
+  DB_ENGINE_DEFAULT_PORT,
+  DB_ENGINE_LABEL,
+} from '../../api/dbEngines';
 import { startDiscoveryRun } from '../../services/gatewayClient';
 import styles from './StartDiscoveryRunModal.module.css';
 
@@ -131,10 +136,22 @@ const MIN_MAX_LOG_PATH_PREFIX_SEGMENTS = 0;
 const MAX_MAX_LOG_PATH_PREFIX_SEGMENTS = 5;
 
 // Spec 2026-05-16 Group 5: defaults for the new DB connection form.
-const DEFAULT_PORT_BY_ENGINE: Record<DiscoveryDatabaseEngine, number> = {
-  postgres: 5432,
-  sybase: 5000,
-};
+// SQL Server pair programme Spec 0 (2026-09-11) moved the port map and the
+// engine labels into `api/dbEngines.ts` so no component hardcodes an engine
+// name or port it did not get from data. This alias keeps the call sites
+// below reading the same as before.
+const DEFAULT_PORT_BY_ENGINE = DB_ENGINE_DEFAULT_PORT;
+
+/**
+ * The engines the scan entry offers, in the order they appear in the picker.
+ * Driven by the shared vocabulary rather than a hand-written option list, so
+ * a fourth engine is one entry here plus its pack.
+ */
+const DB_ENGINE_OPTIONS: ReadonlyArray<DiscoveryDatabaseEngine> = [
+  'postgres',
+  'sybase',
+  'mssql',
+];
 
 export type SourceMode = 'code' | 'database';
 
@@ -156,6 +173,14 @@ interface DatabaseFormState {
   // so toggling between engines doesn't lose the user's selection; the
   // value is only sent on the wire when engine === 'sybase'.
   sybaseDriver: DiscoverySybaseDriverChoice;
+  // SQL-Server-only connection extras, carried in form state the same way:
+  // switching engines back and forth never loses what the user typed, and the
+  // block is only sent on the wire when engine === 'mssql'.
+  mssqlAuthScheme: DiscoveryMssqlAuthScheme;
+  mssqlDomain: string;
+  mssqlEncrypt: boolean;
+  mssqlTrustServerCertificate: boolean;
+  mssqlInstanceName: string;
 }
 
 const INITIAL_DB_FORM: DatabaseFormState = {
@@ -173,6 +198,13 @@ const INITIAL_DB_FORM: DatabaseFormState = {
   password: '',
   readOnlyConfirmed: false,
   sybaseDriver: 'auto',
+  // SQL login with encryption ON and the certificate NOT trusted -- the safe
+  // posture, which the user relaxes deliberately.
+  mssqlAuthScheme: 'sql',
+  mssqlDomain: '',
+  mssqlEncrypt: true,
+  mssqlTrustServerCertificate: false,
+  mssqlInstanceName: '',
 };
 
 function csvToList(raw: string): string[] | null {
@@ -202,6 +234,24 @@ function buildConnectionConfig(form: DatabaseFormState): DiscoveryDatabaseConnec
     // would be harmless (server ignores it) but omitting keeps the payload
     // tidy and surface-area honest.
     ...(form.engine === 'sybase' ? { sybaseDriver: form.sybaseDriver } : {}),
+    // Same rule for the SQL Server connection extras: only on the mssql wire.
+    ...(form.engine === 'mssql'
+      ? {
+          mssqlAuth: {
+            scheme: form.mssqlAuthScheme,
+            domain:
+              form.mssqlAuthScheme === 'ntlm' && form.mssqlDomain.trim() !== ''
+                ? form.mssqlDomain.trim()
+                : null,
+            encrypt: form.mssqlEncrypt,
+            trustServerCertificate: form.mssqlTrustServerCertificate,
+            instanceName:
+              form.mssqlInstanceName.trim() !== ''
+                ? form.mssqlInstanceName.trim()
+                : null,
+          },
+        }
+      : {}),
   };
 }
 
@@ -322,6 +372,11 @@ export function StartDiscoveryRunModal({
     'username',
     'password',
     'sybaseDriver',
+    'mssqlAuthScheme',
+    'mssqlDomain',
+    'mssqlEncrypt',
+    'mssqlTrustServerCertificate',
+    'mssqlInstanceName',
   ];
 
   const updateDbForm = useCallback(
@@ -727,8 +782,11 @@ export function StartDiscoveryRunModal({
                     disabled={isSubmitting}
                     data-testid="start-discovery-run-modal-db-engine"
                   >
-                    <option value="postgres">PostgreSQL</option>
-                    <option value="sybase">Sybase ASE</option>
+                    {DB_ENGINE_OPTIONS.map((engine) => (
+                      <option key={engine} value={engine}>
+                        {DB_ENGINE_LABEL[engine]}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
@@ -760,6 +818,113 @@ export function StartDiscoveryRunModal({
                   </div>
                 )}
               </div>
+
+              {/* SQL Server connection extras (SQL Server 16 -> PostgreSQL 18
+                  pair programme, Spec 2, 2026-09-11). Rendered ONLY for
+                  mssql: a SQL Server JDBC URL needs the auth scheme, the
+                  Windows domain for an NTLM login, the TLS posture, and an
+                  optional named instance -- none of which mean anything to
+                  the other engines. */}
+              {dbForm.engine === 'mssql' && (
+                <div
+                  className={styles.fieldRow}
+                  data-testid="start-discovery-run-modal-db-mssql-extras"
+                >
+                  <div className={styles.fieldGroup}>
+                    <label className={styles.label} htmlFor="db-mssql-auth-scheme">
+                      Authentication
+                    </label>
+                    <select
+                      id="db-mssql-auth-scheme"
+                      className={styles.input}
+                      value={dbForm.mssqlAuthScheme}
+                      onChange={(e) =>
+                        updateDbForm(
+                          'mssqlAuthScheme',
+                          e.target.value as DiscoveryMssqlAuthScheme,
+                        )
+                      }
+                      disabled={isSubmitting}
+                      data-testid="start-discovery-run-modal-db-mssql-auth-scheme"
+                    >
+                      <option value="sql">SQL login</option>
+                      <option value="ntlm">Windows domain (NTLM)</option>
+                    </select>
+                    <span className={styles.hint}>
+                      A SQL login needs the instance in Mixed Mode authentication.
+                    </span>
+                  </div>
+
+                  {dbForm.mssqlAuthScheme === 'ntlm' && (
+                    <div className={styles.fieldGroup}>
+                      <label className={styles.label} htmlFor="db-mssql-domain">
+                        Windows domain
+                      </label>
+                      <input
+                        id="db-mssql-domain"
+                        type="text"
+                        className={styles.input}
+                        value={dbForm.mssqlDomain}
+                        onChange={(e) => updateDbForm('mssqlDomain', e.target.value)}
+                        disabled={isSubmitting}
+                        data-testid="start-discovery-run-modal-db-mssql-domain"
+                      />
+                      <span className={styles.hint}>
+                        Required for an NTLM login. Kerberos single sign-on is not supported.
+                      </span>
+                    </div>
+                  )}
+
+                  <div className={styles.fieldGroup}>
+                    <label className={styles.label} htmlFor="db-mssql-instance">
+                      Named instance (optional)
+                    </label>
+                    <input
+                      id="db-mssql-instance"
+                      type="text"
+                      className={styles.input}
+                      value={dbForm.mssqlInstanceName}
+                      onChange={(e) => updateDbForm('mssqlInstanceName', e.target.value)}
+                      disabled={isSubmitting}
+                      data-testid="start-discovery-run-modal-db-mssql-instance"
+                    />
+                    <span className={styles.hint}>
+                      Leave blank for the default instance. The port above is still used.
+                    </span>
+                  </div>
+
+                  <div className={styles.fieldGroup}>
+                    <label
+                      className={styles.checkboxRow}
+                      data-testid="start-discovery-run-modal-db-mssql-encrypt-row"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={dbForm.mssqlEncrypt}
+                        onChange={(e) => updateDbForm('mssqlEncrypt', e.target.checked)}
+                        disabled={isSubmitting}
+                        data-testid="start-discovery-run-modal-db-mssql-encrypt"
+                      />
+                      <span>Encrypt the connection (recommended)</span>
+                    </label>
+                    <label
+                      className={styles.checkboxRow}
+                      data-testid="start-discovery-run-modal-db-mssql-trust-row"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={dbForm.mssqlTrustServerCertificate}
+                        onChange={(e) =>
+                          updateDbForm('mssqlTrustServerCertificate', e.target.checked)
+                        }
+                        disabled={isSubmitting}
+                        data-testid="start-discovery-run-modal-db-mssql-trust"
+                      />
+                      <span>Trust the server certificate (self-signed certificates)</span>
+                    </label>
+                  </div>
+                </div>
+              )}
 
               <div className={styles.fieldRow}>
                 <div className={styles.fieldGroup}>

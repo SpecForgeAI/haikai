@@ -5,7 +5,11 @@
  *
  * Group 3 wired `'postgres'` to {@link PostgresDiscoveryPack}.
  * Group 4 wires `'sybase'` to {@link SybaseDiscoveryPack} (HTTP client
- * over the JVM sidecar at `SYBASE_SIDECAR_URL`).
+ * over the JVM sidecar at `DB_SIDECAR_URL`).
+ * SQL Server pair programme Spec 2 (2026-09-11) wires `'mssql'` to
+ * {@link MssqlDiscoveryPack} over the SAME sidecar, with `engine: 'mssql'`
+ * on every request. S0 had `getDatabasePack('mssql')` return null with a
+ * "pack lands in S2" warning; that placeholder is now the real pack.
  *
  * Unknown engine keys do NOT throw -- they return `null` with a warning log.
  * The orchestrator surfaces a `db_pack_warning` finding when the factory
@@ -17,6 +21,7 @@ import type { DatabaseDiscoveryPack } from './DatabaseDiscoveryPack';
 import { isDatabaseEngine, DATABASE_ENGINE_CHOICES, type DatabaseEngine } from './types';
 import { PostgresDiscoveryPack } from './postgres/PostgresDiscoveryPack';
 import { SybaseDiscoveryPack } from './sybase/SybaseDiscoveryPack';
+import { MssqlDiscoveryPack } from './mssql/MssqlDiscoveryPack';
 
 /**
  * Constructor signature each engine pack module exports. v1 packs are
@@ -36,6 +41,8 @@ const REGISTRY = new Map<DatabaseEngine, DatabaseDiscoveryPackConstructor>();
 REGISTRY.set('postgres', PostgresDiscoveryPack);
 // Group 4: register the Sybase pack at module-load time.
 REGISTRY.set('sybase', SybaseDiscoveryPack);
+// SQL Server pair programme Spec 2: register the SQL Server pack.
+REGISTRY.set('mssql', MssqlDiscoveryPack);
 
 /**
  * Register a pack constructor for an engine. Called by the pack module at
@@ -89,11 +96,12 @@ export function listRegisteredEnginesForTests(): DatabaseEngine[] {
 }
 
 /**
- * TEST-ONLY: re-register the v1 default packs (postgres + sybase).
+ * TEST-ONLY: re-register the default packs (postgres + sybase + mssql).
  * Use after `resetDatabasePackRegistryForTests` when a test wants the
  * factory back to its post-module-load state.
  */
 export function restoreDefaultDatabasePacksForTests(): void {
   REGISTRY.set('postgres', PostgresDiscoveryPack);
   REGISTRY.set('sybase', SybaseDiscoveryPack);
+  REGISTRY.set('mssql', MssqlDiscoveryPack);
 }

@@ -24,6 +24,16 @@ export interface RoutineParam {
   direction: 'in' | 'output';
   /** Verbatim default literal when declared (`= 0`, `= NULL`), else null. */
   default_literal: string | null;
+  /**
+   * TRUE for a READONLY parameter -- SQL Server's table-valued parameters are
+   * always READONLY, and the modifier is the only way to tell a TVP from an
+   * ordinary one in the signature. Optional and only ever set to `true`, so a
+   * routine from an engine without the concept (Sybase ASE) round-trips with
+   * exactly the fields it had before this was added. A READONLY parameter
+   * cannot be bound as a scalar at call time, so the capture layer must pass
+   * it a table.
+   */
+  is_readonly?: boolean;
 }
 
 export interface RoutineReturnSite {

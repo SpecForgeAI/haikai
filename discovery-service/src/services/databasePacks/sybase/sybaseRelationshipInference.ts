@@ -14,42 +14,21 @@
  * those cases the declared FK is still surfaced but the column list is
  * empty. The PK lookup uses the referenced table's primary key columns to
  * fill in the gap.
+ *
+ * SQL Server pair programme, Spec 2 (2026-09-11): the engine-neutral name
+ * heuristics (`deriveCandidateParentName`, `buildPkMap`,
+ * `nameBasedInferences`) moved VERBATIM to
+ * `../relationshipHeuristics.ts` so the SQL Server pack shares them instead
+ * of carrying a hand-copied twin. Declared-FK surfacing stays here -- the
+ * catalog quirk it compensates for is Sybase's.
  */
 
 import type {
-  ColumnMetadata,
   IntrospectionResult,
   KeyOrIndexMetadata,
   RelationshipInference,
 } from '../types';
-
-function deriveCandidateParentName(columnName: string): string | null {
-  let m = columnName.match(/^fk_(.+)$/i);
-  if (m) return m[1].toLowerCase();
-  m = columnName.match(/^(.+)_id$/i);
-  if (m) return m[1].toLowerCase();
-  m = columnName.match(/^(.+?)Id$/);
-  if (m && /[a-z]Id$/.test(columnName)) return m[1].toLowerCase();
-  return null;
-}
-
-function buildPkMap(
-  keys: KeyOrIndexMetadata[],
-): Map<string, { schemaName: string; tableName: string; columns: string[] }> {
-  const out = new Map<
-    string,
-    { schemaName: string; tableName: string; columns: string[] }
-  >();
-  for (const k of keys) {
-    if (k.kind !== 'primary_key') continue;
-    out.set(`${k.schemaName}.${k.tableName}`, {
-      schemaName: k.schemaName,
-      tableName: k.tableName,
-      columns: k.columns,
-    });
-  }
-  return out;
-}
+import { buildPkMap, nameBasedInferences } from '../relationshipHeuristics';
 
 /**
  * Surface declared FKs from the introspection metadata. If the referenced
@@ -84,104 +63,6 @@ function declaredForeignKeys(
       onDelete: k.onDelete ?? null,
       onUpdate: k.onUpdate ?? null,
     });
-  }
-  return out;
-}
-
-function nameBasedInferences(
-  columns: ColumnMetadata[],
-  pkMap: Map<
-    string,
-    { schemaName: string; tableName: string; columns: string[] }
-  >,
-  declared: RelationshipInference[],
-): RelationshipInference[] {
-  const declaredFromKey = new Set<string>();
-  for (const r of declared) {
-    declaredFromKey.add(
-      `${r.fromSchema}.${r.fromTable}.${r.fromColumns.join(',')}`,
-    );
-  }
-
-  const targetsByName = new Map<
-    string,
-    Array<{ schemaName: string; tableName: string; columns: string[] }>
-  >();
-  for (const pk of pkMap.values()) {
-    const base = pk.tableName.toLowerCase();
-    const variants = new Set<string>([
-      base,
-      base.endsWith('ies')
-        ? `${base.slice(0, -3)}y`
-        : base.endsWith('es')
-        ? base.slice(0, -2)
-        : base.endsWith('s')
-        ? base.slice(0, -1)
-        : '',
-    ]);
-    variants.delete('');
-    for (const v of variants) {
-      let bucket = targetsByName.get(v);
-      if (!bucket) {
-        bucket = [];
-        targetsByName.set(v, bucket);
-      }
-      bucket.push(pk);
-    }
-  }
-
-  const out: RelationshipInference[] = [];
-  for (const col of columns) {
-    const parentName = deriveCandidateParentName(col.columnName);
-    if (!parentName) continue;
-    const dedupeKey = `${col.schemaName}.${col.tableName}.${col.columnName}`;
-    if (declaredFromKey.has(dedupeKey)) continue;
-    const targets = targetsByName.get(parentName);
-    if (!targets || targets.length === 0) continue;
-    if (targets.length === 1) {
-      const t = targets[0];
-      if (t.schemaName === col.schemaName && t.tableName === col.tableName) {
-        continue;
-      }
-      const exact =
-        col.columnName.toLowerCase() === `${t.tableName.toLowerCase()}_id` ||
-        col.columnName.toLowerCase() === `${t.tableName.toLowerCase()}id` ||
-        col.columnName === `${t.tableName}Id`;
-      out.push({
-        fromSchema: col.schemaName,
-        fromTable: col.tableName,
-        fromColumns: [col.columnName],
-        toSchema: t.schemaName,
-        toTable: t.tableName,
-        toColumns: t.columns,
-        kind: 'inferred',
-        confidence: exact ? 0.8 : 0.6,
-        rationale:
-          `Column '${col.columnName}' matches PK table ` +
-          `'${t.schemaName}.${t.tableName}' via naming heuristic; ` +
-          `no declared FK exists.`,
-      });
-    } else {
-      out.push({
-        fromSchema: col.schemaName,
-        fromTable: col.tableName,
-        fromColumns: [col.columnName],
-        toSchema: targets[0].schemaName,
-        toTable: targets[0].tableName,
-        toColumns: targets[0].columns,
-        kind: 'ambiguous',
-        confidence: 0.4,
-        rationale:
-          `Column '${col.columnName}' matches multiple PK tables: ` +
-          targets
-            .map((t) => `${t.schemaName}.${t.tableName}`)
-            .join(', '),
-        competingTargets: targets.map((t) => ({
-          schemaName: t.schemaName,
-          tableName: t.tableName,
-        })),
-      });
-    }
   }
   return out;
 }

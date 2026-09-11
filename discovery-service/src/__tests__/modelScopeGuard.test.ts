@@ -31,6 +31,10 @@ const BASELINE = new Set<string>([
   'src/services/runManager.ts',
   'src/services/databasePacks/DatabaseDiscoveryPack.ts',
   'src/services/databasePacks/candidateStructuralFidelity.ts',
+  // The three engine packs CONSTRUCT the candidate-type key for the rows they
+  // emit (`candidateType: 'physical_data_entities'`). They never READ the raw
+  // model collection, which is what this ratchet exists to prevent.
+  'src/services/databasePacks/mssql/MssqlDiscoveryPack.ts',
   'src/services/databasePacks/postgres/PostgresDiscoveryPack.ts',
   'src/services/databasePacks/sybase/SybaseDiscoveryPack.ts',
   'src/services/discoveryV3Pipeline.ts',

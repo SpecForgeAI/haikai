@@ -1732,6 +1732,35 @@ export type DiscoveryDatabaseProfilingMode = 'none' | 'basic' | 'standard' | 'de
 export type DiscoverySybaseDriverChoice = 'auto' | 'jtds' | 'jconnect';
 
 /**
+ * SQL-Server-only authentication scheme (SQL Server 16 -> PostgreSQL 18 pair
+ * programme, Spec 2, 2026-09-11). `sql` is a SQL login (the instance must be
+ * in Mixed Mode); `ntlm` is a Windows domain login, performed in pure Java by
+ * the sidecar's `mssql-jdbc` driver. Kerberos SSO is deliberately out of
+ * scope -- it needs a native DLL on the sidecar host.
+ */
+export type DiscoveryMssqlAuthScheme = 'sql' | 'ntlm';
+
+/**
+ * SQL-Server-only connection extras. Everything a SQL Server JDBC URL needs
+ * beyond host / port / database / user / password.
+ *
+ * NO SECRETS: the username and password travel on the request body exactly as
+ * for every other engine. `domain` is a Windows DOMAIN name, part of the NTLM
+ * principal -- not a credential.
+ */
+export interface DiscoveryMssqlAuthConfig {
+  scheme: DiscoveryMssqlAuthScheme;
+  /** Windows domain. Required when `scheme === 'ntlm'`. */
+  domain?: string | null;
+  /** TLS on the wire. Defaults ON -- `mssql-jdbc` 12.x encrypts by default. */
+  encrypt: boolean;
+  /** Accept a self-signed / non-CA-trusted server certificate. Defaults OFF. */
+  trustServerCertificate: boolean;
+  /** Named instance. The port is still honoured when both are supplied. */
+  instanceName?: string | null;
+}
+
+/**
  * DTO sent to the gateway's `/api/v1/discovery/db/test-connection` endpoint.
  *
  * The gateway is a pure pass-through -- the discovery-service validates,
@@ -1764,6 +1793,13 @@ export interface DiscoveryDatabaseConnectionConfig {
    * `auto` is the default. Ignored when `dbEngine !== 'sybase'`.
    */
   sybaseDriver?: DiscoverySybaseDriverChoice;
+  /**
+   * SQL-Server-only connection extras (auth scheme, Windows domain, TLS
+   * posture, named instance). Sent ONLY when `dbEngine === 'mssql'`; the
+   * discovery-service applies the safe defaults (SQL login, encryption ON,
+   * certificate NOT trusted) when it is omitted.
+   */
+  mssqlAuth?: DiscoveryMssqlAuthConfig;
 }
 
 /**

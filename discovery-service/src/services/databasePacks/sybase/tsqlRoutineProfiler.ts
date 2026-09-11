@@ -1,6 +1,17 @@
 /**
- * T-SQL routine profiler for the Sybase engine pack (Stored Proc & Function
- * Behaviour Program, Spec 1, 2026-09-09).
+ * T-SQL routine profiler -- shared by BOTH T-SQL engine packs (Stored Proc &
+ * Function Behaviour Program, Spec 1, 2026-09-09; extended for SQL Server by
+ * the SQL Server 16 -> PostgreSQL 18 pair programme, Spec 2, 2026-09-11).
+ *
+ * The dialect is genuinely shared: Microsoft SQL Server and Sybase ASE
+ * descend from the same T-SQL, so ONE profiler serves both packs and the
+ * constructs recognised are the UNION of the two engines'. A SQL-Server-only
+ * construct (TRY/CATCH, THROW, XACT_ABORT, MERGE, the OUTPUT clause, APPLY,
+ * NEXT VALUE FOR, FOR SYSTEM_TIME, CONTAINS/FREETEXT, the XML methods,
+ * OPENQUERY) simply never fires on an ASE body, so the ASE profile is
+ * unchanged by their addition. The module stays in the `sybase/` pack folder
+ * because that is where it was born and moving it would rewrite every
+ * importer for no behavioural gain; the `mssql/` pack imports it directly.
  *
  * Deterministic, tokenizer-level (regex over a comment-stripped body — the
  * Spec F "no full T-SQL parser" ruling stands). Produces the engine-neutral
@@ -90,15 +101,45 @@ function splitTopLevel(segment: string): string[] {
   return out.map((s) => s.trim()).filter((s) => s.length > 0);
 }
 
-// `@name type [= default] [output|out]` — the type may carry (n) / (p,s);
-// the default may be a quoted literal, a number, NULL or a bare token.
-const PARAM_RE =
-  /^@([A-Za-z0-9_]+)\s+([A-Za-z_][A-Za-z0-9_]*(?:\s*\(\s*[0-9]+(?:\s*,\s*[0-9]+)?\s*\))?)\s*(?:=\s*('(?:[^']|'')*'|-?[0-9]+(?:\.[0-9]+)?|null|[A-Za-z0-9_]+))?\s*(output|out)?\s*$/i;
+// One identifier part: bare, `[bracketed]` or `"quoted"`.
+const IDENT_PART = '(?:[A-Za-z_][A-Za-z0-9_]*|\\[[^\\]]+\\]|"[^"]+")';
+
+// `@name type [= default] [output|out] [readonly]` in any trailing-modifier
+// order. The NAME may be bracketed; the TYPE may be schema-qualified
+// (`Website.OrderList` / `[dbo].[OrderIDList]` -- a SQL Server user-defined
+// table type) and may carry `(n)` / `(max)` / `(p,s)`. The default may be a
+// quoted literal (optionally `N`-prefixed), a number, NULL, a bare token or a
+// parenthesised expression.
+const PARAM_RE = new RegExp(
+  '^@(' +
+    IDENT_PART +
+    ')\\s+(' +
+    IDENT_PART +
+    '(?:\\s*\\.\\s*' +
+    IDENT_PART +
+    ')*' +
+    "(?:\\s*\\(\\s*(?:max|[0-9]+(?:\\s*,\\s*[0-9]+)?)\\s*\\))?)" +
+    "\\s*(?:=\\s*(N?'(?:[^']|'')*'|-?[0-9]+(?:\\.[0-9]+)?|null|\\([^)]*\\)|[A-Za-z0-9_]+))?" +
+    '\\s*((?:\\b(?:output|out|readonly)\\b\\s*)*)$',
+  'i',
+);
 
 function parseParams(segment: string): { params: RoutineParam[]; error: string | null } {
   let s = segment.trim();
-  // Strip `with recompile` / `with encryption` trailers and a surrounding paren pair.
-  s = s.replace(/\bwith\s+(recompile|encryption)\b/gi, '').trim();
+  // Strip the procedure-option trailers that sit between the parameter list
+  // and the body `AS`: ASE's `with recompile` / `with encryption`, and SQL
+  // Server's `with execute as owner|caller|self|'user'` (and the bare
+  // `with native_compilation` / `schemabinding` module options).
+  s = s
+    .replace(/\bwith\s+execute\s+as\s+(?:owner|caller|self|'[^']*'|N'[^']*')/gi, '')
+    .replace(
+      /\bwith\s+(recompile|encryption|schemabinding|native_compilation|inline\s*=\s*(?:on|off))\b/gi,
+      '',
+    )
+    .replace(/\bexecute\s+as\s+(?:owner|caller|self|'[^']*'|N'[^']*')/gi, '')
+    .trim();
+  // A trailing comma left behind by a stripped trailer is not a parameter.
+  s = s.replace(/,\s*$/, '').trim();
   if (s.startsWith('(') && s.endsWith(')')) s = s.slice(1, -1).trim();
   if (s.length === 0) return { params: [], error: null };
   const parts = splitTopLevel(s);
@@ -108,12 +149,17 @@ function parseParams(segment: string): { params: RoutineParam[]; error: string |
     if (!m) {
       return { params, error: `unparsed parameter ${i + 1}: ${parts[i].slice(0, 80)}` };
     }
+    const modifiers = (m[4] ?? '').toLowerCase();
+    const isReadonly = /\breadonly\b/.test(modifiers);
     params.push({
-      name: m[1],
+      name: m[1].replace(/^[["]|[\]"]$/g, ''),
       ordinal: i + 1,
       source_type: m[2].replace(/\s+/g, '').toLowerCase(),
-      direction: m[4] ? 'output' : 'in',
+      direction: /\b(?:output|out)\b/.test(modifiers) ? 'output' : 'in',
       default_literal: m[3] !== undefined ? m[3] : null,
+      // Only ever SET when true, so an ASE routine's params serialise exactly
+      // as they did before READONLY was understood.
+      ...(isReadonly ? { is_readonly: true } : {}),
     });
   }
   return { params, error: null };
@@ -130,13 +176,22 @@ interface HeaderParse {
   error: string | null;
 }
 
-/** Index of the first standalone `AS` keyword at parenthesis depth 0 after `from`. */
+/**
+ * Index of the first standalone `AS` keyword at parenthesis depth 0 after
+ * `from`.
+ *
+ * SQL Server puts `WITH EXECUTE AS OWNER` between the parameter list and the
+ * body `AS`, so an `as` whose preceding word is `execute` / `exec` is part of
+ * that clause and is skipped -- taking it as the body start would cut the
+ * header in half and lose every parameter.
+ */
 function findBodyAs(text: string, from: number): number {
   const re = /\bas\b/gi;
   re.lastIndex = from;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
     const before = text.slice(from, m.index);
+    if (/\b(?:execute|exec)\s*$/i.test(before)) continue;
     let depth = 0;
     let inQuote = false;
     for (const ch of before) {
@@ -218,7 +273,16 @@ function parseHeader(kind: RoutineKind, text: string): HeaderParse {
 }
 
 const STATEMENT_KEYWORDS =
-  /\b(insert|update|delete|if|else|begin|end|while|declare|set|exec|execute|return|print|raiserror|select|fetch|open|close|deallocate|commit|rollback|goto|break|continue|waitfor|truncate|create|drop|alter)\b|;/gi;
+  /\b(insert|update|delete|merge|if|else|begin|end|while|declare|set|exec|execute|return|print|raiserror|throw|select|fetch|open|close|deallocate|commit|rollback|goto|break|continue|waitfor|truncate|create|drop|alter)\b|;/gi;
+
+/**
+ * Statements that can FAIL at runtime. Used by the error-continuation
+ * detector below -- the point is not that they write, but that any of them
+ * can raise and, without TRY/CATCH or an `@@ERROR` check, execution simply
+ * carries on to the next statement with the batch half-applied.
+ */
+const FALLIBLE_STATEMENT =
+  /\b(insert|update|delete|merge|exec|execute|truncate|create|drop|alter)\b/gi;
 
 /**
  * Result-producing SELECT sites. A SELECT is NOT result-producing when it
@@ -302,9 +366,85 @@ function findRaiserrorSites(body: string): RoutineProfile['raiserror_sites'] {
     const text = m[4] ? m[4].slice(1, -1).replace(/''/g, "'").slice(0, TEXT_PREVIEW_CAP) : null;
     out.push({ number, severity, text_preview: text });
   }
+  out.push(...findThrowSites(body));
   return out;
 }
 
+/**
+ * THROW sites (SQL Server 2012+), collected into the SAME `raiserror_sites`
+ * list: both are "this routine can exit by raising", and the capture layer
+ * only ever asks that question. The two forms:
+ *
+ *   - `THROW 51000, 'message', 1;` -- an explicit error. Unlike RAISERROR,
+ *     THROW has NO severity argument (its third argument is the STATE), so
+ *     `severity` is null and never guessed. A user-defined THROW number is
+ *     always >= 50000, which is exactly the DETAIL boundary the pair's
+ *     error-mapping rule keys on.
+ *   - `THROW;` (bare) -- a RE-THROW inside a CATCH block. Nothing about the
+ *     error is statically known, so every field is null rather than invented.
+ *
+ * The THROW keyword is skipped when it is immediately followed by a word
+ * character (so an identifier like `throw_count` never registers).
+ */
+function findThrowSites(body: string): RoutineProfile['raiserror_sites'] {
+  const out: RoutineProfile['raiserror_sites'] = [];
+  const re =
+    /\bthrow\b(?:\s*(\d+|@[A-Za-z0-9_]+)\s*,\s*(N?'(?:[^']|'')*'|@[A-Za-z0-9_]+)\s*,\s*(\d+|@[A-Za-z0-9_]+))?/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(body)) !== null) {
+    const number = m[1] && /^\d+$/.test(m[1]) ? Number(m[1]) : null;
+    let text: string | null = null;
+    if (m[2] && /^N?'/i.test(m[2])) {
+      const literal = m[2].replace(/^N/i, '');
+      text = literal.slice(1, -1).replace(/''/g, "'").slice(0, TEXT_PREVIEW_CAP);
+    }
+    // THROW carries no severity argument -- the third value is the STATE.
+    out.push({ number, severity: null, text_preview: text });
+  }
+  return out;
+}
+
+/**
+ * ERROR CONTINUATION -- the shaping doc's hard item 3, and the single most
+ * dangerous like-for-like difference in this pair.
+ *
+ * In T-SQL, most statement-level errors do NOT abort the batch: execution
+ * carries straight on to the next statement with the work half-applied.
+ * PostgreSQL aborts the whole transaction instead, so a routine that RELIES
+ * on continuing after a failure behaves differently the moment it is
+ * translated -- silently, and only on the error path.
+ *
+ * A routine is tagged when ALL of these hold:
+ *   - it contains a statement that can fail (see {@link FALLIBLE_STATEMENT}),
+ *   - at least one further statement follows that one,
+ *   - there is NO enclosing `BEGIN TRY` (which makes the flow explicit),
+ *   - there is NO `@@ERROR` check (the classic pre-TRY/CATCH idiom for
+ *     handling it deliberately), and
+ *   - `SET XACT_ABORT ON` is not in force (which turns errors into batch
+ *     aborts and so removes the continuation entirely).
+ *
+ * This is a HAZARD FLAG, never a compensation verdict: it does not join
+ * `non_compensatable_reasons`, because a routine that continues after an
+ * error is still perfectly bracketable from its static write set.
+ */
+function hasErrorContinuation(body: string): boolean {
+  if (!body) return false;
+  if (/\bbegin\s+try\b/i.test(body)) return false;
+  if (/@@error\b/i.test(body)) return false;
+  if (/\bset\s+xact_abort\s+on\b/i.test(body)) return false;
+  FALLIBLE_STATEMENT.lastIndex = 0;
+  const first = FALLIBLE_STATEMENT.exec(body);
+  if (!first) return false;
+  const after = body.slice(first.index + first[0].length);
+  STATEMENT_KEYWORDS.lastIndex = 0;
+  return STATEMENT_KEYWORDS.test(after);
+}
+
+/**
+ * Construct tags. The first eleven are the original ASE set; everything
+ * after the divider was added for SQL Server (pair programme Spec 2 §2.2)
+ * and simply never fires on an ASE body, so the ASE profile is unchanged.
+ */
 const CONSTRUCT_TESTS: Array<[string, RegExp]> = [
   ['temp_table', /(^|[\s(,])#[A-Za-z_]/],
   ['cursor', /\bdeclare\s+[A-Za-z0-9_]+\s+cursor\b/i],
@@ -317,6 +457,55 @@ const CONSTRUCT_TESTS: Array<[string, RegExp]> = [
   ['set_rowcount', /\bset\s+rowcount\b/i],
   ['set_nocount', /\bset\s+nocount\b/i],
   ['print', /\bprint\b/i],
+  // ---- SQL Server constructs (pair programme Spec 2 §2.2) ----
+  // Error / transaction semantics (shaping hard item 3).
+  ['try_catch', /\bbegin\s+try\b/i],
+  ['throw', /\bthrow\b\s*(?:;|\d|@|$)/im],
+  ['xact_abort', /\bset\s+xact_abort\s+(?:on|off)\b/i],
+  ['trancount', /@@trancount\b/i],
+  ['save_tran', /\bsave\s+tran(?:saction)?\b/i],
+  // Statement forms with no PostgreSQL one-to-one.
+  ['merge', /\bmerge\s+(?:into\s+)?[A-Za-z_["]/i],
+  // The OUTPUT CLAUSE, not an OUTPUT parameter: it is always followed by the
+  // `inserted.` / `deleted.` pseudo-tables (or `* INTO`).
+  ['output_clause', /\boutput\s+(?:\*\s+into\b|(?:[A-Za-z0-9_]+\.)?(?:inserted|deleted)\s*\.)/i],
+  ['table_variable', /\bdeclare\s+@[A-Za-z0-9_]+\s+(?:as\s+)?table\b/i],
+  ['offset_fetch', /\boffset\s+\S+\s+rows?\b/i],
+  ['apply', /\b(?:cross|outer)\s+apply\b/i],
+  ['iif', /\biif\s*\(/i],
+  ['try_convert', /\btry_(?:convert|cast|parse)\s*\(/i],
+  ['string_agg', /\bstring_agg\s*\(/i],
+  // A PARAMETERISED sp_executesql -- the second argument is the quoted
+  // parameter declaration list. Distinct from plain `dynamic_sql` because a
+  // parameterised call is safely bindable, where string concatenation is not.
+  ['sp_executesql_params', /\bsp_executesql\b[\s\S]{0,800}?,\s*N?'\s*@/i],
+  ['next_value_for', /\bnext\s+value\s+for\b/i],
+  // Temporal + full-text + XML (shaping hard item 5).
+  ['for_system_time', /\bfor\s+system_time\b/i],
+  ['contains_freetext', /\b(?:contains|freetext)(?:table)?\s*\(/i],
+  ['xml_method', /\.(?:value|query|nodes|modify|exist)\s*\(\s*N?'/i],
+  // The two OUT rulings' detectors (shaping §3 ruling 3, items 1 and 6). Both
+  // classify as CROSS_DATABASE: a linked-server call and a three-/four-part
+  // name are the same untranslatable reason wearing different clothes.
+  ['openquery_linked', /\b(?:openquery|openrowset|opendatasource)\s*\(/i],
+  [
+    'three_part_name',
+    /\b(?:from|join|apply|into|update|delete\s+from|insert\s+into|insert|merge|exec|execute|references)\s+(?:[A-Za-z_][A-Za-z0-9_$#@]*|\[[^\]]+\])\.(?:[A-Za-z_][A-Za-z0-9_$#@]*|\[[^\]]+\])?\.(?:[A-Za-z_][A-Za-z0-9_$#@]*|\[[^\]]+\])/i,
+  ],
+];
+
+/**
+ * Construct tags that mean "this routine reaches outside its own database".
+ * The shaping doc's item-1 OUT ruling names the reason
+ * `cross_database_reference`; these are the body-level signals that produce
+ * it. Exported so the SQL Server pack's finding layer and the downstream
+ * translation gate agree on ONE list rather than each keeping its own.
+ */
+export const CROSS_DATABASE_CONSTRUCTS: ReadonlyArray<string> = [
+  'openquery_linked',
+  'three_part_name',
+  'remote_call',
+  'cross_db_dml',
 ];
 
 const VOLATILE_FNS = ['getdate', 'getutcdate', 'newid', 'rand', '@@identity', '@@spid', 'current_date', 'current_time'];
@@ -332,7 +521,7 @@ function tokensPresent(body: string, tokens: string[]): string[] {
 
 function findSetOptions(body: string): string[] {
   const out: string[] = [];
-  const re = /\bset\s+(nocount|rowcount|ansinull|arithabort|quoted_identifier|chained|textsize|dateformat|transaction\s+isolation\s+level|xact_abort)\s+([A-Za-z0-9_]+)/gi;
+  const re = /\bset\s+(nocount|rowcount|ansinull|ansi_nulls|ansi_warnings|ansi_padding|arithabort|concat_null_yields_null|numeric_roundabort|quoted_identifier|chained|implicit_transactions|lock_timeout|deadlock_priority|textsize|dateformat|datefirst|transaction\s+isolation\s+level|xact_abort)\s+([A-Za-z0-9_]+)/gi;
   let m: RegExpExecArray | null;
   while ((m = re.exec(body)) !== null) {
     const opt = `${m[1].replace(/\s+/g, ' ')} ${m[2]}`.toLowerCase();
@@ -390,6 +579,11 @@ export function profileTsqlRoutine(source: RoutineSource): RoutineRecord {
   const selfName = header.name || fallbackName;
 
   const constructs = CONSTRUCT_TESTS.filter(([, re]) => re.test(body)).map(([tag]) => tag);
+  // Error continuation is body-shape, not a single token, so it is appended
+  // after the regex sweep. It is deliberately NOT a non-compensatable reason:
+  // a routine that carries on after an error is still bracketable from its
+  // static write set. See `hasErrorContinuation`.
+  if (hasErrorContinuation(body)) constructs.push('error_continuation');
   const nonCompensatable = constructs.filter((c) =>
     ['system_proc', 'remote_call', 'cross_db_dml', 'dynamic_sql', 'waitfor'].includes(c),
   );

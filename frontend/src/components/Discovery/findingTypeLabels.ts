@@ -159,6 +159,36 @@ export const FINDING_TYPE_LABELS: Record<string, string> = {
   api_test_data_candidate: 'API test data candidate',
   unsupported_db_feature: 'Unsupported DB feature',
   db_pack_warning: 'DB pack warning',
+
+  // -- SQL Server 16 -> PostgreSQL 18 pair programme (Spec 2, 2026-09-11) --
+  // SQL-Server-only findings emitted by the `mssql` discovery pack. They go
+  // through the SAME `FindingEmitter` and resolve via `labelForFindingType`,
+  // which `FindingsTab` and `FindingDetailDrawer` already call -- adding the
+  // labels is the entire frontend rendering change (no bespoke widget).
+  //
+  // Objects with no like-for-like PostgreSQL shape (shaping doc item 5): the
+  // tool either BUILDS an emulation (temporal tables, full-text search,
+  // hierarchyid, XML methods) or raises a decision with options (CLR, Service
+  // Broker, FILESTREAM, sql_variant).
+  temporal_table_detected: 'Temporal (system-versioned) table',
+  memory_optimized_table: 'Memory-optimized table',
+  clr_object_detected: 'SQL CLR object',
+  service_broker_detected: 'Service Broker object',
+  filestream_column: 'FILESTREAM column',
+  fulltext_index_detected: 'Full-text index',
+  xml_typed_column: 'XML-typed column',
+  sql_variant_column: 'sql_variant column',
+  hierarchyid_column: 'hierarchyid column',
+  spatial_column: 'Spatial column (PostGIS required)',
+  columnstore_index: 'Columnstore index',
+  synonym_detected: 'Synonym',
+  user_defined_table_type: 'User-defined table type',
+  computed_column_not_persisted: 'Non-persisted computed column',
+  // The two OUT rulings (shaping doc ruling 3, items 1 and 6). Each finding
+  // carries a NAMED untranslatable reason in its payload: the tool never
+  // attempts these and never goes quiet about them.
+  cross_database_reference: 'Cross-database / linked-server reference',
+  indexed_view: 'Indexed view',
 };
 
 /**

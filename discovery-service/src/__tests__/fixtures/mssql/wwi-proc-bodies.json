@@ -1,0 +1,32 @@
+[
+  {
+    "name": "Application.AddRoleMemberIfNonexistent",
+    "objType": "P",
+    "text": "CREATE PROCEDURE [Application].AddRoleMemberIfNonexistent\n@RoleName sysname,\n@UserName sysname\nWITH EXECUTE AS OWNER\nAS\nBEGIN\n    SET NOCOUNT ON;\n    SET XACT_ABORT ON;\n\n    IF NOT EXISTS (SELECT 1 FROM sys.database_role_members AS drm\n                            INNER JOIN sys.database_principals AS dpr\n                            ON drm.role_principal_id = dpr.principal_id\n                            AND dpr.type = N'R'\n                            INNER JOIN sys.database_principals AS dpu\n                            ON drm.member_principal_id = dpu.principal_id\n                            AND dpu.type = N'S'\n                            WHERE dpr.name = @RoleName\n                            AND dpu.name = @UserName)\n    BEGIN\n        BEGIN TRY\n\n            DECLARE @SQL nvarchar(max) = N'ALTER ROLE ' + QUOTENAME(@RoleName)\n                                       + N' ADD MEMBER ' + QUOTENAME(@UserName) + N';'\n            EXECUTE (@SQL);\n\n            PRINT N'User ' + @UserName + N' added to role ' + @RoleName;\n\n        END TRY\n        BEGIN CATCH\n            PRINT N'Unable to add user ' + @UserName + N' to role ' + @RoleName;\n            THROW;\n        END CATCH;\n    END;\nEND;"
+  },
+  {
+    "name": "Website.InsertCustomerOrders",
+    "objType": "P",
+    "text": "CREATE PROCEDURE Website.InsertCustomerOrders\n@Orders Website.OrderList READONLY,\n@OrderLines Website.OrderLineList READONLY,\n@OrdersCreatedByPersonID int,\n@SalespersonPersonID int\nWITH EXECUTE AS OWNER\nAS\nBEGIN\n    SET NOCOUNT ON;\n    SET XACT_ABORT ON;\n\n    DECLARE @OrdersToGenerate AS TABLE\n    (\n        OrderReference int PRIMARY KEY,\n        OrderID int\n    );\n\n    INSERT @OrdersToGenerate (OrderReference, OrderID)\n    SELECT OrderReference, NEXT VALUE FOR Sequences.OrderID\n    FROM @Orders;\n\n    BEGIN TRY\n\n        BEGIN TRAN;\n\n        INSERT Sales.Orders\n            (OrderID, CustomerID, SalespersonPersonID, ContactPersonID, OrderDate,\n             ExpectedDeliveryDate, LastEditedBy, LastEditedWhen)\n        SELECT otg.OrderID, o.CustomerID, @SalespersonPersonID, o.ContactPersonID, SYSDATETIME(),\n               o.ExpectedDeliveryDate, @OrdersCreatedByPersonID, SYSDATETIME()\n        FROM @OrdersToGenerate AS otg\n        INNER JOIN @Orders AS o\n        ON otg.OrderReference = o.OrderReference;\n\n        INSERT Sales.OrderLines\n            (OrderID, StockItemID, Quantity, UnitPrice, LastEditedBy, LastEditedWhen)\n        SELECT otg.OrderID, ol.StockItemID, ol.Quantity,\n               Website.CalculateCustomerPrice(o.CustomerID, ol.StockItemID, SYSDATETIME()),\n               @OrdersCreatedByPersonID, SYSDATETIME()\n        FROM @OrdersToGenerate AS otg\n        INNER JOIN @OrderLines AS ol\n        ON otg.OrderReference = ol.OrderReference\n        INNER JOIN @Orders AS o\n        ON ol.OrderReference = o.OrderReference;\n\n        COMMIT;\n\n    END TRY\n    BEGIN CATCH\n        IF XACT_STATE() <> 0 ROLLBACK;\n        PRINT N'Unable to create the customer orders.';\n        THROW;\n        RETURN -1;\n    END CATCH;\n\n    RETURN 0;\nEND;"
+  },
+  {
+    "name": "Website.CalculateCustomerPrice",
+    "objType": "F",
+    "text": "CREATE FUNCTION Website.CalculateCustomerPrice\n(\n    @CustomerID int,\n    @StockItemID int,\n    @PricingDate date\n)\nRETURNS decimal(18,2)\nWITH EXECUTE AS OWNER\nAS\nBEGIN\n    DECLARE @CalculatedPrice decimal(18,2);\n    DECLARE @UnitPrice decimal(18,2);\n\n    SELECT @UnitPrice = si.UnitPrice\n    FROM Warehouse.StockItems AS si\n    WHERE si.StockItemID = @StockItemID;\n\n    SET @CalculatedPrice = @UnitPrice;\n\n    RETURN @CalculatedPrice;\nEND;"
+  },
+  {
+    "name": "Application.DetermineCustomerAccess",
+    "objType": "F",
+    "text": "CREATE FUNCTION [Application].DetermineCustomerAccess(@CityID int)\nRETURNS TABLE\nWITH SCHEMABINDING\nAS\nRETURN (SELECT 1 AS AccessResult\n        WHERE IS_ROLEMEMBER(N'db_owner') <> 0);"
+  },
+  {
+    "name": "Ledger.SyncFromWarehouse",
+    "objType": "P",
+    "text": "CREATE PROCEDURE Ledger.SyncFromWarehouse\n  @AsOf date = NULL,\n  @RowsCopied int OUTPUT\nAS\nBEGIN\n  SET NOCOUNT ON;\n  INSERT INTO Ledger.Postings (PostedBy, IsVoided)\n  SELECT p.PostedBy, 0\n  FROM ReportingWarehouse.dbo.StagedPostings AS p\n  WHERE p.PostedOn >= ISNULL(@AsOf, '1900-01-01');\n\n  SELECT @RowsCopied = @@ROWCOUNT;\n\n  SELECT * FROM OPENQUERY(LEGACY_LINK, 'SELECT posting_id FROM legacy.postings');\n\n  UPDATE Ledger.Postings SET IsVoided = 1 WHERE PostedBy IS NULL;\n\n  SELECT TOP 10 PostingID, PostedBy FROM Ledger.Postings ORDER BY PostingID DESC;\n\n  RETURN 0;\nEND;"
+  },
+  {
+    "name": "Ledger.trg_PostingTotals_InsteadOfInsert",
+    "objType": "TR",
+    "text": "CREATE TRIGGER Ledger.trg_PostingTotals_InsteadOfInsert ON Ledger.PostingTotals INSTEAD OF INSERT AS\nBEGIN\n  SET NOCOUNT ON;\n  INSERT INTO Ledger.Postings (PostedBy, IsVoided) SELECT PostedBy, 0 FROM inserted;\nEND;"
+  }
+]
