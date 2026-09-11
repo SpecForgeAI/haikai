@@ -21,6 +21,12 @@ export const DB_ENGINE_DEFAULT_PORT: Record<DbEngineKey, number> = {
   mssql: 1433,
 };
 
+/** Select options in a stable order (labels from DB_ENGINE_LABEL). */
+export const DB_ENGINE_OPTIONS: ReadonlyArray<{ value: DbEngineKey; label: string }> = DB_ENGINE_KEYS.map((k) => ({
+  value: k,
+  label: DB_ENGINE_LABEL[k],
+}));
+
 export function isDbEngineKey(value: unknown): value is DbEngineKey {
   return typeof value === 'string' && (DB_ENGINE_KEYS as readonly string[]).includes(value);
 }

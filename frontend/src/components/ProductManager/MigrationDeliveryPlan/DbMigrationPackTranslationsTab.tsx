@@ -117,6 +117,9 @@ const POLL_MS = 3000;
 export interface DbMigrationPackTranslationsTabProps {
   projectId: string;
   packId: string;
+  /** Source engine key + display from the pack manifest (pair-per-project). */
+  sourceEngine?: string | null;
+  sourceEngineDisplay?: string | null;
   /**
    * Invoked after an action whose response reported a CHANGED approved-only
    * emission (approve / un-approve / disposition off an approved row) so the
@@ -224,7 +227,7 @@ function messageOf(err: unknown, fallback: string): string {
 
 export const DbMigrationPackTranslationsTab: React.FC<
   DbMigrationPackTranslationsTabProps
-> = ({ projectId, packId, onEmissionChanged }) => {
+> = ({ projectId, packId, sourceEngine, sourceEngineDisplay, onEmissionChanged }) => {
   const [rows, setRows] = useState<DbMigrationPackTranslationDto[]>([]);
   const [coverage, setCoverage] =
     useState<DbMigrationPackTranslationCoverageSummary | null>(null);
@@ -1591,6 +1594,7 @@ export const DbMigrationPackTranslationsTab: React.FC<
         <DbMigrationPackTranslationReviewer
           key={reviewerRow.id}
           translation={reviewerRow}
+          sourceEngineDisplay={sourceEngineDisplay ?? null}
           busy={busyId !== null}
           onReview={(action, notes) => void handleReview(action, notes)}
           onClose={() => setReviewerId(null)}
@@ -1621,6 +1625,8 @@ export const DbMigrationPackTranslationsTab: React.FC<
       {modal && (
         <DbMigrationPackTargetBuildModal
           variant={modal.variant}
+          sourceEngine={sourceEngine ?? null}
+          sourceEngineDisplay={sourceEngineDisplay ?? null}
           busy={busyId === 'target-build'}
           error={modalError}
           purpose={modal.purpose}

@@ -128,6 +128,11 @@ export interface DbMigrationPackManifest {
   manifest_version: number;
   source_engine: string;
   target_engine: string;
+  /** Pair-per-project (2026-09-11): the ruleset the pack was generated against. */
+  pair_id?: string | null;
+  ruleset_version?: number | null;
+  source_engine_display?: string | null;
+  target_engine_display?: string | null;
   type_mapping_version: string;
   seed_margin: number;
   seed_margin_note: string;

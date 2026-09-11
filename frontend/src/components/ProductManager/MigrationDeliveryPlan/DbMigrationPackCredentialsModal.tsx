@@ -27,11 +27,16 @@ import type {
   VerifyDbMigrationPackRequest,
 } from '../../../api/dbMigrationPackApi';
 import styles from './DbMigrationPack.module.css';
+import { DB_ENGINE_DEFAULT_PORT, dbEngineLabel, isDbEngineKey } from '../../../api/dbEngines';
 
 export type DbMigrationPackCredentialsMode = 'refresh-seeds' | 'verify';
 
 export interface DbMigrationPackCredentialsModalProps {
   mode: DbMigrationPackCredentialsMode;
+  /** Source engine key from the pack manifest (drives the default port). */
+  sourceEngine?: string | null;
+  /** Source engine display name from the pack manifest (drives the labels). */
+  sourceEngineDisplay?: string | null;
   /** True while the parent's API call is in flight (disables the form). */
   busy: boolean;
   /** Inline error from the parent's last submit attempt (if any). */
@@ -42,23 +47,39 @@ export interface DbMigrationPackCredentialsModalProps {
   onClose: () => void;
 }
 
-const MODE_COPY: Record<
-  DbMigrationPackCredentialsMode,
-  { title: string; engineLabel: string; defaultPort: number; submitLabel: string }
-> = {
-  'refresh-seeds': {
-    title: 'Refresh seeds — source Sybase ASE connection',
-    engineLabel: 'Sybase ASE (source)',
-    defaultPort: 5000,
+interface ModeCopy {
+  title: string;
+  engineLabel: string;
+  defaultPort: number;
+  submitLabel: string;
+}
+
+/**
+ * Mode copy is data-driven: the source engine's name and port come from the
+ * pack manifest (pair-per-project, 2026-09-11); the target is PostgreSQL.
+ */
+function modeCopy(
+  mode: DbMigrationPackCredentialsMode,
+  sourceEngine: string | null | undefined,
+  sourceEngineDisplay: string | null | undefined,
+): ModeCopy {
+  if (mode === 'verify') {
+    return {
+      title: 'Verify schema — target PostgreSQL connection',
+      engineLabel: 'PostgreSQL (target)',
+      defaultPort: DB_ENGINE_DEFAULT_PORT.postgres,
+      submitLabel: 'Run verification scan',
+    };
+  }
+  const key = (sourceEngine ?? '').toLowerCase();
+  const display = sourceEngineDisplay ?? dbEngineLabel(sourceEngine) ?? 'source database';
+  return {
+    title: `Refresh seeds — source ${display} connection`,
+    engineLabel: `${display} (source)`,
+    defaultPort: isDbEngineKey(key) ? DB_ENGINE_DEFAULT_PORT[key] : 5000,
     submitLabel: 'Run seed re-scan',
-  },
-  verify: {
-    title: 'Verify schema — target PostgreSQL connection',
-    engineLabel: 'PostgreSQL (target)',
-    defaultPort: 5432,
-    submitLabel: 'Run verification scan',
-  },
-};
+  };
+}
 
 /** Split a comma-separated scope input into trimmed non-empty entries. */
 function parseScopeList(raw: string): string[] {
@@ -70,8 +91,8 @@ function parseScopeList(raw: string): string[] {
 
 export const DbMigrationPackCredentialsModal: React.FC<
   DbMigrationPackCredentialsModalProps
-> = ({ mode, busy, error, onSubmit, onClose }) => {
-  const copy = MODE_COPY[mode];
+> = ({ mode, sourceEngine, sourceEngineDisplay, busy, error, onSubmit, onClose }) => {
+  const copy = modeCopy(mode, sourceEngine, sourceEngineDisplay);
 
   const [host, setHost] = useState('');
   const [port, setPort] = useState<number>(copy.defaultPort);

@@ -46,7 +46,7 @@ Before any discovery work, confirm the stack starts cleanly.
 | 0.4 | `frontend` builds + serves | pass / fail |
 | 0.5 | `sybase-discovery-sidecar` builds with `mvn package` | pass / fail |
 | 0.6 | `sybase-discovery-sidecar` starts on its port (default 8093); `GET /` or health endpoint responds | pass / fail; startup time |
-| 0.7 | `discovery-service` env var `SYBASE_SIDECAR_URL` set; service logs that it found it | pass / fail; value (host:port only is fine) |
+| 0.7 | `discovery-service` + `api-migration-validation-service` env var `DB_SIDECAR_URL` set (the pre-rename `SYBASE_SIDECAR_URL` is honoured as an alias); services log that they found it | pass / fail; value (host:port only is fine) |
 
 ---
 

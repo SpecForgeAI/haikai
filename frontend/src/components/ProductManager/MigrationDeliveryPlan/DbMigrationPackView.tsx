@@ -56,6 +56,7 @@ import DbMigrationPackStructuralFindingsPanel from './DbMigrationPackStructuralF
 import DbMigrationPackEpicPicker from './DbMigrationPackEpicPicker';
 import DbMigrationPackTranslationsTab from './DbMigrationPackTranslationsTab';
 import styles from './DbMigrationPack.module.css';
+import { dbEngineLabel } from '../../../api/dbEngines';
 
 export interface DbMigrationPackViewProps {
   projectId: string;
@@ -354,7 +355,7 @@ export const DbMigrationPackView: React.FC<DbMigrationPackViewProps> = ({
             <p className={styles.surfaceSubtitle}>
               Deterministic Liquibase changelogs + data migration scripts
               generated from the committed physical model, discovery findings,
-              and captured db.* decisions (Sybase ASE → PostgreSQL).
+              and captured db.* decisions for the project's migration pair.
             </p>
           </div>
         </div>
@@ -388,7 +389,8 @@ export const DbMigrationPackView: React.FC<DbMigrationPackViewProps> = ({
           <h2 className={styles.surfaceTitle}>Schema Migration Pack</h2>
           <p className={styles.surfaceSubtitle}>
             {manifest
-              ? `${manifest.source_engine} → ${manifest.target_engine} · ` +
+              ? `${manifest.source_engine_display ?? dbEngineLabel(manifest.source_engine)} → ` +
+                `${manifest.target_engine_display ?? dbEngineLabel(manifest.target_engine)} · ` +
                 `type mapping ${manifest.type_mapping_version} · `
               : ''}
             generated {pack.generated_at ?? '—'}
@@ -888,6 +890,8 @@ export const DbMigrationPackView: React.FC<DbMigrationPackViewProps> = ({
         <DbMigrationPackTranslationsTab
           projectId={projectId}
           packId={pack.id}
+          sourceEngine={manifest?.source_engine ?? null}
+          sourceEngineDisplay={manifest?.source_engine_display ?? (manifest ? dbEngineLabel(manifest.source_engine) : null)}
           onEmissionChanged={() => {
             void loadFiles(pack.id).catch(() => {
               /* contents refresh is best-effort; the next load shows it */
@@ -900,6 +904,8 @@ export const DbMigrationPackView: React.FC<DbMigrationPackViewProps> = ({
       {credentialsMode && (
         <DbMigrationPackCredentialsModal
           mode={credentialsMode}
+          sourceEngine={manifest?.source_engine ?? null}
+          sourceEngineDisplay={manifest?.source_engine_display ?? (manifest ? dbEngineLabel(manifest.source_engine) : null)}
           busy={credentialsBusy}
           error={credentialsError}
           onSubmit={(payload) => void handleCredentialsSubmit(payload)}
