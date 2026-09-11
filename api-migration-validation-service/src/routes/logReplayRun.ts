@@ -26,7 +26,7 @@ import { Router, Request, Response } from 'express';
 
 import { ARCHITECTURE_MODEL_SERVICE_BASE_URL } from '../config';
 import type { ApiAuthSecret } from '../types/secrets';
-import { isDbType, type DbConnectionConfig, type DbType } from '../types/db';
+import { isDbType, parseMssqlAuthWire, type DbConnectionConfig, type DbType } from '../types/db';
 import {
   runLogReplayCurrentCapture,
   type LogReplayCorpusItemInput,
@@ -40,6 +40,7 @@ interface DbBlock {
   schema?: string | null;
   username?: string;
   password?: string;
+  mssql_auth?: unknown;
 }
 
 interface RunBody {
@@ -67,6 +68,7 @@ function toDbConfig(block: DbBlock | null | undefined): DbConnectionConfig | nul
     schema: block.schema ?? null,
     username: block.username,
     password: block.password,
+    mssqlAuth: parseMssqlAuthWire(block.mssql_auth),
   };
 }
 

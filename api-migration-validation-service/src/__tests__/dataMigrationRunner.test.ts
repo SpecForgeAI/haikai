@@ -3,7 +3,7 @@ import { TableLoadError, TargetLoader } from '../services/dataMigration/targetLo
 import { LoadPlan, TableLoadSpec } from '../services/dataMigration/types';
 import { runDataMigration } from '../services/dataMigration/dataMigrationRunner';
 import { emitDataMigrationPredicates } from '../services/dataMigration/dataMigrationPredicates';
-import { loadPairRuleset } from '../migrationPairRules';
+import { pairRulesetForSource } from '../migrationPairRules';
 import { Tracer } from '../trace';
 
 interface TableFixture {
@@ -150,7 +150,7 @@ function recordingTracer(): { tracer: Tracer; calls: { kind: string; args: unkno
   return { tracer, calls };
 }
 
-const ruleset = loadPairRuleset();
+const ruleset = pairRulesetForSource('sybase');
 /** Uncapped (the default posture): read_cap is an explicit valve only. */
 const knobs = { readCap: 0, pageRows: 1000, timeoutSeconds: 30 };
 function planFor(tables: TableLoadSpec[]): LoadPlan {

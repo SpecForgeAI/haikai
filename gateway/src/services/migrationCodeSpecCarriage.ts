@@ -55,7 +55,7 @@ import { MANUAL_GATE_TAG, CODE_PROVENANCE_TAG } from './migrationCodeStreamPlann
 import { SCL_CORPUS_STORY_TAG } from './sclSpecCarriage';
 import { appendTargetStackSection } from './migrationTargetStackSpecSection';
 import { createTracer } from '../trace';
-import { loadPairRuleset } from '../migrationPairRules';
+import { listPairRulesets, loadPairRuleset } from '../migrationPairRules';
 
 // SPEC-stage predicate emission (predicate run-judging batch — see
 // docs/trace-logging.md §Predicate self-scoring layer). Emission only. A
@@ -65,14 +65,33 @@ const trace = createTracer('gateway');
 
 // Dialect guidance heading: pair-owned text from the migration-pair ruleset
 // (Data-Tier Oracle Spec O) with a neutral fallback — this generic module
-// names no engine; the pair file owns the words.
-const DIALECT_GUIDANCE_HEADING: string = (() => {
+// names no engine; the pair file owns the words. With several pairs present
+// and no pin (pair-per-project, 2026-09-11) the heading is the part every
+// pair's heading shares (the text before the pair-specific parenthesis);
+// a data-derived neutral heading, never a literal here.
+const NEUTRAL_GUIDANCE_HEADING = 'SQL dialect rewrite guidance';
+let dialectGuidanceHeadingCache: string | null = null;
+function dialectGuidanceHeading(): string {
+  if (dialectGuidanceHeadingCache !== null) return dialectGuidanceHeadingCache;
+  let heading = NEUTRAL_GUIDANCE_HEADING;
   try {
-    return loadPairRuleset()?.guidance_heading ?? 'SQL dialect rewrite guidance';
+    const pinned = loadPairRuleset()?.guidance_heading;
+    if (pinned) {
+      heading = pinned;
+    } else {
+      const stems = new Set(
+        listPairRulesets()
+          .map((r) => (r.guidance_heading ?? '').split(' (')[0].trim())
+          .filter((s) => s.length > 0),
+      );
+      if (stems.size === 1) heading = [...stems][0];
+    }
   } catch {
-    return 'SQL dialect rewrite guidance';
+    heading = NEUTRAL_GUIDANCE_HEADING;
   }
-})();
+  dialectGuidanceHeadingCache = heading;
+  return heading;
+}
 
 // ---------------------------------------------------------------------------
 // Markers on the book-of-work item blob (stamped by Spec -g)
@@ -649,7 +668,7 @@ export function buildCodeSpecText(args: BuildCodeSpecTextArgs): string {
       } | null;
       if (meta?.sql_dialect === 'tsql' && (meta.non_portable_constructs?.length ?? 0) > 0) {
         lines.push('');
-        lines.push(`#### ${DIALECT_GUIDANCE_HEADING}`);
+        lines.push(`#### ${dialectGuidanceHeading()}`);
         lines.push('');
         lines.push(
           'The SQL behind this edge uses T-SQL constructs that will NOT run ' +
@@ -1220,7 +1239,7 @@ export async function runCodeSpecCarriage(args: {
     specCorr,
   );
   const tsqlEdges = JSON.stringify(facts).includes('"sql_dialect":"tsql"');
-  const guidanceIncluded = specText.includes(`#### ${DIALECT_GUIDANCE_HEADING}`);
+  const guidanceIncluded = specText.includes(`#### ${dialectGuidanceHeading()}`);
   if (!tsqlEdges) {
     trace.predicateSkip(
       'SPEC.DIAL.01', 'T-SQL rewrite guidance embedded when tsql edges exist',

@@ -16,7 +16,7 @@ import {
 } from '../services/dbMigrationPack/routineInvocationDescriptor';
 import { parseFunctionHeader, validateDraftAgainstDescriptor } from '../services/dbMigrationPack/descriptorValidator';
 import { classifyCallSitePattern, computeCallSiteCompatibility } from '../services/dbMigrationPack/callSiteCompatibility';
-import { loadPairRuleset, resetPairRulesetCacheForTest } from '../migrationPairRules';
+import { resolvePairRuleset, resetPairRulesetCacheForTest } from '../migrationPairRules';
 
 function routine(partial: Partial<RoutineCatalogRow>): RoutineCatalogRow {
   return {
@@ -71,7 +71,7 @@ describe('descriptor derivation (SYBPG.PROC.ABI.001)', () => {
 
   it('functions with no result set are return_status shaped and cite the rules present', () => {
     resetPairRulesetCacheForTest();
-    const rs = loadPairRuleset();
+    const rs = resolvePairRuleset({ sourceEngine: 'sybase' });
     const d = deriveRoutineDescriptor(routine({ routine_kind: 'function', returns_type: 'numeric(18,2)', profile_json: { max_result_sets: 0 } }), rs);
     expect(d.shape).toBe('return_status');
     expect(d.rules_cited).toEqual(['SYBPG.PROC.ABI.001', 'SYBPG.PROC.ERR.001', 'SYBPG.PROC.SESSION.001']);
@@ -129,7 +129,7 @@ describe('call-site compatibility (SYBPG.PROC.CALLSITE.001)', () => {
 
   it('applies the matrix per shape and reports undescribed routines honestly', () => {
     resetPairRulesetCacheForTest();
-    const rs = loadPairRuleset();
+    const rs = resolvePairRuleset({ sourceEngine: 'sybase' });
     const descriptors = deriveDescriptorsByRoutine(
       [
         routine({ id: 'a', routine_name: 'upd_ledger_roll', profile_json: { max_result_sets: 1, return_status_trivial: true } }),

@@ -17,7 +17,7 @@
  * keep working unchanged, and exactly which ones need a change.
  */
 
-import type { MigrationPairRuleset } from '../../migrationPairRules';
+import { procRulePrefix, type MigrationPairRuleset } from '../../migrationPairRules';
 import type { RoutineDescriptor } from './routineInvocationDescriptor';
 
 export type CallSitePattern =
@@ -53,7 +53,11 @@ export interface CallSiteCompatibilitySummary {
   rule_id: string;
 }
 
-const MATRIX_RULE_ID = 'SYBPG.PROC.CALLSITE.001';
+/** The pair's call-site matrix rule: `<prefix>PROC.CALLSITE.001` (prefix from the ruleset, never a literal). */
+const MATRIX_RULE_SUFFIX = 'PROC.CALLSITE.001';
+function matrixRuleId(ruleset: MigrationPairRuleset | null): string {
+  return `${ruleset ? procRulePrefix(ruleset) : ''}${MATRIX_RULE_SUFFIX}`;
+}
 
 function bareName(raw: string): string {
   const cleaned = raw.replace(/[[\]"'`]/g, '').trim();
@@ -81,7 +85,7 @@ function matrixVerdict(
   shape: RoutineDescriptor['shape'],
   pattern: CallSitePattern
 ): { verdict: CallSiteVerdict['verdict']; reason: string | null } {
-  const rule = ruleset?.rules.find((r) => r.id === MATRIX_RULE_ID);
+  const rule = ruleset?.rules.find((r) => r.id === matrixRuleId(ruleset));
   const cell = rule?.matrix?.[shape]?.[pattern];
   if (typeof cell !== 'string' || cell.length === 0) {
     return { verdict: 'unknown', reason: 'no matrix entry for this shape/pattern' };
@@ -134,6 +138,6 @@ export function computeCallSiteCompatibility(
     unknown: sites.filter((s) => s.verdict === 'unknown').length,
     undescribed_routines: [...undescribed].sort(),
     sites,
-    rule_id: MATRIX_RULE_ID,
+    rule_id: matrixRuleId(ruleset),
   };
 }

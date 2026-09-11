@@ -35,7 +35,7 @@ import {
 } from '../services/dataParity/dataParityComparator';
 import { archModelClient } from '../services/archModelClient';
 import { pairRulesetForSource } from '../migrationPairRules';
-import { isDbType, DB_TYPE_CHOICES } from '../types/db';
+import { isDbType, DB_TYPE_CHOICES, parseMssqlAuthWire, type DbType } from '../types/db';
 import { createTracer } from '../trace';
 
 // DATA-stage predicate emission (predicate run-judging — see
@@ -59,6 +59,7 @@ interface DbBlock {
   schema?: string | null;
   username?: string;
   password?: string;
+  mssql_auth?: unknown;
 }
 
 interface RunBody {
@@ -151,22 +152,24 @@ export function buildDataParityRunRouter(deps: DataParityRunDeps = {}): Router {
 
     // Credentials: function scope only — never logged, never persisted.
     const source = factory({
-      dbType: body.source_db!.db_type as 'postgres' | 'sybase',
+      dbType: body.source_db!.db_type as DbType,
       host: body.source_db!.host!,
       port: body.source_db!.port!,
       database: body.source_db!.database!,
       schema: body.source_db!.schema ?? null,
       username: body.source_db!.username!,
       password: body.source_db!.password!,
+      mssqlAuth: parseMssqlAuthWire(body.source_db!.mssql_auth),
     }) as DbAdapter;
     const target = factory({
-      dbType: body.target_db!.db_type as 'postgres' | 'sybase',
+      dbType: body.target_db!.db_type as DbType,
       host: body.target_db!.host!,
       port: body.target_db!.port!,
       database: body.target_db!.database!,
       schema: body.target_db!.schema ?? null,
       username: body.target_db!.username!,
       password: body.target_db!.password!,
+      mssqlAuth: parseMssqlAuthWire(body.target_db!.mssql_auth),
     }) as DbAdapter;
 
     trace.stageStart('DATA', corr);

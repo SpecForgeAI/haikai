@@ -30,7 +30,7 @@ import { runRoutineParity, type ProcParityWaiver, type RoutineParityReport } fro
 import { resolveSessionSet } from '../services/procCapture/procCaptureOrchestrator';
 import { PROC_CALL_MAX_RESULT_SETS, PROC_CALL_MAX_ROWS_PER_RESULT_SET, PROC_CALL_TIMEOUT_SECONDS } from '../services/procCapture/procConfig';
 import { createTracer } from '../trace';
-import { isDbType, DB_TYPE_CHOICES, type DbType } from '../types/db';
+import { isDbType, DB_TYPE_CHOICES, parseMssqlAuthWire, type DbType } from '../types/db';
 
 const trace = createTracer('amvs');
 
@@ -42,6 +42,7 @@ interface DbBlock {
   schema?: string | null;
   username?: string;
   password?: string;
+  mssql_auth?: unknown;
 }
 
 function dbBlockError(label: string, block: DbBlock | undefined): string | null {
@@ -63,6 +64,7 @@ function toConfig(block: DbBlock) {
     schema: block.schema ?? null,
     username: block.username as string,
     password: block.password as string,
+    mssqlAuth: parseMssqlAuthWire(block.mssql_auth),
   };
 }
 

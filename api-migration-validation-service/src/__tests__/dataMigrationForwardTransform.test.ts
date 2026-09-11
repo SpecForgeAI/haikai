@@ -1,8 +1,8 @@
 import { forwardTransformRow } from '../services/dataMigration/pairRuleForwardTransform';
-import { loadPairRuleset } from '../migrationPairRules';
+import { pairRulesetForSource } from '../migrationPairRules';
 
 describe('forwardTransformRow (Spec Y load-time transform)', () => {
-  const ruleset = loadPairRuleset();
+  const ruleset = pairRulesetForSource('sybase');
 
   it('loads the sybase15-postgres18 ruleset from the repo', () => {
     expect(ruleset).not.toBeNull();

@@ -461,6 +461,53 @@ function num(params: Record<string, unknown> | undefined, key: string): number |
   return typeof v === 'number' && Number.isFinite(v) ? v : null;
 }
 
+const FRACTION_RE = /^(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}|\d{2}:\d{2}:\d{2})(?:\.(\d+))?(.*)$/;
+
+/**
+ * Cut a timestamp / time STRING's fraction at `granularityUs` microseconds
+ * (textual truncation, never rounding). Returns the canonical string with a
+ * fixed 6-digit fraction (or 6-digit-multiple granularity applied), or null
+ * when the value is not a recognisable timestamp/time string.
+ */
+function cutFractionMicros(value: unknown, granularityUs: number): string | null {
+  if (value instanceof Date) return cutFractionMicros(value.toISOString().replace('T', ' ').replace('Z', ''), granularityUs);
+  if (typeof value !== 'string') return null;
+  const m = FRACTION_RE.exec(value.trim());
+  if (!m) return null;
+  const head = m[1].replace('T', ' ');
+  const frac = (m[2] ?? '').padEnd(6, '0').slice(0, 6);
+  const tail = m[3] ?? '';
+  let micros = Number(frac);
+  if (granularityUs > 1) micros = Math.floor(micros / granularityUs) * granularityUs;
+  return `${head}.${String(micros).padStart(6, '0')}${tail}`;
+}
+
+const OFFSET_RE = /([+-])(\d{2}):?(\d{2})$/;
+
+/**
+ * Canonical UTC instant string `yyyy-MM-dd HH:mm:ss.ffffff` at the given
+ * microsecond granularity for an offset-bearing (or naive = UTC) timestamp.
+ */
+function instantCanonical(value: unknown, granularityUs: number): string | null {
+  const s = value instanceof Date ? value.toISOString() : typeof value === 'string' ? value.trim() : null;
+  if (s === null) return null;
+  const cut = cutFractionMicros(s.replace(/[zZ]$/, '+00:00'), granularityUs);
+  if (cut === null) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})\.(\d{6})(.*)$/.exec(cut);
+  if (!m) return null;
+  let offsetMin = 0;
+  const off = OFFSET_RE.exec(m[8] ?? '');
+  if (off) offsetMin = (off[1] === '-' ? -1 : 1) * (Number(off[2]) * 60 + Number(off[3]));
+  const utcMs = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]), Number(m[6])) - offsetMin * 60_000;
+  if (!Number.isFinite(utcMs)) return null;
+  const d = new Date(utcMs);
+  const p = (n: number, w = 2): string => String(n).padStart(w, '0');
+  return (
+    `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ` +
+    `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}.${m[7]}`
+  );
+}
+
 /**
  * Canonicalize one value under one comparison strategy. Null/undefined pass
  * through untouched (absence is compared as absence). Unknown strategies and
@@ -472,6 +519,15 @@ export function canonicalize(value: unknown, comparison: PairComparison): unknow
   const params = comparison.params;
   switch (comparison.strategy) {
     case 'timestamp-truncate': {
+      // Sub-millisecond granularity (2026-09-11, second pair): the wire
+      // carries up to 7 fractional digits as a STRING; canonicalise by
+      // cutting the fraction at `granularity_us` microseconds textually —
+      // never via epoch ms (which would drop the digits being compared).
+      const gUs = num(params, 'granularity_us');
+      if (gUs !== null && gUs > 0) {
+        const cut = cutFractionMicros(value, gUs);
+        if (cut !== null) return cut;
+      }
       const ms = toEpochMs(value);
       if (ms === null) return value;
       const tps = num(params, 'ticks_per_second');
@@ -488,6 +544,26 @@ export function canonicalize(value: unknown, comparison: PairComparison): unknow
     }
     case 'string-rtrim':
       return String(value).replace(/ +$/, '');
+    case 'instant': {
+      // Offset-bearing timestamps compare as an INSTANT: normalise to UTC at
+      // the requested microsecond granularity (default 1 µs). A value with no
+      // offset is UTC by policy (naive-timestamp-is-UTC).
+      const canonical = instantCanonical(value, num(params, 'granularity_us') ?? 1);
+      return canonical ?? value;
+    }
+    case 'uuid-canonical': {
+      const s = String(value).trim().toLowerCase().replace(/^\{|\}$/g, '');
+      return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(s) ? s : value;
+    }
+    case 'xml-canonical': {
+      // Insignificant inter-element whitespace + the XML declaration are
+      // canonicalised away; attribute order is preserved (a re-serialising
+      // engine that reorders attributes is a real divergence to see).
+      return String(value)
+        .replace(/^\s*<\?xml[^>]*\?>\s*/i, '')
+        .replace(/>\s+</g, '><')
+        .trim();
+    }
     case 'numeric-rescale': {
       const n = Number(value);
       if (!Number.isFinite(n)) return value;
@@ -576,6 +652,11 @@ const KNOWN_STRATEGIES = new Set([
   'multiset',
   'error-source-number',
   'advisory',
+  // 2026-09-11 (second-pair programme, Spec 3): offset instants, UUID and
+  // XML canonical forms; `granularity_us` on timestamp-truncate.
+  'instant',
+  'uuid-canonical',
+  'xml-canonical',
 ]);
 
 /** Strategies whose semantics live in a dimension driver, not per cell. */

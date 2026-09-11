@@ -5,8 +5,13 @@
  * mutate stored data (Spec Y §5).
  *
  * Load-time actions (faithful, non-lossy):
- *   - charset-normalize (NFC) on string values — SYBPG.STR.002 / SYBPG.LOB.001;
- *   - bit -> boolean coercion — SYBPG.BIT.001 (a type_nullability rule).
+ *   - charset-normalize (NFC) on string values — the pair's STR/LOB rules;
+ *   - bit -> boolean coercion — the pair's BIT rule (a type_nullability rule);
+ *   - uuid-canonical lower-casing — the pair's UUID rule (text form is
+ *     case-insensitive on the source, so this loses nothing);
+ *   - the ONE cited lossy action: a `granularity_us` timestamp-truncate rule
+ *     (100 ns source precision → microseconds) TRUNCATES the fraction on load
+ *     so both sides share the canonical form (the loader never rounds).
  *
  * Deferred to the data-parity comparator (Spec P), NEVER applied on load:
  *   - timestamp-truncate (would destroy datetime precision),
@@ -55,6 +60,13 @@ function loadRulesForColumnType(
   );
 }
 
+/** Cut a timestamp/time string's fraction to `digits` (truncation, never rounding). */
+export function truncateFractionDigits(value: string, digits: number): string {
+  const m = /^(.*?\d{2}:\d{2}:\d{2})\.(\d+)(.*)$/.exec(value);
+  if (!m || m[2].length <= digits) return value;
+  return `${m[1]}.${m[2].slice(0, digits)}${m[3]}`;
+}
+
 /** Case-insensitive row-value lookup (engines case-fold result keys differently). */
 export function cellValue(row: Record<string, unknown>, column: string): unknown {
   if (column in row) return row[column];
@@ -94,6 +106,19 @@ export function forwardTransformRow(
         if (rule.comparison?.strategy === 'charset-normalize' && typeof value === 'string') {
           value = canonicalize(value, rule.comparison);
           applied.add(rule.id);
+        } else if (rule.comparison?.strategy === 'uuid-canonical' && typeof value === 'string') {
+          value = canonicalize(value, rule.comparison);
+          applied.add(rule.id);
+        } else if (
+          (rule.comparison?.strategy === 'timestamp-truncate' || rule.comparison?.strategy === 'instant') &&
+          typeof rule.comparison.params?.granularity_us === 'number' &&
+          typeof value === 'string'
+        ) {
+          const cut = truncateFractionDigits(value, 6);
+          if (cut !== value) {
+            value = cut;
+            applied.add(rule.id);
+          }
         } else if (
           rule.divergence_class === 'type_nullability' &&
           typeBase(col.sourceType) === 'bit'

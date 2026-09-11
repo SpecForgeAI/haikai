@@ -28,7 +28,7 @@
 import { Router, Request, Response } from 'express';
 import { DbAdapter } from '../services/db/DbAdapter';
 import { createDbAdapter as defaultCreateDbAdapter } from '../services/db/dbAdapterFactory';
-import { DbConnectionConfig, DbType, isDbType, DB_TYPE_CHOICES } from '../types/db';
+import { DbConnectionConfig, DbType, isDbType, DB_TYPE_CHOICES, parseMssqlAuthWire } from '../types/db';
 import {
   PostgresSyncTargetLoader,
   PostgresTargetLoader,
@@ -79,6 +79,7 @@ interface DbBlock {
   schema?: string | null;
   username?: string;
   password?: string;
+  mssql_auth?: unknown;
 }
 
 interface RunBody {
@@ -119,6 +120,7 @@ function toConfig(block: DbBlock): DbConnectionConfig {
     schema: block.schema ?? null,
     username: block.username as string,
     password: block.password as string,
+    mssqlAuth: parseMssqlAuthWire(block.mssql_auth),
   };
 }
 

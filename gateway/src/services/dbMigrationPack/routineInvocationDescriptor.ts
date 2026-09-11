@@ -20,7 +20,7 @@
  * compatibility count is computed against.
  */
 
-import type { MigrationPairRuleset } from '../../migrationPairRules';
+import { procRulePrefix, type MigrationPairRuleset } from '../../migrationPairRules';
 
 export type RoutineShape = 'return_status' | 'single_result_set' | 'out_params' | 'rich';
 
@@ -90,9 +90,14 @@ export interface RoutineDescriptor {
   };
 }
 
-const ABI_RULE = 'SYBPG.PROC.ABI.001';
-const ERR_RULE = 'SYBPG.PROC.ERR.001';
-const SESSION_RULE = 'SYBPG.PROC.SESSION.001';
+/** Rule ids are `<pair prefix>PROC.<family>` — the prefix comes from the ruleset, never a literal. */
+const ABI_SUFFIX = 'PROC.ABI.001';
+const ERR_SUFFIX = 'PROC.ERR.001';
+const SESSION_SUFFIX = 'PROC.SESSION.001';
+function procRuleIds(ruleset: MigrationPairRuleset | null): { abi: string; err: string; session: string } {
+  const prefix = ruleset ? procRulePrefix(ruleset) : '';
+  return { abi: `${prefix}${ABI_SUFFIX}`, err: `${prefix}${ERR_SUFFIX}`, session: `${prefix}${SESSION_SUFFIX}` };
+}
 
 /**
  * Source parameter type -> PostgreSQL argument type. Mirrors the pack's
@@ -216,7 +221,8 @@ export function deriveRoutineDescriptor(
   else if (shape === 'single_result_set') carriage = 'none';
   else if (shape === 'out_params') carriage = basis.return_status_trivial ? 'none' : 'out_param';
   else carriage = 'out_param';
-  const rulesCited = [ABI_RULE, ERR_RULE, SESSION_RULE].filter((id) => !ruleset || ruleset.rules.some((r) => r.id === id));
+  const ids = procRuleIds(ruleset);
+  const rulesCited = [ids.abi, ids.err, ids.session].filter((id) => !ruleset || ruleset.rules.some((r) => r.id === id));
   return {
     shape,
     pg_schema: (opts.targetSchema ?? routine.schema_name ?? 'dbo').toLowerCase(),
@@ -225,8 +231,8 @@ export function deriveRoutineDescriptor(
     out_params: outParams,
     refcursors,
     return_status_carriage: carriage,
-    error_carriage_rule: ERR_RULE,
-    session_profile_rule: SESSION_RULE,
+    error_carriage_rule: ids.err,
+    session_profile_rule: ids.session,
     confidence: opts.captureRefined ? 'capture_refined' : 'static',
     rules_cited: rulesCited,
     basis,

@@ -101,7 +101,7 @@ export interface DataParityReportBody {
 const EXAMPLES_CAP = 20;
 const VALUE_EXCERPT_CAP = 80;
 /** Source types excluded from the DEFAULT order key (not totally orderable). */
-const UNORDERABLE_TYPE_FRAGMENTS = ['json', 'xml', 'image', 'text', 'binary', 'blob'];
+const UNORDERABLE_TYPE_FRAGMENTS = ['json', 'xml', 'image', 'text', 'binary', 'blob', 'sql_variant', 'geography', 'geometry', 'hierarchyid'];
 
 function excerpt(value: unknown): string {
   const s = value === null || value === undefined ? '∅' : String(value);

@@ -10,7 +10,7 @@ doctrine, the owner rulings, hard-item designs, the user prerequisite).
 | 0 | Foundations (vocabulary, pair-per-project, rules lib, guard) | M | — | `feat/mssql-pair-s0-foundations` | built 2026-09-11 |
 | 1 | Sidecar multi-engine (`db-discovery-sidecar`) | L | 0 | | pending |
 | 2 | Discovery `mssql` pack + scan UI | L | 1 | | pending |
-| 3 | Ruleset + `MssqlAdapter` + data plane | L | 1 | | pending |
+| 3 | Ruleset + `MssqlAdapter` + data plane | L | 1 (contract) | `feat/mssql-pair-s3-ruleset-data-plane` | built 2026-09-11 |
 | 4 | State discipline on SQL Server | M | 3 | | pending |
 | 5 | Pack generation for SQL Server | L | 2 | | pending |
 | 6 | Translation dialect (items 3, 7) + code tier | L | 4, 5 | | pending |
@@ -59,3 +59,28 @@ gate = ruleset present AND `GENERATOR_SUPPORTED_SOURCE_ENGINES`; guard regex +
 timeout under load; discovery `archModelClientCandidateDelete`/`integrationLayer`
 ARCH_ID redeclare + `requestContractScanner`.
 
+### S3 — Ruleset + MssqlAdapter + data plane (2026-09-11)
+As-built: `migration-pairs/sqlserver16-postgres18.rules.json` (v2, prefix `MSPG.`,
+36 rules: DT.001–005 incl. the cited datetime2(7) loss + datetimeoffset instant,
+STR.001–003, COLL.001 ENABLED by ruling, NUM.001–003, BIT/INT/LOB/BIN/UUID/SEQ,
+XML.001–002, VARIANT, HIER, GEO, TEMPORAL, FULLTEXT, the PROC family with
+TRY/CATCH + XACT_ABORT + continuation + savepoint conventions and THROW carriage,
+mssql-jdbc session profile with NAMED isolation level, table_function /
+scalar_function shapes in ABI + CALLSITE; `translation_profile` block for S6;
+33 construct_refs). Library (×3 copies): `granularity_us` on timestamp-truncate
+(string truncation), `instant`, `uuid-canonical`, `xml-canonical`. AMVS:
+`types/db.ts` `MssqlAuth` + `parseMssqlAuthWire` (snake/camel), `mssqlAuth` on
+`DbConnectionConfig`; `services/db/MssqlAdapter.ts` (bracket quoting, N'…' /
+0x… / 7-digit cursor literals, COUNT_BIG, `engine: 'mssql'` + auth extras on
+every sidecar body, `/call` params under `sourceType`), shared
+`sidecarCallEnvelope.ts`; factory arm live; `config.ts` `DB_SIDECAR_URL` (+
+`SYBASE_SIDECAR_URL` alias); five DB routes accept `mssql_auth`; forward
+transform: uuid lower-casing + the cited 7→6 fraction truncation on load;
+unorderable types + sql_variant/geography/geometry/hierarchyid. Gateway
+`migrationCodeSpecCarriage` heading is data-derived across pairs (common stem).
+Tests: `MssqlAdapter.test`, `migrationPairRulesetsRepo.test` (both files valid,
+strategies all known, session profile named form), `migrationPairStrategiesV3.test`
+(AMVS + gateway); ruleset-consuming tests resolve by engine. NOTE: with two
+rulesets present `loadPairRuleset()` is null unless pinned — every runtime
+caller resolves per source engine (S0); legacy callers with no engine degrade
+to no rule citations (visible in reports as empty `rules_available`).

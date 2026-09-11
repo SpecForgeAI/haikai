@@ -1,6 +1,7 @@
 import { DbAdapter } from './DbAdapter';
 import { PostgresAdapter } from './PostgresAdapter';
 import { SybaseAdapter } from './SybaseAdapter';
+import { MssqlAdapter } from './MssqlAdapter';
 import type { DbConnectionConfig } from '../../types/db';
 
 /**
@@ -20,10 +21,7 @@ export function createDbAdapter(config: DbConnectionConfig): DbAdapter {
     case 'sybase':
       return new SybaseAdapter(config);
     case 'mssql':
-      // SQL Server 16 -> PostgreSQL 18 pair programme: the adapter lands in
-      // Spec 3. The vocabulary is open (routes accept the value); the
-      // runtime refuses loudly until then.
-      throw new Error("dbType 'mssql' is recognised but its adapter is not built yet (pair programme Spec 3).");
+      return new MssqlAdapter(config);
     default: {
       // Exhaustive switch -- TypeScript will flag an unhandled engine.
       const _exhaustive: never = config.dbType;
