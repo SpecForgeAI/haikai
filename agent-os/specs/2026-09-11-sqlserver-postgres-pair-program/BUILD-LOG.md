@@ -1,6 +1,6 @@
 # SQL Server 16 → PostgreSQL 18 pair programme — Build Log
 
-## STATUS: IN PROGRESS (started 2026-09-11)
+## STATUS: BUILT 2026-09-11 — all 8 specs MERGED to main (--no-ff) + PUSHED; work-machine shakedown pending (checklist below)
 
 Design of record: `agent-os/planning/2026-09-11-sqlserver-postgres-pair-shaping.md` (read FIRST:
 doctrine, the owner rulings, hard-item designs, the user prerequisite).
