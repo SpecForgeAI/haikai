@@ -8,7 +8,10 @@
 jest.mock('../services/logger', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
-jest.mock('../migrationPairRules', () => ({ loadPairRuleset: () => ({ pair_id: 'sybase15-postgres18', version: 2, rules: [] }) }));
+jest.mock('../migrationPairRules', () => ({
+  ...jest.requireActual('../migrationPairRules'),
+  loadPairRuleset: () => ({ pair_id: 'sybase15-postgres18', version: 2, rules: [] }),
+}));
 
 import {
   checkProcParityPreconditions,
