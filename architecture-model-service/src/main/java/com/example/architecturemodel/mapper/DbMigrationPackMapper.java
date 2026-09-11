@@ -142,7 +142,8 @@ public final class DbMigrationPackMapper {
             entity.getBestAttemptNo(),
             entity.getVerdictJson(),
             entity.getParityReportId(),
-            entity.getStaleReason()
+            entity.getStaleReason(),
+            entity.getUntranslatableReason()
         );
     }
 }

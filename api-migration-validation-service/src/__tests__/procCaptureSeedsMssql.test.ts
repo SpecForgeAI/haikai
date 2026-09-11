@@ -38,3 +38,15 @@ describe('seededFamilies (error-mid-routine family)', () => {
     expect(seededFamilies(routine(['temp_table']))).toEqual([]);
   });
 });
+
+describe('enumerateExitOutcomes with THROW sites', () => {
+  it('counts numbered THROW sites as error outcomes and ignores bare re-throws', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { enumerateExitOutcomes } = require('../services/procCapture/routineScenarioSeeds');
+    const r = {
+      id: 'r1', schema_name: 'dbo', routine_name: 'usp_x', routine_kind: 'procedure', language: 'TSQL', full_body: 'x', params_json: [],
+      profile_json: { constructs: ['throw'], return_sites: [], raiserror_sites: [{ number: 50002, severity: 16, text_preview: null }], throw_sites: [{ number: 50001, state: 1, text_preview: null }, { number: null, state: null, text_preview: null }] },
+    };
+    expect(enumerateExitOutcomes(r as never).sort()).toEqual(['error:50001', 'error:50002', 'success']);
+  });
+});

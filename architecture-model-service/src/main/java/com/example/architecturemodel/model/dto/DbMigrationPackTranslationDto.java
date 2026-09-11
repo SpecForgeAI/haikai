@@ -138,5 +138,9 @@ public record DbMigrationPackTranslationDto(
     UUID parityReportId,
 
     @JsonProperty("stale_reason")
-    String staleReason
+    String staleReason,
+
+    // --- Untranslatable reason (changeset 233, second-pair programme, 2026-09-11) ---
+    @JsonProperty("untranslatable_reason")
+    String untranslatableReason
 ) {}

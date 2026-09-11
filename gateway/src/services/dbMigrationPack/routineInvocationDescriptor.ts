@@ -42,6 +42,8 @@ export interface RoutineCatalogRow {
     return_sites?: Array<{ value: number | null; expr: string | null }>;
     return_status_trivial?: boolean;
     raiserror_sites?: Array<{ number: number | null; severity: number | null; text_preview: string | null }>;
+    /** THROW sites (SQL Server): user error numbers >= 50000 carried per the pair's ERR rule. */
+    throw_sites?: Array<{ number: number | null; state: number | null; text_preview: string | null }>;
     result_selects?: Array<{ ordinal: number; has_order_by: boolean; has_top: boolean; select_list_static: string | null }>;
     max_result_sets?: number;
     constructs?: string[];
@@ -281,13 +283,18 @@ export function renderRoutineContract(routine: RoutineCatalogRow, d: RoutineDesc
   } else if (d.return_status_carriage === 'out_param') {
     lines.push('Return status: set OUT return_status to the source RETURN value (0 on the success path).');
   }
+  // Rule ids are the pair's own (the ERR rule id is on the descriptor; the
+  // TXN id shares its prefix) — the full conventions ride the prompt's
+  // "Pair conventions" section from the ruleset data.
+  const errRule = d.error_carriage_rule;
+  const txnRule = errRule.replace(/PROC\.ERR\.001$/, 'PROC.TXN.001');
   lines.push(
-    'Errors: every RAISERROR becomes RAISE EXCEPTION USING ERRCODE = \'P0001\', MESSAGE = <text>, ' +
-      'DETAIL = \'{"source_error": <n>, "severity": <s>, "state": <st>}\' (SYBPG.PROC.ERR.001). PRINT becomes RAISE NOTICE.'
+    'Errors: every RAISERROR/THROW becomes RAISE EXCEPTION USING ERRCODE = \'P0001\', MESSAGE = <text>, ' +
+      `DETAIL = '{"source_error": <n>, "severity": <s>, "state": <st>}' (${errRule}). PRINT becomes RAISE NOTICE.`
   );
   lines.push(
-    'Transactions: no COMMIT/ROLLBACK inside the function — BEGIN TRAN/COMMIT become sub-blocks, an inner ROLLBACK becomes ' +
-      'RAISE EXCEPTION USING ERRCODE = \'P0002\' (SYBPG.PROC.TXN.001).'
+    'Transactions: no COMMIT/ROLLBACK inside a function — BEGIN TRAN/COMMIT become sub-blocks (savepoints), an inner ROLLBACK becomes ' +
+      `RAISE EXCEPTION USING ERRCODE = 'P0002' (${txnRule}); follow the pair conventions for TRY/CATCH, XACT_ABORT and continue-after-error.`
   );
   lines.push('Identifiers: lower-case, unquoted; keep every ORDER BY exactly; never add one the source lacks.');
   const params = routine.params_json ?? [];
@@ -303,6 +310,7 @@ export function renderRoutineContract(routine: RoutineCatalogRow, d: RoutineDesc
   const exits: string[] = [];
   for (const r of profile.return_sites ?? []) exits.push(r.value !== null ? `RETURN ${r.value}` : r.expr ? `RETURN ${r.expr}` : 'RETURN');
   for (const r of profile.raiserror_sites ?? []) exits.push(`RAISERROR ${r.number ?? '?'}${r.severity !== null ? ` sev ${r.severity}` : ''}`);
+  for (const t of profile.throw_sites ?? []) exits.push(`THROW ${t.number ?? '(re-throw)'}${t.state !== null ? ` state ${t.state}` : ''}`);
   if (exits.length > 0) lines.push(`Exit sites (static): ${[...new Set(exits)].join('; ')}`);
   const selects = profile.result_selects ?? [];
   if (selects.length > 0) {
@@ -315,7 +323,11 @@ export function renderRoutineContract(routine: RoutineCatalogRow, d: RoutineDesc
   const constructs = profile.constructs ?? [];
   if (constructs.length > 0) lines.push(`Constructs present: ${constructs.join(', ')}`);
   const volatile = profile.volatile_functions ?? [];
-  if (volatile.length > 0) lines.push(`Volatile functions present: ${volatile.join(', ')} (map per SYBPG.PROC.VOL.*)`);
+  if (volatile.length > 0) {
+    // The VOL family lives under the pair's own prefix (never a literal here).
+    const prefix = d.error_carriage_rule.includes('PROC.') ? d.error_carriage_rule.slice(0, d.error_carriage_rule.indexOf('PROC.')) : '';
+    lines.push(`Volatile functions present: ${volatile.join(', ')} (map per ${prefix}PROC.VOL.*)`);
+  }
   return lines.join('\n');
 }
 

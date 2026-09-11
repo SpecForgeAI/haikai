@@ -13,6 +13,21 @@
     "display": "PostgreSQL 18"
   },
   "guidance_heading": "T-SQL dialect rewrite guidance (Sybase → PostgreSQL)",
+  "translation_profile": {
+    "source_display": "Sybase ASE",
+    "source_dialect": "T-SQL",
+    "catalog_refusal": ["sysobjects", "syscolumns", "sysindexes", "syscomments", "sysusers", "sysreferences", "sysconstraints", "syskeys", "sysdepends", "master..", "sybsystemprocs.."],
+    "scheduler_name": "Sybase DB-resident scheduled",
+    "identity_reseed_form": "EXEC sp_chgattribute '<schema>.<table>', 'identity_burn_max', 0, '<n>'",
+    "untranslatable_reasons": {
+      "cross_database_reference": "references another database or a remote server (rewrite in the application or consolidate databases first)"
+    },
+    "untranslatable_constructs": [
+      { "pattern": "\\bxp_sendmail\\b", "construct": "xp_sendmail", "concern": "mail-from-database has no built-in PostgreSQL equivalent" },
+      { "pattern": "\\bsp_(?:sjobcreate|sjobcontrol|sjobmodify)\\b", "construct": "Job Scheduler procs", "concern": "Sybase Job Scheduler control procedures re-home to pg_cron (scheduled_job translations)" }
+    ],
+    "token_conversions": []
+  },
   "notes": "Migration-pair ruleset v1 (Data-Tier Oracle Program, Spec O). Pair knowledge lives HERE as data — generic code never names an engine. Rules with a `comparison` block drive the data-parity comparator and diff classification; guidance-only rules (comparison: null) carry rewrite/seed knowledge. `construct_refs` key pair guidance to the discovery-side sqlDialectClassifier's stable construct names (the classifier is pack code and remains the detector).",
   "rules": [
     {
@@ -497,6 +512,24 @@
       "scenario_seed": "n/a — the profile is applied on every capture connection and recorded in the envelope.",
       "severity": "behaviour_divergence",
       "notes": "2026-09-09 (Spec 2). The list equals ASE login defaults as jConnect leaves them; the sidecar defaults to jTDS, so the SETs are applied explicitly regardless of driver. PROC_CALL_SESSION_SET overrides the list (semicolon-separated)."
+    },
+    {
+      "id": "SYBPG.PROC.TRIGGER.001",
+      "divergence_class": "trigger_semantics",
+      "title": "Statement-level triggers over inserted/deleted map to transition tables; INSTEAD OF on views is row-level",
+      "applies_to": { "object_kinds": ["trigger"] },
+      "comparison": null,
+      "convention": {
+        "inserted_deleted": "CREATE TRIGGER … AFTER INSERT OR UPDATE OR DELETE ON <table> REFERENCING NEW TABLE AS inserted OLD TABLE AS deleted FOR EACH STATEMENT EXECUTE FUNCTION <fn>(); the body reads inserted/deleted exactly as the source did",
+        "per_event_branches": "branches on the firing event (IF UPDATE(col) / separate insert-update-delete bodies) use TG_OP and compare inserted vs deleted columns over the transition tables",
+        "instead_of_view": "INSTEAD OF triggers on views become row-level (FOR EACH ROW) INSTEAD OF triggers using NEW/OLD; note instead_of_row_level in the notes",
+        "disabled": "a disabled source trigger is emitted then ALTER TABLE … DISABLE TRIGGER",
+        "ordering": "PostgreSQL fires same-event triggers alphabetically: a source-ordered trigger set keeps its order via a_/z_ name prefixes, noted",
+        "recursion": "a trigger that writes its own table is a recursion decision (Postgres re-fires unconditionally)"
+      },
+      "rewrite_guidance": "Translate triggers statement-level with transition tables; never collapse a multi-row source trigger into a row-level one.",
+      "scenario_seed": "Fire a multi-row UPDATE through the trigger and assert the same downstream rows on both engines.",
+      "severity": "behaviour_divergence"
     },
     {
       "id": "SYBPG.PROC.CALLSITE.001",

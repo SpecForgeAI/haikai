@@ -217,7 +217,7 @@ export async function runWorkbenchLoop(args: WorkbenchRunArgs, deps: WorkbenchDe
       translate: async ({ routine, attemptNo, evidence, guidance }) => {
         const row = rowById.get(routine.translationId) as TranslationRow;
         const entry = descriptors.get(routine.routineId) as { descriptor: RoutineDescriptor; routine: RoutineCatalogRow };
-        const contract: RoutineContract = { descriptor: entry.descriptor, text: renderRoutineContract(entry.routine, entry.descriptor) };
+        const contract: RoutineContract = { descriptor: entry.descriptor, text: renderRoutineContract(entry.routine, entry.descriptor), constructs: entry.routine.profile_json?.constructs ?? [] };
         const result = await draftAndJudge({ projectId, packId, row, manifest, contract, callLlm: callLlm as LlmCallerFn, llmPool, evidence, guidance });
         void attemptNo;
         return { draftSql: result.draft.draftSql, judge: { verdict: result.verdict.verdict, confidence: result.verdict.confidence, flags: result.verdict.flags, translator_notes: result.draft.notes }, abiViolations: result.abiViolations };

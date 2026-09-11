@@ -53,6 +53,7 @@ import {
   validateTranslationResponse,
 } from './translationValidators';
 import { rulesetForManifest } from './pairRuleset';
+import { NEUTRAL_TRANSLATION_PROFILE, renderConventions, translationProfileFor, type TranslationProfile } from './translationProfile';
 
 // ---------------------------------------------------------------------------
 // Wire types (AMS snake_case — Group 2 endpoints)
@@ -112,6 +113,8 @@ export interface TranslationRow {
   verdict_json?: Record<string, unknown> | null;
   parity_report_id?: string | null;
   stale_reason?: string | null;
+  /** Named untranslatable reason (changeset 233); null = translatable. */
+  untranslatable_reason?: string | null;
 }
 
 /** Sparse PATCH body — omitted fields are untouched AMS-side. */
@@ -130,6 +133,7 @@ export interface TranslationPatch {
   verdict_json?: Record<string, unknown> | null;
   parity_report_id?: string | null;
   stale_reason?: string | null;
+  untranslatable_reason?: string | null;
   /**
    * Supply-body path (2026-08-07): a TRUNCATED capture used to be a terminal
    * needs_manual dead-end. The operator can now paste the full source body;
@@ -156,6 +160,10 @@ export interface TranslationUpsertRow {
   reviewer_notes?: string;
   /** Spec 1 (2026-09-09): the `db_routines` row the body came from, when one exists. */
   routine_id?: string | null;
+  /** Proposed disposition (seeded ONLY when a named untranslatable reason applies). */
+  disposition?: TranslationDisposition;
+  /** Named untranslatable reason; '' clears it on re-link (AMS blank-to-null). */
+  untranslatable_reason?: string;
 }
 
 /**
@@ -169,6 +177,28 @@ export interface RoutineBodySource {
   routine_name: string;
   routine_kind: 'procedure' | 'function' | 'trigger';
   full_body: string;
+  /** Routine language as catalogued (`TSQL` | `CLR`); absent on pre-programme catalogs. */
+  language?: string | null;
+  /** Static profile (constructs drive the named untranslatable reasons). */
+  profile_json?: { constructs?: string[] } | null;
+}
+
+/**
+ * Named reasons a routine is never attempted (second-pair programme, Spec 6
+ * §6.4). Items 1 (cross-database references / linked servers) and 6 (indexed
+ * views) are OUT by owner ruling; CLR / Service Broker / FILESTREAM have no
+ * database-resident equivalent. The reason is data on the row — never a
+ * silent needs_manual.
+ */
+export const CROSS_DATABASE_CONSTRUCTS: readonly string[] = ['cross_database', 'three_part_name', 'openquery_linked', 'remote_call', 'cross_db_dml', 'linked_server'];
+export const SERVICE_BROKER_CONSTRUCTS: readonly string[] = ['service_broker'];
+
+export function untranslatableReasonForRoutine(routine: Pick<RoutineBodySource, 'language' | 'profile_json'>): string | null {
+  if (typeof routine.language === 'string' && routine.language.trim().toUpperCase() === 'CLR') return 'clr_object';
+  const constructs = (routine.profile_json?.constructs ?? []).map((c) => c.toLowerCase());
+  if (constructs.some((c) => CROSS_DATABASE_CONSTRUCTS.includes(c))) return 'cross_database_reference';
+  if (constructs.some((c) => SERVICE_BROKER_CONSTRUCTS.includes(c))) return 'service_broker_object';
+  return null;
 }
 
 /** A `requires_translation_spec_2` manifest entry (Spec-1 shape). */
@@ -265,6 +295,8 @@ export interface SeedSource {
   terminal_needs_manual: boolean;
   /** The routine-catalog row the body came from (Spec 1); null = finding body. */
   routine_id?: string | null;
+  /** Named untranslatable reason (never attempted; rewrite_in_app proposed). */
+  untranslatable_reason?: string | null;
 }
 
 /** Routine kinds a translation kind can be sourced from the routine catalog. */
@@ -341,6 +373,7 @@ export function resolveSeedSources(
         legacy_redacted: false,
         terminal_needs_manual: false,
         routine_id: routine.id,
+        untranslatable_reason: untranslatableReasonForRoutine(routine),
       });
       continue;
     }
@@ -468,12 +501,25 @@ export function buildTranslationUpsertBatch(
       legacy_redacted: seed.legacy_redacted,
     };
     if (seed.routine_id) row.routine_id = seed.routine_id;
+    // Named untranslatable reason (second-pair programme, Spec 6 §6.4):
+    // supplied on EVERY re-link ('' clears it AMS-side) so a re-scan that
+    // removes the construct lifts the row back to translatable.
+    const reason = seed.untranslatable_reason ?? null;
+    row.untranslatable_reason = reason ?? '';
     const prior = existingByKey.get(seed.translation_key);
     if (!prior) {
       row.pipeline_state = seed.terminal_needs_manual ? 'needs_manual' : 'pending';
+      if (reason) row.disposition = 'rewrite_in_app';
       summary.seeded_new += 1;
       return row;
     }
+    // Disposition proposal follows the reason, but never overrides an
+    // operator's own choice: a NEW reason on a 'translate' row proposes
+    // rewrite_in_app; a reason that DISAPPEARED from a row we proposed lifts
+    // it back to translate.
+    const priorReason = prior.untranslatable_reason ?? null;
+    if (reason && !priorReason && prior.disposition === 'translate') row.disposition = 'rewrite_in_app';
+    if (!reason && priorReason && prior.disposition === 'rewrite_in_app') row.disposition = 'translate';
     // Fidelity-driven state transitions apply on EVERY re-link (a re-scan can
     // lift a truncated body out of needs_manual, or newly truncate one).
     if (seed.terminal_needs_manual && prior.pipeline_state !== 'needs_manual') {
@@ -762,7 +808,7 @@ export const KNOWN_UNTRANSLATABLE_CONSTRUCTS: ReadonlyArray<{
   {
     pattern: /\bholdlock\b/i,
     construct: 'HOLDLOCK',
-    concern: 'Sybase locking hints do not map onto PostgreSQL MVCC semantics',
+    concern: 'T-SQL locking hints do not map onto PostgreSQL MVCC semantics',
   },
   {
     pattern: /@@identity\b/i,
@@ -784,13 +830,19 @@ export interface PrePassResult {
  * The deterministic pre-pass: apply the token conversions that have an exact
  * Postgres equivalent and FLAG every known construct that does not. NO LLM.
  */
-export function runDeterministicPrePass(body: string): PrePassResult {
+export function runDeterministicPrePass(body: string, profile?: TranslationProfile | null): PrePassResult {
   let converted = body;
   const conversionNotes: string[] = [];
   const flags: string[] = [];
 
+  // Pair-owned additions (second-pair programme): the ruleset's
+  // translation_profile may ADD token conversions and untranslatable
+  // constructs; the shared T-SQL table below stays the common floor.
+  const extraConversions = (profile?.tokenConversions ?? []).filter(
+    (e) => !NON_PORTABLE_TOKEN_CONVERSIONS.some((k) => k.token === e.token),
+  );
   // Longest token first so e.g. `suser_sname` never partially matches.
-  const ordered = [...NON_PORTABLE_TOKEN_CONVERSIONS].sort(
+  const ordered = [...NON_PORTABLE_TOKEN_CONVERSIONS, ...extraConversions].sort(
     (a, b) => b.token.length - a.token.length
   );
   for (const entry of ordered) {
@@ -819,9 +871,10 @@ export function runDeterministicPrePass(body: string): PrePassResult {
     }
   }
 
-  for (const construct of KNOWN_UNTRANSLATABLE_CONSTRUCTS) {
+  for (const construct of [...KNOWN_UNTRANSLATABLE_CONSTRUCTS, ...(profile?.untranslatableConstructs ?? [])]) {
     if (construct.pattern.test(body)) {
-      flags.push(`${construct.construct}: ${construct.concern}`);
+      const flag = `${construct.construct}: ${construct.concern}`;
+      if (!flags.includes(flag)) flags.push(flag);
     }
   }
 
@@ -889,34 +942,53 @@ export function buildSchemaContext(
 // Prompts (3.4 / 3.5)
 // ---------------------------------------------------------------------------
 
-const KIND_INSTRUCTIONS: Record<TranslationKind, string> = {
-  stored_procedure:
-    'Translate the Sybase ASE T-SQL stored procedure (or function) into ONE PostgreSQL PL/pgSQL function ' +
-    '(CREATE OR REPLACE FUNCTION ... LANGUAGE plpgsql). When a "Calling-convention contract" section ' +
-    'follows, the function header (name, argument names/order/types, OUT arguments, RETURNS clause) ' +
-    'MUST match it exactly — it is the contract the application and the reconciliation harness call.',
-  trigger:
-    'Translate the Sybase ASE T-SQL trigger into a PostgreSQL trigger function ' +
-    '(CREATE OR REPLACE FUNCTION ... RETURNS trigger LANGUAGE plpgsql) PLUS the matching ' +
-    'CREATE TRIGGER statement.',
-  view:
-    'Translate the Sybase ASE T-SQL view definition into PostgreSQL SQL ' +
-    '(CREATE OR REPLACE VIEW ...).',
-  check_constraint:
-    'Translate the Sybase ASE CHECK constraint into PostgreSQL. The source body is the ' +
-    'complete ALTER TABLE ... ADD CONSTRAINT ... CHECK (<T-SQL expression>) statement; ' +
-    'produce the equivalent PostgreSQL ALTER TABLE ... ADD CONSTRAINT ... CHECK ' +
-    '(<PostgreSQL boolean expression>); — QUOTE the table/constraint identifiers ' +
-    '(double quotes, source case preserved) and translate T-SQL built-ins to their ' +
-    'PostgreSQL equivalents. The semantics of the check must be preserved exactly.',
-  scheduled_job:
-    'Translate the Sybase DB-resident scheduled job into PostgreSQL pg_cron. Produce: ' +
-    '(1) ONE PL/pgSQL function (CREATE OR REPLACE FUNCTION ... LANGUAGE plpgsql) holding ' +
-    "the job's translated body, and (2) the matching SELECT cron.schedule('<job-name>', " +
-    "'<cron expression derived from the source schedule comment>', $$SELECT <function>()$$); " +
-    'statement. Note in `notes` that the pg_cron extension must be installed on the target ' +
-    'and that the source job must be disabled at swap-over (no job may run twice).',
-};
+/**
+ * Kind instructions are pair-neutral templates: the source engine's display
+ * name, dialect and scheduler come from the pair's translation profile
+ * (second-pair programme, Spec 6 §6.1) — never a literal here.
+ */
+export function kindInstructions(kind: TranslationKind, profile: TranslationProfile): string {
+  const src = `${profile.sourceDisplay} ${profile.sourceDialect}`;
+  switch (kind) {
+    case 'stored_procedure':
+      return (
+        `Translate the ${src} stored procedure (or function) into ONE PostgreSQL PL/pgSQL function ` +
+        '(CREATE OR REPLACE FUNCTION ... LANGUAGE plpgsql). When a "Calling-convention contract" section ' +
+        'follows, the function header (name, argument names/order/types, OUT arguments, RETURNS clause) ' +
+        'MUST match it exactly — it is the contract the application and the reconciliation harness call.'
+      );
+    case 'trigger':
+      return (
+        `Translate the ${src} trigger into a PostgreSQL trigger function ` +
+        '(CREATE OR REPLACE FUNCTION ... RETURNS trigger LANGUAGE plpgsql) PLUS the matching ' +
+        'CREATE TRIGGER statement. Statement-level triggers that read the inserted/deleted pseudo-tables ' +
+        'use REFERENCING NEW TABLE AS inserted OLD TABLE AS deleted ... FOR EACH STATEMENT; ' +
+        'follow the pair conventions below for INSTEAD OF, ordering and disabled triggers.'
+      );
+    case 'view':
+      return `Translate the ${src} view definition into PostgreSQL SQL (CREATE OR REPLACE VIEW ...).`;
+    case 'check_constraint':
+      return (
+        `Translate the ${profile.sourceDisplay} CHECK constraint into PostgreSQL. The source body is the ` +
+        `complete ALTER TABLE ... ADD CONSTRAINT ... CHECK (<${profile.sourceDialect} expression>) statement; ` +
+        'produce the equivalent PostgreSQL ALTER TABLE ... ADD CONSTRAINT ... CHECK ' +
+        '(<PostgreSQL boolean expression>); — QUOTE the table/constraint identifiers ' +
+        `(double quotes, source case preserved) and translate ${profile.sourceDialect} built-ins to their ` +
+        'PostgreSQL equivalents. The semantics of the check must be preserved exactly.'
+      );
+    case 'scheduled_job':
+      return (
+        `Translate the ${profile.schedulerName} job into PostgreSQL pg_cron. Produce: ` +
+        '(1) ONE PL/pgSQL function (CREATE OR REPLACE FUNCTION ... LANGUAGE plpgsql) holding ' +
+        "the job's translated body, and (2) the matching SELECT cron.schedule('<job-name>', " +
+        "'<cron expression derived from the source schedule comment>', $$SELECT <function>()$$); " +
+        'statement. Note in `notes` that the pg_cron extension must be installed on the target ' +
+        'and that the source job must be disabled at swap-over (no job may run twice).'
+      );
+    default:
+      return `Translate the ${src} ${String(kind).replace(/_/g, ' ')} into its PostgreSQL equivalent, preserving semantics exactly.`;
+  }
+}
 
 export function buildTranslationPrompt(args: {
   kind: TranslationKind;
@@ -939,21 +1011,43 @@ export function buildTranslationPrompt(args: {
   evidence?: string | null;
   /** Spec 4: reviewer guidance steering the next attempt (the amend pattern). */
   guidance?: string | null;
+  /** Pair translation profile (second-pair programme); neutral when absent. */
+  profile?: TranslationProfile | null;
+  /** Static profile constructs of the routine (error_continuation etc.). */
+  constructs?: string[] | null;
 }): { systemPrompt: string; userPrompt: string } {
+  const profile = args.profile ?? NEUTRAL_TRANSLATION_PROFILE;
+  const catalogLine =
+    profile.catalogRefusal.length > 0
+      ? `NEVER reference ${profile.sourceDisplay} system catalogs (${profile.catalogRefusal.join(', ')}) in the draft —`
+      : 'NEVER reference source-engine system catalogs in the draft —';
   const systemPrompt = [
-    'You are a database migration engineer translating Sybase ASE T-SQL objects into PostgreSQL.',
+    `You are a database migration engineer translating ${profile.sourceDisplay} ${profile.sourceDialect} objects into PostgreSQL.`,
     'Produce a faithful, reviewable PostgreSQL DRAFT — semantic equivalence over style.',
     'Where a construct has no PostgreSQL equivalent, translate conservatively and add a note;',
     'NEVER invent behaviour the source does not have.',
-    'NEVER reference ASE system catalogs (sysobjects, syscolumns, sysindexes, ...) in the draft —',
+    catalogLine,
     'they do not exist on PostgreSQL. Rewrite catalog/metadata queries against',
-    'pg_catalog/information_schema equivalents; if the object is inherently ASE-administrative,',
+    'pg_catalog/information_schema equivalents; if the object is inherently source-administrative,',
     'say so in the notes instead of emitting unrunnable SQL.',
     'Respond with ONLY a JSON object: { "draft_sql": "<the complete PostgreSQL SQL>", "notes": ["..."] }.',
   ].join('\n');
   const lines: string[] = [];
   lines.push(`Object: ${args.objectRef} (kind: ${args.kind})`);
-  lines.push(KIND_INSTRUCTIONS[args.kind]);
+  lines.push(kindInstructions(args.kind, profile));
+  const conventions = renderConventions(profile, args.kind);
+  if (conventions) {
+    lines.push('');
+    lines.push(conventions);
+  }
+  if ((args.constructs ?? []).includes('error_continuation')) {
+    lines.push('');
+    lines.push(
+      'The source CONTINUES after a failed statement (profile construct error_continuation). ' +
+        'Preserve that like-for-like per the transaction-control convention: wrap each fallible statement ' +
+        'the source continues past in its own BEGIN ... EXCEPTION sub-block; never turn it into a whole-routine abort.',
+    );
+  }
   if (args.contract && args.contract.trim().length > 0) {
     lines.push('');
     lines.push('Calling-convention contract (deterministic — the header MUST match):');
@@ -987,7 +1081,7 @@ export function buildTranslationPrompt(args: {
     for (const f of args.prePass.flags) lines.push(`- ${f}`);
   }
   lines.push('');
-  lines.push('Source body (T-SQL, pre-converted):');
+  lines.push(`Source body (${profile.sourceDialect}, pre-converted):`);
   lines.push('```sql');
   lines.push(args.prePass.convertedBody);
   lines.push('```');
@@ -1000,10 +1094,21 @@ export function buildJudgePrompt(args: {
   sourceBody: string;
   draftSql: string;
   schemaContext: string;
+  profile?: TranslationProfile | null;
+  constructs?: string[] | null;
 }): { systemPrompt: string; userPrompt: string } {
+  const profile = args.profile ?? NEUTRAL_TRANSLATION_PROFILE;
+  const continueAfterError = (args.constructs ?? []).includes('error_continuation');
   const systemPrompt = [
-    'You are a verdict-only judge for a Sybase ASE T-SQL -> PostgreSQL translation.',
+    `You are a verdict-only judge for a ${profile.sourceDisplay} ${profile.sourceDialect} -> PostgreSQL translation.`,
     'You JUDGE semantic equivalence — you NEVER rewrite or improve the draft.',
+    ...(continueAfterError
+      ? [
+          'FACT: the source continues after failed statements (continue_after_error_expected = true). ' +
+            'A draft that reproduces that continuation with per-statement EXCEPTION sub-blocks is EQUIVALENT; ' +
+            'a draft that converts it into a whole-routine abort is NOT.',
+        ]
+      : []),
     'Respond with ONLY a JSON object:',
     '{ "verdict": "equivalent" | "equivalent_with_concerns" | "not_equivalent",',
     '  "confidence": <0..1>,',
@@ -1015,7 +1120,7 @@ export function buildJudgePrompt(args: {
   lines.push('Schema context:');
   lines.push(args.schemaContext);
   lines.push('');
-  lines.push('Source (Sybase ASE T-SQL):');
+  lines.push(`Source (${profile.sourceDisplay} ${profile.sourceDialect}):`);
   lines.push('```sql');
   lines.push(args.sourceBody);
   lines.push('```');
@@ -1367,7 +1472,7 @@ export async function runTranslationPipeline(
     if (!routine) return null;
     if (routine.routine_kind !== 'procedure' && routine.routine_kind !== 'function') return null;
     const descriptor = deriveRoutineDescriptor(routine, ruleset);
-    return { descriptor, text: renderRoutineContract(routine, descriptor) };
+    return { descriptor, text: renderRoutineContract(routine, descriptor), constructs: routine.profile_json?.constructs ?? [] };
   };
   const entries = (manifest?.['requires_translation_spec_2'] ??
     []) as RequiresTranslationEntry[];
@@ -1430,6 +1535,8 @@ export interface RoutineContract {
   descriptor: RoutineDescriptor;
   /** Prompt-ready rendering (descriptor + signature + static profile summary). */
   text: string;
+  /** Static profile constructs (drive the continue-after-error prompt facts). */
+  constructs?: string[];
 }
 
 /**
@@ -1451,7 +1558,9 @@ export async function draftAndJudgeObject(args: {
   guidance?: string | null;
 }): Promise<{ draft: TranslationDraftResponse; verdict: JudgeVerdict; abiViolations: string[] }> {
   const { projectId, packId, row, contract } = args;
-  const prePass = runDeterministicPrePass(row.source_body ?? '');
+  const profile = translationProfileFor(rulesetForManifest(args.manifest));
+  const constructs = contract?.constructs ?? [];
+  const prePass = runDeterministicPrePass(row.source_body ?? '', profile);
   const schemaContext = buildSchemaContext(args.manifest, row.source_body ?? '');
 
   logger.info(
@@ -1466,6 +1575,8 @@ export async function draftAndJudgeObject(args: {
     contract: contract?.text ?? null,
     evidence: args.evidence ?? null,
     guidance: args.guidance ?? null,
+    profile,
+    constructs,
   });
   let draft: TranslationDraftResponse = await callWithRetry({
     label: `translate ${row.translation_key}`,
@@ -1498,6 +1609,8 @@ export async function draftAndJudgeObject(args: {
         contractViolations: check.violations,
         evidence: args.evidence ?? null,
         guidance: args.guidance ?? null,
+        profile,
+        constructs,
       });
       draft = await callWithRetry({
         label: `translate(abi) ${row.translation_key}`,
@@ -1524,6 +1637,8 @@ export async function draftAndJudgeObject(args: {
     sourceBody: row.source_body ?? '',
     draftSql: draft.draftSql,
     schemaContext,
+    profile,
+    constructs,
   });
   const verdict: JudgeVerdict = await callWithRetry({
     label: `judge ${row.translation_key}`,
