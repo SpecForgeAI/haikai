@@ -30,6 +30,7 @@ import React, { useMemo, useState } from 'react';
 import type { DbMigrationPackDbCredentials } from '../../../api/dbMigrationPackApi';
 import styles from './DbMigrationPack.module.css';
 import type { DbEngineKey } from '../../../api/dbEngines';
+import { DB_ENGINE_DEFAULT_PORT, dbEngineLabel, isDbEngineKey } from '../../../api/dbEngines';
 
 export type DbMigrationPackTargetBuildVariant = 'build' | 'connect';
 
@@ -50,6 +51,10 @@ export interface DbMigrationPackTargetBuildModalProps {
    * (e.g. "Translate & reconcile all").
    */
   purpose?: string | null;
+  /** Source engine key from the pack manifest (the optional source block's dbType). */
+  sourceEngine?: string | null;
+  /** Source engine display name from the pack manifest (heading text). */
+  sourceEngineDisplay?: string | null;
   onSubmit: (payload: DbMigrationPackTargetBuildSubmit) => void;
   onClose: () => void;
 }
@@ -201,13 +206,17 @@ const ConnectionBlock: React.FC<{
 
 export const DbMigrationPackTargetBuildModal: React.FC<
   DbMigrationPackTargetBuildModalProps
-> = ({ variant, busy, error, purpose, onSubmit, onClose }) => {
+> = ({ variant, busy, error, purpose, sourceEngine, sourceEngineDisplay, onSubmit, onClose }) => {
+  // The optional source block's engine comes from the pack manifest
+  // (pair-per-project); the original single-engine default stays the fallback.
+  const sourceEngineKey: DbEngineKey = isDbEngineKey(sourceEngine) ? sourceEngine : 'sybase';
+  const emptySource: ConnectionFields = { ...EMPTY_SOURCE, port: DB_ENGINE_DEFAULT_PORT[sourceEngineKey] };
   const [target, setTarget] = useState<ConnectionFields>(EMPTY_TARGET);
-  const [source, setSource] = useState<ConnectionFields>(EMPTY_SOURCE);
+  const [source, setSource] = useState<ConnectionFields>(emptySource);
   const [rebuild, setRebuild] = useState(false);
 
   const isBuild = variant === 'build';
-  const sourceTouched = !untouched(source, EMPTY_SOURCE);
+  const sourceTouched = !untouched(source, emptySource);
 
   const canSubmit = useMemo(
     () =>
@@ -223,7 +232,7 @@ export const DbMigrationPackTargetBuildModal: React.FC<
     onSubmit({
       targetDb: toCredentials(target, 'postgres'),
       sourceDb:
-        isBuild && sourceTouched ? toCredentials(source, 'sybase') : null,
+        isBuild && sourceTouched ? toCredentials(source, sourceEngineKey) : null,
       rebuild: isBuild && rebuild,
     });
   };
@@ -267,7 +276,7 @@ export const DbMigrationPackTargetBuildModal: React.FC<
           {isBuild && (
             <>
               <h4 className={styles.manifestSectionTitle}>
-                Source — Sybase ASE (optional)
+                Source — {sourceEngineDisplay ?? dbEngineLabel(sourceEngineKey)} (optional)
               </h4>
               <p className={styles.manifestNote}>
                 Needed by the data phase. Leave the block empty to build the

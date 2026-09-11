@@ -110,6 +110,7 @@ describe('DbMigrationPackHarvestModal (via the Structural findings panel)', () =
         databaseName: 'proddb',
         username: 'sa',
         password: 'secret',
+        dbEngine: 'sybase',
       }),
     );
     expect(
@@ -149,6 +150,7 @@ describe('DbMigrationPackHarvestModal (via the Structural findings panel)', () =
         database_name: 'proddb',
         username: 'sa',
         password: 'secret',
+        db_engine: 'sybase',
       }),
     );
 

@@ -1308,6 +1308,7 @@ dbMigrationPackRouter.post(`${BASE}/structural-harvest`, async (req, res) => {
     password?: string;
     db_engine?: string;
     sybase_driver?: string;
+    mssql_auth?: Record<string, unknown> | null;
     include_schemas?: string[];
     service_id?: string;
   };
@@ -1359,6 +1360,8 @@ dbMigrationPackRouter.post(`${BASE}/structural-harvest`, async (req, res) => {
           : undefined,
         sybaseDriver:
           typeof body.sybase_driver === 'string' ? body.sybase_driver : undefined,
+        mssqlAuth:
+          body.mssql_auth && typeof body.mssql_auth === 'object' ? body.mssql_auth : undefined,
         includeSchemas: Array.isArray(body.include_schemas)
           ? body.include_schemas
           : undefined,

@@ -75,3 +75,40 @@ Each service can be run on its own — see the per-service README / docs:
   service-specific conventions and are read contextually.
 - `.gitignore` is layered: the root file covers repo-wide and Node/Java
   patterns; `implement-verify-service/.gitignore` covers Python/Haikai patterns.
+
+## Source database prerequisites (DB migrations)
+
+The DB migration pairs supported today are **Sybase ASE 15 → PostgreSQL 18** and
+**SQL Server 2022 (16.x) → PostgreSQL 18**. Both source engines are reached
+through the `db-discovery-sidecar` (JDBC, port 8093); the Node services find it
+via `DB_SIDECAR_URL` (the pre-rename `SYBASE_SIDECAR_URL` is honoured as an
+alias). The pair is selected per project from the engine the DB scan discovers;
+`MIGRATION_PAIR` is a deployment-level pin only.
+
+For a **SQL Server** source you need, before running the scan:
+
+1. A SQL Server 2022 (16.x) instance reachable from the machine running the
+   sidecar on TCP 1433 (named instances: the instance port or SQL Browser UDP
+   1434). Developer Edition installed locally is enough for a dry run; enable
+   TCP/IP in SQL Server Configuration Manager.
+2. A login: a SQL login (Mixed Mode authentication) or a Windows domain
+   account (NTLM: user + password + domain; Kerberos SSO is not supported).
+   Read-only login for the scan and parity (`VIEW DEFINITION`, `SELECT`;
+   `SQLAgentReaderRole` in `msdb` to harvest SQL Agent jobs). A writable login
+   for behaviour capture and S0 restore (`INSERT/UPDATE/DELETE`, `ALTER` on
+   identity tables for `SET IDENTITY_INSERT`, `db_ddladmin` for
+   `DBCC CHECKIDENT`).
+3. TLS: the driver encrypts by default; a self-signed corporate certificate
+   needs the "trust server certificate" toggle in the connection form (or a
+   CA-trusted certificate on the server).
+4. Firewall: TCP 1433 (or the instance port) from the sidecar host. The tool
+   never needs outbound internet access.
+5. Target PostgreSQL 18 with `citext` available; `pg_cron` when scheduled jobs
+   are re-homed; PostGIS for geography/geometry columns; `ltree` for
+   hierarchyid columns (the pack runbook names each prerequisite it needs).
+6. Optional dry-run estate: Microsoft's `WideWorldImporters` sample database
+   restored into the local instance (temporal tables, sequences, TRY/CATCH
+   procedures, triggers, full-text and columnstore are all present).
+
+For a **Sybase ASE** source the sidecar needs the jTDS driver (bundled) or
+`db-discovery-sidecar/lib/jconn4.jar` for jConnect; see the sidecar README.

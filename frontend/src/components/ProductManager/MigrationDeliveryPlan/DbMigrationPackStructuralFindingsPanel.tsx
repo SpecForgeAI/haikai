@@ -57,6 +57,9 @@ export interface DbMigrationPackStructuralFindingsPanelProps {
   architectureId: string;
   /** Optional target architecture for the harvest (when the context has one). */
   targetArchitectureId?: string | null;
+  /** Source engine key + display from the pack manifest (drives the harvest modal). */
+  sourceEngine?: string | null;
+  sourceEngineDisplay?: string | null;
   /** Invoked after any successful disposition change (parents may refresh gates). */
   onChanged?: () => void;
   /**
@@ -102,6 +105,8 @@ export const DbMigrationPackStructuralFindingsPanel: React.FC<
   packId,
   architectureId,
   targetArchitectureId,
+  sourceEngine,
+  sourceEngineDisplay,
   onChanged,
   onModelChanged,
   onPackRegenerated,
@@ -722,6 +727,8 @@ export const DbMigrationPackStructuralFindingsPanel: React.FC<
           projectId={projectId}
           architectureId={architectureId}
           targetArchitectureId={targetArchitectureId}
+          sourceEngine={sourceEngine ?? null}
+          sourceEngineDisplay={sourceEngineDisplay ?? null}
           onCompleted={handleHarvestCompleted}
           onClose={() => setHarvestOpen(false)}
         />

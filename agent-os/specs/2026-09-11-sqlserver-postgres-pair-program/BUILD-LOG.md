@@ -13,8 +13,8 @@ doctrine, the owner rulings, hard-item designs, the user prerequisite).
 | 3 | Ruleset + `MssqlAdapter` + data plane | L | 1 (contract) | `feat/mssql-pair-s3-ruleset-data-plane` | built 2026-09-11 |
 | 4 | State discipline on SQL Server | M | 3 | `feat/mssql-pair-s4-state-discipline` | built 2026-09-11 |
 | 5 | Pack generation for SQL Server | L | 2 | | pending |
-| 6 | Translation dialect (items 3, 7) + code tier | L | 4, 5 | | pending |
-| 7 | Frontend + ops + shakedown | M | 6 | | pending |
+| 6 | Translation dialect (items 3, 7) + code tier | L | 4, 5 | `feat/mssql-pair-s6-translation-dialect` | built 2026-09-11 (merged 6627893b; new-kind text with S5) |
+| 7 | Frontend + ops + shakedown | M | 6 | `feat/mssql-pair-s7-final` | built 2026-09-11 |
 
 Build order 0 → 1 → (2 ∥ 3) → (4 ∥ 5) → 6 → 7. One branch per spec, `--no-ff` merge to main +
 push when green. Regression gate every spec: the Sybase ASE 15 → PG 18 corpus stays green.
@@ -386,3 +386,111 @@ for every touched file (whole-repo baseline stays red for unrelated reasons).
    `physical_data_entities` candidate-type key for the rows it emits and never
    reads the raw model collection.
 
+### S6 — Translation dialect (items 3 + 7) + code tier (2026-09-11)
+As-built (branch `feat/mssql-pair-s6-translation-dialect`, merged 6627893b):
+- Code tier (958aaf3b): `sqlDialectClassifier` learns the SQL-Server-only
+  families (try_catch, throw, xact_abort, merge [T-SQL-only shapes; ANSI
+  MERGE INTO stays ansi], output_clause, offset_fetch, apply, iif,
+  try_convert, string_agg, sp_executesql_params, next_value_for,
+  scope_identity, for_system_time, contains_freetext, xml_method,
+  datetimeoffset_fn, format_fn, sysutcdatetime, sysdatetimeoffset,
+  bracket_identifier); construct names line up with the SQL Server ruleset's
+  `construct_refs`; the five Sybase-named notes are pair-neutral T-SQL text;
+  `sqlDialectFindings` migrationConcern names no engine; `riskyDependencyRules`
+  flags jTDS (unmaintained) and mssql-jdbc < 12; `effectCandidateEmitter`
+  resolves `MERGE [TOP (n)] [INTO] target USING`.
+- Prompts (6ff29e44): `dbMigrationPack/translationProfile.ts` — the pair's
+  `translation_profile` block (display, dialect, catalog refusal, scheduler,
+  untranslatable reasons/constructs, extra token conversions) + conventions
+  rendered from every active rule with a `convention` block (ABI excluded);
+  `kindInstructions(kind, profile)` replaced the literal table; translator and
+  judge prompts read the profile; "Pair conventions" section (TXN/ERR/TRIGGER/
+  SESSION); `error_continuation` adds the like-for-like continue-after-error
+  instruction and the judge fact `continue_after_error_expected = true`;
+  `runDeterministicPrePass(body, profile)`; THROW sites in the contract;
+  ERR/TXN/VOL citations derived from the pair prefix; evidence ladder leads
+  with error-behaviour clusters.
+- Named untranslatable reasons (§6.4): `untranslatableReasonForRoutine` (CLR →
+  clr_object; cross_database/three_part_name/openquery_linked/remote_call →
+  cross_database_reference; service_broker → service_broker_object); seeds
+  carry the reason; the upsert proposes `rewrite_in_app` on new rows / on a
+  `translate` row gaining a reason, lifts it back when it disappears, never
+  overrides an operator's drop; AMS changeset 233 `untranslatable_reason`.
+- Rulesets: `translation_profile` on both pairs; `SYBPG/MSPG.PROC.TRIGGER.001`
+  trigger conventions (transition tables, INSTEAD OF on views row-level,
+  INSTEAD OF on tables decision, ordering prefixes, disabled, recursion).
+- New translation kinds' specific instruction text lands with S5's kind
+  registration (`kindInstructions` has a generic default branch until then).
+- Tests: sqlDialectClassifierMssql (27), effectCandidateEmitter.mssqlWriteForms
+  (4), mavenFindingScanner (+2), dbMigrationPackTranslationProfile (10),
+  dbMigrationPackErrorBehaviourEvidence (2), procCaptureSeedsMssql (+1), AMS
+  DbMigrationPackTranslationServiceTest constructors widened.
+
+### S7 — Frontend, ops, shakedown (2026-09-11)
+As-built (branch `feat/mssql-pair-s7-final`, folding `feat/mssql-pair-s7-frontend-ops`):
+- Engine pickers from `DB_ENGINE_OPTIONS` (RunReconciliationModal, S0RestorePanel,
+  capture wizard, proc wizard, stage-start source block); labels and default
+  ports from the pack manifest (`source_engine_display`) or `dbEngineLabel`
+  (DbMigrationPackView header, credentials modal, target-build modal, harvest
+  modal title, translation reviewer pane); shared
+  `components/shared/MssqlAuthFields.tsx` (SQL login | NTLM + domain, encrypt,
+  trust server certificate, named instance) used by the capture wizard, proc
+  wizard and harvest modal — its wire object (`mssqlAuth` / `mssql_auth`) is
+  the discovery-service `scheme` shape, which AMVS `parseMssqlAuthWire` now
+  accepts alongside `authScheme`/`auth_scheme`; gateway harvest route/service
+  forward `db_engine` + `mssql_auth`; workbench rows and the reviewer show a
+  "not attempted · <reason>" chip from `untranslatable_reason`.
+- Ops: root README "Source database prerequisites" (both pairs), diagnostic
+  runbook step 0.7 names `DB_SIDECAR_URL` (+ alias); `install-run-all.sh`
+  forwards to the PS1 (sidecar entry renamed there by S1);
+  `run-all-file-mode.ps1` is the AMS+gateway+frontend "file mode" and by
+  design starts no discovery/AMVS, hence no sidecar.
+
+## Work-machine pickup (clone + copy convention — big change ⇒ FRESH CLONE)
+
+1. AMS FULL REBUILD (`mvn -q package`, restart bare). Changesets 233
+   (translation `untranslatable_reason`) and 234 (S5 decision categories +
+   translation kinds) apply on boot.
+2. The sidecar is now `db-discovery-sidecar/` (was `sybase-discovery-sidecar/`):
+   rebuild the jar (`mvn -q -DskipTests package`), copy `lib/jconn4.jar` across
+   if the Sybase jConnect driver is used, restart bare on 8093. Set
+   `DB_SIDECAR_URL` (the old `SYBASE_SIDECAR_URL` still works).
+3. `npm ci` is NOT needed on the work machine for the Node services unless
+   `package-lock.json` changed (it did not in this programme); restart
+   discovery-service, api-migration-validation-service, gateway, frontend.
+4. Env knobs: none new. `MIGRATION_PAIR` / `MIGRATION_PAIR_RULESET_PATH` are
+   now an optional PIN only — leave them unset; the pair follows the scanned
+   engine.
+5. Sybase estate regression: the Sybase pair behaves as before; re-run one
+   DB scan + pack generation + parity on the existing Sybase estate first.
+
+## Shakedown checklist — SQL Server (10 lines, screenshotable)
+
+Prerequisite (shaping §7): a SQL Server 2022 instance reachable on 1433 with a
+login (see README "Source database prerequisites"); PostgreSQL 18 target with
+`citext` (and `pg_cron` / PostGIS / `ltree` when the pack runbook asks).
+
+1. Discovery → Start run → Database → engine **SQL Server**, host/port/db,
+   login (SQL or NTLM), TLS toggle → Test connection → shows product version.
+2. Run the scan → run detail shows candidates, findings (incl. the new
+   SQL-Server-only finding types) and the **S0 snapshot** row = Taken.
+3. Baselines → Stored procs → capture (compensation brackets fire; no residue)
+   → Save as baseline → Pin.
+4. Plan → generate the DB pack → header reads "SQL Server 2022 (16.x) →
+   PostgreSQL 18"; decisions panel lists the item-5 categories (temporal /
+   fulltext / spatial / … ) with options; the collation decision defaults to
+   citext.
+5. Resolve decisions → Regenerate → pack validates (Liquibase XML +
+   manifest); the routine translations tab shows every routine, with
+   "not attempted · cross database reference" chips where applicable.
+6. Translations → Build target (target PG creds) → Translate & reconcile all →
+   routines reach `reconciled` (error-path scenarios included).
+7. Harvest from source DB (optional) → live SQL Server connection → model
+   backfilled → pack regenerated.
+8. Migrate → DB plane → data load runs (keyset pagination over datetime2 /
+   uniqueidentifier keys) → data parity report reads
+   `migration_pair: sqlserver16-postgres18`, rules cited (MSPG.*).
+9. Progress report → proc parity + data parity cells populated; S0 restore
+   from the dashboard returns the source to S0 (DELETE fallback on FK parents).
+10. Sybase estate: repeat steps 1, 4 and 8 on the existing Sybase project —
+    identical outcomes to before the programme.
