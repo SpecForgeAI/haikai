@@ -29,6 +29,7 @@ function fakeClient(session: Partial<ProcCaptureSessionDto> = {}): ProcBehaviour
   return {
     ...state,
     listRoutines: async () => [routine()],
+    saveProcParityReport: async () => ({ id: 'ppr-1' }),
     getSession: async () => state.session,
     patchSession: async (_p, _a, _s, patch) => { state.session = { ...state.session, ...patch }; return state.session; },
     upsertScenarios: async () => [],

@@ -162,6 +162,7 @@ class FakeClient implements ProcBehaviourClientSurface {
   patches: Array<Partial<ProcCaptureSessionDto>> = [];
   baselines: unknown[] = [];
   async listRoutines() { return this.routines; }
+  async saveProcParityReport() { return { id: 'ppr-1' }; }
   async getSession() { return this.session; }
   async patchSession(_p: string, _a: string, _s: string, patch: Partial<ProcCaptureSessionDto>) { this.patches.push(patch); this.session = { ...this.session, ...patch }; return this.session; }
   async upsertScenarios(_p: string, _a: string, _s: string, scenarios: ProcScenarioDto[]) {
