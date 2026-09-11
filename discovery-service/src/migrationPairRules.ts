@@ -96,6 +96,13 @@ export interface MigrationPairRuleset {
   notes?: string;
   rules: MigrationPairRule[];
   construct_refs?: PairConstructRef[];
+  /**
+   * Pair-owned translation prompt facts (source display / dialect, catalog
+   * refusal list, scheduler name, untranslatable constructs, extra token
+   * conversions). Consumed by the gateway's translation profile; free-form
+   * so a pair can grow it without a library change.
+   */
+  translation_profile?: Record<string, unknown>;
 }
 
 // ---------------------------------------------------------------------------

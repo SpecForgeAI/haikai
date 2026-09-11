@@ -380,6 +380,12 @@ public class DbMigrationPackTranslationService {
         if (dto.staleReason() != null) {
             entity.setStaleReason(blankToNull(dto.staleReason()));
         }
+        // Untranslatable reason (changeset 233): the seed supplies it on EVERY
+        // re-link (empty string clears it) so a re-scan that removes the
+        // construct lifts the row back to translatable.
+        if (dto.untranslatableReason() != null) {
+            entity.setUntranslatableReason(blankToNull(dto.untranslatableReason()));
+        }
     }
 
     private static void validateBatch(List<DbMigrationPackTranslationDto> translations) {

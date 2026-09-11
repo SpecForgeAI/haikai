@@ -21,6 +21,27 @@
     "scheduler_name": "SQL Server Agent",
     "scheduler_source": "msdb.dbo.sysjobs",
     "identity_reseed_form": "DBCC CHECKIDENT ('<schema>.<table>', RESEED, <n>)",
+    "untranslatable_constructs": [
+      { "pattern": "\\bsp_send_dbmail\\b", "construct": "sp_send_dbmail", "concern": "Database Mail has no built-in PostgreSQL equivalent (send from the application or an external service)" },
+      { "pattern": "\\b(?:openquery|openrowset|opendatasource)\\s*\\(", "construct": "OPENQUERY/OPENROWSET/OPENDATASOURCE", "concern": "linked-server / ad-hoc remote queries are cross_database_reference (OUT by ruling)" },
+      { "pattern": "\\b(?:send\\s+on\\s+conversation|receive\\s+top|begin\\s+dialog|end\\s+conversation)\\b", "construct": "Service Broker", "concern": "Service Broker messaging has no database-resident PostgreSQL equivalent (service_broker_object decision)" },
+      { "pattern": "\\bsp_getapplock\\b", "construct": "sp_getapplock", "concern": "application locks map to pg_advisory_xact_lock with different key semantics — review" },
+      { "pattern": "\\bwith\\s*\\(\\s*(?:tablock|tablockx|xlock|paglock|rowlock)\\b", "construct": "table/page lock hints", "concern": "lock hints do not map onto PostgreSQL MVCC semantics (FOR UPDATE / LOCK TABLE review)" },
+      { "pattern": "\\bsp_xml_preparedocument\\b|\\bopenxml\\s*\\(", "construct": "OPENXML", "concern": "OPENXML/sp_xml_preparedocument -> xmltable() rewrite (MSPG.XML.002)" }
+    ],
+    "token_conversions": [
+      { "token": "sysutcdatetime", "replacement": "(now() AT TIME ZONE 'UTC')", "note": "T-SQL sysutcdatetime() -> Postgres (now() AT TIME ZONE 'UTC') (100 ns -> microseconds)" },
+      { "token": "sysdatetimeoffset", "replacement": "now()", "note": "T-SQL sysdatetimeoffset() -> Postgres now() (timestamptz)" },
+      { "token": "original_login", "replacement": "session_user", "note": "T-SQL original_login() -> Postgres session_user" },
+      { "token": "scope_identity", "replacement": null, "note": "T-SQL scope_identity() -> INSERT … RETURNING <id> (or currval(pg_get_serial_sequence())) — decide per call site" },
+      { "token": "error_number", "replacement": null, "note": "T-SQL error_number() -> (PG_EXCEPTION_DETAIL ->> 'source_error')::int inside an EXCEPTION block (MSPG.PROC.ERR.001)" },
+      { "token": "error_message", "replacement": null, "note": "T-SQL error_message() -> SQLERRM inside an EXCEPTION block" },
+      { "token": "error_severity", "replacement": null, "note": "T-SQL error_severity() -> DETAIL JSON severity (MSPG.PROC.ERR.001)" },
+      { "token": "error_state", "replacement": null, "note": "T-SQL error_state() -> DETAIL JSON state (MSPG.PROC.ERR.001)" },
+      { "token": "error_procedure", "replacement": null, "note": "T-SQL error_procedure() -> GET STACKED DIAGNOSTICS PG_EXCEPTION_CONTEXT" },
+      { "token": "error_line", "replacement": null, "note": "T-SQL error_line() -> GET STACKED DIAGNOSTICS PG_EXCEPTION_CONTEXT" },
+      { "token": "xact_state", "replacement": null, "note": "T-SQL xact_state() has no equivalent: inside an EXCEPTION block the sub-transaction is already rolled back (MSPG.PROC.TXN.001)" }
+    ],
     "untranslatable_reasons": {
       "cross_database_reference": "references another database or a linked server (OUT by ruling — rewrite in the application or consolidate databases first)",
       "indexed_view": "depends on an indexed (materialised, auto-maintained) view (OUT by ruling)",
@@ -453,6 +474,26 @@
       "scenario_seed": "n/a — the profile is applied on every capture connection and recorded in the envelope.",
       "severity": "behaviour_divergence",
       "notes": "PROC_CALL_SESSION_SET overrides the list (semicolon-separated). Numeric isolation levels are NOT valid on SQL Server; the named form is used."
+    },
+    {
+      "id": "MSPG.PROC.TRIGGER.001",
+      "divergence_class": "trigger_semantics",
+      "title": "Statement-level triggers over inserted/deleted map to transition tables; INSTEAD OF on views is row-level; ordering and recursion are explicit",
+      "applies_to": { "object_kinds": ["trigger"] },
+      "comparison": null,
+      "convention": {
+        "inserted_deleted": "CREATE TRIGGER … AFTER INSERT OR UPDATE OR DELETE ON <table> REFERENCING NEW TABLE AS inserted OLD TABLE AS deleted FOR EACH STATEMENT EXECUTE FUNCTION <fn>(); the body reads inserted/deleted exactly as the source did",
+        "per_event_branches": "IF UPDATE(col) / COLUMNS_UPDATED() branches use TG_OP and compare inserted vs deleted columns over the transition tables",
+        "instead_of_view": "INSTEAD OF triggers on views become row-level (FOR EACH ROW) INSTEAD OF triggers using NEW/OLD; note instead_of_row_level",
+        "instead_of_table": "INSTEAD OF triggers on tables are a decision (instead_of_table_trigger): default before_trigger_emulation (BEFORE trigger that performs the source logic and RETURNs NULL to suppress the original write) | rewrite_in_app",
+        "disabled": "a disabled source trigger is emitted then ALTER TABLE … DISABLE TRIGGER",
+        "ordering": "sp_settriggerorder first/last become a_/z_ name prefixes (PostgreSQL fires same-event triggers alphabetically), noted in the manifest",
+        "recursion": "a trigger that writes its own table is a trigger_recursion decision (SQL Server RECURSIVE_TRIGGERS is OFF by default; PostgreSQL re-fires unconditionally)",
+        "nocount_rowcount": "SET NOCOUNT ON inside a trigger is dropped; @@ROWCOUNT at trigger start -> the transition-table row count"
+      },
+      "rewrite_guidance": "Translate triggers statement-level with transition tables; never collapse a multi-row source trigger into a row-level one; INSTEAD OF on views is the one row-level shape.",
+      "scenario_seed": "Fire a multi-row UPDATE through the trigger and assert the same downstream rows on both engines; fire an INSTEAD OF view insert and assert the base-table rows.",
+      "severity": "behaviour_divergence"
     },
     {
       "id": "MSPG.PROC.CALLSITE.001",

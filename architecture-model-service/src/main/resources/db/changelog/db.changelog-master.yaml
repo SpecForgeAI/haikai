@@ -5356,3 +5356,17 @@ databaseChangeLog:
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: true
+
+  # 233 -- second-pair programme, Spec 6 (2026-09-11): a NAMED untranslatable
+  # reason on translation-queue rows (cross_database_reference, indexed_view,
+  # clr_object, service_broker_object, filestream). Nullable; vocabulary is
+  # pair data (no CHECK).
+  - changeSet:
+      id: 233-translation-untranslatable-reason
+      author: architecture-tool
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/233-translation-untranslatable-reason.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true

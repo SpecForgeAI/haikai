@@ -425,3 +425,27 @@ describe('mavenFindingScanner -- runManager wiring', () => {
   });
 });
 
+
+describe('mavenFindingScanner -- SQL Server driver (second-pair programme)', () => {
+  it('mssql-jdbc < 12 -> risky_dependency (medium) + database_driver_detected with vendor SQL Server', () => {
+    const xml = `<project></project>`;
+    const deps = [makeDep('com.microsoft.sqlserver:mssql-jdbc', '9.4.1.jre11')];
+    const out = runMavenFindingScanner({ runId: RUN_ID, poms: [makePomInput('pom.xml', xml, deps)] });
+    const risky = out.filter((f) => f.findingType === 'risky_dependency');
+    expect(risky).toHaveLength(1);
+    expect(risky[0].severity).toBe('medium');
+    const driver = out.filter((f) => f.findingType === 'database_driver_detected');
+    expect(driver).toHaveLength(1);
+    expect((driver[0].detailJson as Record<string, unknown>).databaseVendor).toBe('SQL Server');
+  });
+
+  it('mssql-jdbc 12.x is not risky; jTDS is flagged unmaintained', () => {
+    const xml = `<project></project>`;
+    const out = runMavenFindingScanner({
+      runId: RUN_ID,
+      poms: [makePomInput('pom.xml', xml, [makeDep('com.microsoft.sqlserver:mssql-jdbc', '12.8.1.jre11'), makeDep('net.sourceforge.jtds:jtds', '1.3.1')])],
+    });
+    const risky = out.filter((f) => f.findingType === 'risky_dependency');
+    expect(risky.map((f) => (f.detailJson as Record<string, unknown>).artifactId)).toEqual(['jtds']);
+  });
+});

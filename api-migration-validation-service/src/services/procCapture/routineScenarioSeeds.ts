@@ -162,6 +162,11 @@ export function enumerateExitOutcomes(routine: RoutineCatalogRow): string[] {
   for (const r of profile.raiserror_sites ?? []) {
     out.add(r.number !== null ? `error:${r.number}` : 'error:?');
   }
+  // THROW sites (SQL Server): a numbered THROW is its own exit outcome; a
+  // bare re-THROW inside CATCH carries the caught error and is not counted.
+  for (const t of (profile as { throw_sites?: Array<{ number: number | null }> }).throw_sites ?? []) {
+    if (t.number !== null) out.add(`error:${t.number}`);
+  }
   return [...out];
 }
 

@@ -92,7 +92,7 @@ class DbMigrationPackTranslationServiceTest {
             null, null, key, objectRef, kind,
             null, null, pipelineState,
             body, hash, truncated, legacyRedacted, null,
-            null, null, null, null, null, null, null, null, null, null, null, null, null);
+            null, null, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     private static UpsertDbMigrationPackTranslationsRequest batch(
@@ -139,7 +139,7 @@ class DbMigrationPackTranslationServiceTest {
                         "construct", "@@rowcount",
                         "concern", "row-count semantics differ",
                         "severity", "medium"))),
-                null, null, null, null, null, null, null, null, null, null));
+                null, null, null, null, null, null, null, null, null, null, null));
         entityManager.flush();
         entityManager.clear();
 
@@ -181,10 +181,10 @@ class DbMigrationPackTranslationServiceTest {
             new UpdateDbMigrationPackTranslationRequest(
                 "drafted", "CREATE VIEW dbo.v_orders AS SELECT 1",
                 Map.of("verdict", "equivalent", "confidence", 1.0, "flags", List.of()),
-                null, null, null, null, null, null, null, null, null, null));
+                null, null, null, null, null, null, null, null, null, null, null));
         service.updateTranslation(projectId, pack.id(), original.id(),
             new UpdateDbMigrationPackTranslationRequest(
-                null, null, null, null, null, "approved", "looks right", null, null, null, null, null, null));
+                null, null, null, null, null, "approved", "looks right", null, null, null, null, null, null, null));
         entityManager.flush();
         entityManager.clear();
 
@@ -241,7 +241,7 @@ class DbMigrationPackTranslationServiceTest {
                 "drafted", "CREATE FUNCTION calc() ...",
                 Map.of("verdict", "equivalent_with_concerns", "confidence", 0.7,
                     "flags", List.of()),
-                null, null, null, null, null, null, null, null, null, null));
+                null, null, null, null, null, null, null, null, null, null, null));
         entityManager.flush();
         entityManager.clear();
 
@@ -249,7 +249,7 @@ class DbMigrationPackTranslationServiceTest {
         DbMigrationPackTranslationDto patched = service.updateTranslation(
             projectId, pack.id(), row.id(),
             new UpdateDbMigrationPackTranslationRequest(
-                null, null, null, null, null, "needs_rework", "tighten NULL handling", null, null, null, null, null, null));
+                null, null, null, null, null, "needs_rework", "tighten NULL handling", null, null, null, null, null, null, null));
 
         assertThat(patched.reviewStatus()).isEqualTo("needs_rework");
         assertThat(patched.reviewerNotes()).isEqualTo("tighten NULL handling");
@@ -269,7 +269,7 @@ class DbMigrationPackTranslationServiceTest {
         DbMigrationPackTranslationDto reset = service.updateTranslation(
             projectId, pack.id(), row.id(),
             new UpdateDbMigrationPackTranslationRequest(
-                null, null, null, null, null, "unreviewed", null, null, null, null, null, null, null));
+                null, null, null, null, null, "unreviewed", null, null, null, null, null, null, null, null));
         assertThat(reset.reviewedAt()).isNull();
         assertThat(reset.reviewerNotes()).as("notes untouched by review reset")
             .isEqualTo("tighten NULL handling");
@@ -278,13 +278,13 @@ class DbMigrationPackTranslationServiceTest {
         assertThatThrownBy(() -> service.updateTranslation(
             projectId, pack.id(), row.id(),
             new UpdateDbMigrationPackTranslationRequest(
-                null, null, null, "drop", null, null, null, null, null, null, null, null, null)))
+                null, null, null, "drop", null, null, null, null, null, null, null, null, null, null)))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("drop_reason is required");
         DbMigrationPackTranslationDto dropped = service.updateTranslation(
             projectId, pack.id(), row.id(),
             new UpdateDbMigrationPackTranslationRequest(
-                null, null, null, "drop", "replaced by app-side report", null, null, null, null, null, null, null, null));
+                null, null, null, "drop", "replaced by app-side report", null, null, null, null, null, null, null, null, null));
         assertThat(dropped.disposition()).isEqualTo("drop");
         assertThat(dropped.dropReason()).isEqualTo("replaced by app-side report");
 
@@ -292,7 +292,7 @@ class DbMigrationPackTranslationServiceTest {
         assertThatThrownBy(() -> service.updateTranslation(
             projectId, pack.id(), row.id(),
             new UpdateDbMigrationPackTranslationRequest(
-                "not-a-state", null, null, null, null, null, null, null, null, null, null, null, null)))
+                "not-a-state", null, null, null, null, null, null, null, null, null, null, null, null, null)))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("Invalid pipeline_state");
     }
@@ -315,7 +315,7 @@ class DbMigrationPackTranslationServiceTest {
             service.listTranslations(projectId, pack.id());
         service.updateTranslation(projectId, pack.id(), all.get(0).id(),
             new UpdateDbMigrationPackTranslationRequest(
-                null, null, null, "rewrite_in_app", null, null, null, null, null, null, null, null, null));
+                null, null, null, "rewrite_in_app", null, null, null, null, null, null, null, null, null, null));
         entityManager.flush();
         entityManager.clear();
 
@@ -369,7 +369,7 @@ class DbMigrationPackTranslationServiceTest {
             new UpdateDbMigrationPackTranslationRequest(
                 null, null, null, null, null, null, null,
                 "exhausted", 4, 3, Map.of("match", 9, "scenarios", 12),
-                reportId, "target_rebuilt"));
+                reportId, "target_rebuilt", null));
         entityManager.flush();
         entityManager.clear();
 
@@ -404,7 +404,7 @@ class DbMigrationPackTranslationServiceTest {
         assertThatThrownBy(() -> service.updateTranslation(projectId, pack.id(), row.id(),
             new UpdateDbMigrationPackTranslationRequest(
                 null, null, null, null, null, null, null,
-                "not-a-loop-state", null, null, null, null, null)))
+                "not-a-loop-state", null, null, null, null, null, null)))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("Invalid loop_status");
     }

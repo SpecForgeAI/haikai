@@ -53,7 +53,14 @@ export interface ApplyFailureEvidence {
   detail: string | null;
 }
 
-/** Group failing scenarios by signature; largest cluster first, stable. */
+/** Scenario types that describe error-mid-routine behaviour (second-pair programme, item 3). */
+const ERROR_BEHAVIOUR_SCENARIO_TYPES = new Set(['error_path', 'error_mid_routine']);
+
+/**
+ * Group failing scenarios by signature; error-behaviour clusters first (an
+ * error/transaction divergence explains most other failures, so it leads the
+ * evidence), then largest cluster first, stable.
+ */
 export function clusterBySignature(failing: FailingScenarioEvidence[]): Array<{ signature: string; scenarios: FailingScenarioEvidence[] }> {
   const map = new Map<string, FailingScenarioEvidence[]>();
   for (const f of failing) {
@@ -62,9 +69,16 @@ export function clusterBySignature(failing: FailingScenarioEvidence[]): Array<{ 
     list.push(f);
     map.set(key, list);
   }
+  const hasErrorBehaviour = (scenarios: FailingScenarioEvidence[]): number =>
+    scenarios.some((s) => ERROR_BEHAVIOUR_SCENARIO_TYPES.has(s.scenario_type)) ? 1 : 0;
   return [...map.entries()]
     .map(([signature, scenarios]) => ({ signature, scenarios }))
-    .sort((a, b) => b.scenarios.length - a.scenarios.length || a.signature.localeCompare(b.signature));
+    .sort(
+      (a, b) =>
+        hasErrorBehaviour(b.scenarios) - hasErrorBehaviour(a.scenarios) ||
+        b.scenarios.length - a.scenarios.length ||
+        a.signature.localeCompare(b.signature),
+    );
 }
 
 function renderInputs(inputs: FailingScenarioEvidence['inputs']): string {

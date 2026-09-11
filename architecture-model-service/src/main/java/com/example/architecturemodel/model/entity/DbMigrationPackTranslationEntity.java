@@ -274,6 +274,15 @@ public class DbMigrationPackTranslationEntity {
     @Column(name = "stale_reason", length = 64)
     private String staleReason;
 
+    /**
+     * Named reason the source object is not attempted by the translator
+     * (changeset 233, second-pair programme): cross_database_reference,
+     * indexed_view, clr_object, service_broker_object, filestream. Null = the
+     * object is translatable. Vocabulary is pair data (no CHECK).
+     */
+    @Column(name = "untranslatable_reason", length = 64)
+    private String untranslatableReason;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     @Builder.Default
     private Instant createdAt = Instant.now();

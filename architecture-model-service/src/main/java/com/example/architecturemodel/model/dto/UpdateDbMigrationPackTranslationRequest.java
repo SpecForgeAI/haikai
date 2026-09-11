@@ -86,5 +86,8 @@ public record UpdateDbMigrationPackTranslationRequest(
     UUID parityReportId,
 
     @JsonProperty("stale_reason")
-    String staleReason
+    String staleReason,
+
+    @JsonProperty("untranslatable_reason")
+    String untranslatableReason
 ) {}

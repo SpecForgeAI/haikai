@@ -75,6 +75,8 @@ const FUNCTION_EQUIVALENTS: Record<string, string | null> = {
   app_name: "current_setting('application_name')",
   '@@spid': 'pg_backend_pid()',
   '@@servername': null,
+  sysutcdatetime: "(now() AT TIME ZONE 'UTC')",
+  sysdatetimeoffset: 'now()',
 };
 
 /** The single-source function/global family, from the DB-pack detection table. */
@@ -172,7 +174,7 @@ const CODE_SIDE_FAMILIES: PatternFamily[] = [
     construct: 'HOLDLOCK',
     pattern: tokenPattern('holdlock'),
     suggested: 'SELECT … FOR UPDATE / isolation-level review',
-    note: 'Sybase HOLDLOCK does not map onto Postgres MVCC — review the locking intent (FOR UPDATE / SERIALIZABLE)',
+    note: 'T-SQL HOLDLOCK does not map onto Postgres MVCC — review the locking intent (FOR UPDATE / SERIALIZABLE)',
   },
   {
     construct: 'NOLOCK',
@@ -197,7 +199,7 @@ const CODE_SIDE_FAMILIES: PatternFamily[] = [
     construct: 'legacy_outer_join',
     pattern: /\*=|=\*/g,
     suggested: 'ANSI LEFT/RIGHT JOIN',
-    note: 'Sybase legacy outer join (*= / =*) -> ANSI JOIN syntax (semantics can differ on filters)',
+    note: 'Legacy T-SQL outer join (*= / =*; removed from SQL Server 2012+) -> ANSI JOIN syntax (semantics can differ on filters)',
   },
   // --- TOP (with or without parens) ---
   {
@@ -211,13 +213,13 @@ const CODE_SIDE_FAMILIES: PatternFamily[] = [
     construct: 'select_into_temp',
     pattern: /select\b[\s\S]{0,200}?\binto\s+#[A-Za-z_][A-Za-z0-9_]*/gi,
     suggested: 'CREATE TEMP TABLE … AS SELECT',
-    note: 'Sybase SELECT … INTO #tmp -> Postgres CREATE TEMP TABLE … AS SELECT',
+    note: 'T-SQL SELECT … INTO #tmp -> Postgres CREATE TEMP TABLE … AS SELECT',
   },
   {
     construct: 'temp_table',
     pattern: /#[A-Za-z_][A-Za-z0-9_]*/g,
     suggested: 'CREATE TEMP TABLE (session-scoped)',
-    note: 'Sybase #temp table -> Postgres TEMP TABLE (lifetime + visibility semantics differ)',
+    note: 'T-SQL #temp table -> Postgres TEMP TABLE (lifetime + visibility semantics differ)',
   },
   // --- procedural / misc ---
   {
@@ -236,7 +238,7 @@ const CODE_SIDE_FAMILIES: PatternFamily[] = [
     construct: 'SET_ROWCOUNT',
     pattern: /set\s+rowcount\s+\d+/gi,
     suggested: 'LIMIT n on the statement',
-    note: 'Sybase SET ROWCOUNT n -> per-statement LIMIT (no session-scoped row cap in Postgres)',
+    note: 'T-SQL SET ROWCOUNT n -> per-statement LIMIT (no session-scoped row cap in Postgres; deprecated for DML on SQL Server)',
   },
   {
     construct: 'EXEC',
@@ -249,6 +251,136 @@ const CODE_SIDE_FAMILIES: PatternFamily[] = [
     pattern: /(?<![A-Za-z0-9_])(?:sp|xp)_[A-Za-z0-9_]+/gi,
     suggested: null,
     note: 'sp_/xp_ system-procedure conventions are engine-specific — map to Postgres catalog/functions case by case',
+  },
+  // --- SQL-Server-only T-SQL (second-pair programme, 2026-09-11). Construct
+  // names match the pair rulesets' construct_refs so seeds/guidance line up. ---
+  {
+    construct: 'try_catch',
+    pattern: /\bbegin\s+try\b/gi,
+    suggested: 'BEGIN … EXCEPTION WHEN OTHERS THEN … END',
+    note: 'T-SQL BEGIN TRY/CATCH -> PL/pgSQL EXCEPTION block; ERROR_NUMBER()/ERROR_MESSAGE() -> SQLSTATE/SQLERRM + GET STACKED DIAGNOSTICS',
+  },
+  {
+    construct: 'throw',
+    pattern: /(?<![A-Za-z0-9_])throw(?![A-Za-z0-9_])/gi,
+    suggested: 'RAISE EXCEPTION USING ERRCODE = \'P0001\' (bare THROW in CATCH -> RAISE;)',
+    note: 'T-SQL THROW n, msg, state -> RAISE EXCEPTION carrying the source error number in DETAIL; a bare THROW re-raises',
+  },
+  {
+    construct: 'xact_abort',
+    pattern: /\bset\s+xact_abort\s+(?:on|off)\b/gi,
+    suggested: 'ON = Postgres default (whole-block abort); OFF = per-statement EXCEPTION sub-blocks where the source continues',
+    note: 'T-SQL SET XACT_ABORT governs statement-level vs transaction-level abort — continue-after-error paths need explicit sub-blocks',
+  },
+  {
+    construct: 'merge',
+    // ANSI `MERGE INTO t USING …` is portable (PostgreSQL 15+); only the
+    // T-SQL-only shapes (no INTO, TOP, or a MERGE OUTPUT clause) are flagged.
+    pattern: /(?<![A-Za-z0-9_])merge\s+(?:top\s*\(\d+\)\s+(?:into\s+)?|(?!into\b))[A-Za-z_#\[\]"][\w.#\[\]$"]*\s+(?:as\s+\w+\s+)?using\b/gi,
+    suggested: 'MERGE INTO … (PostgreSQL 15+; WHEN NOT MATCHED BY SOURCE needs 17+)',
+    note: 'T-SQL MERGE without INTO / with TOP -> Postgres MERGE INTO; OUTPUT on MERGE -> RETURNING (17+) or a CTE',
+  },
+  {
+    construct: 'output_clause',
+    pattern: /\boutput\s+(?:inserted|deleted)\s*\./gi,
+    suggested: 'RETURNING (or a data-modifying CTE)',
+    note: 'T-SQL OUTPUT INSERTED./DELETED. -> Postgres RETURNING; OUTPUT … INTO <table> -> INSERT … SELECT over a RETURNING CTE',
+  },
+  {
+    construct: 'offset_fetch',
+    pattern: /\boffset\s+\S+\s+rows?\s+fetch\s+(?:first|next)\s+\S+\s+rows?\s+only\b/gi,
+    suggested: 'OFFSET n LIMIT m',
+    note: 'T-SQL OFFSET … FETCH -> Postgres OFFSET … LIMIT (ORDER BY required for determinism)',
+  },
+  {
+    construct: 'apply',
+    pattern: /\b(?:cross|outer)\s+apply\b/gi,
+    suggested: 'CROSS/LEFT JOIN LATERAL',
+    note: 'T-SQL CROSS/OUTER APPLY -> Postgres LATERAL join',
+  },
+  {
+    construct: 'iif',
+    pattern: tokenPattern('iif'),
+    suggested: 'CASE WHEN … THEN … ELSE … END',
+    note: 'T-SQL IIF(cond, a, b) -> CASE expression (NULL condition -> ELSE branch on both engines)',
+  },
+  {
+    construct: 'try_convert',
+    pattern: /(?<![A-Za-z0-9_])try_(?:convert|cast|parse)\s*\(/gi,
+    suggested: 'guarded cast (NULL on failure): a BEGIN … EXCEPTION wrapper or a regex-validated CAST',
+    note: 'T-SQL TRY_CONVERT/TRY_CAST/TRY_PARSE return NULL instead of raising — Postgres CAST raises',
+  },
+  {
+    construct: 'string_agg',
+    pattern: tokenPattern('string_agg'),
+    suggested: 'string_agg(expr, sep ORDER BY …)',
+    note: 'T-SQL STRING_AGG … WITHIN GROUP (ORDER BY …) -> Postgres string_agg with the ORDER BY inside the call',
+  },
+  {
+    construct: 'sp_executesql_params',
+    pattern: /(?<![A-Za-z0-9_])sp_executesql\s+[^,]+,/gi,
+    suggested: 'EXECUTE … USING (OUTPUT params -> INTO)',
+    note: 'T-SQL parameterised dynamic SQL (sp_executesql @stmt, @params, …) -> PL/pgSQL EXECUTE … USING',
+  },
+  {
+    construct: 'next_value_for',
+    pattern: /\bnext\s+value\s+for\b/gi,
+    suggested: 'nextval(\'<sequence>\')',
+    note: 'T-SQL NEXT VALUE FOR seq -> Postgres nextval()',
+  },
+  {
+    construct: 'scope_identity',
+    pattern: /(?<![A-Za-z0-9_])(?:scope_identity|ident_current)\s*\(/gi,
+    suggested: 'INSERT … RETURNING <id> (or currval(pg_get_serial_sequence()))',
+    note: 'T-SQL SCOPE_IDENTITY()/IDENT_CURRENT() -> RETURNING / currval — @@IDENTITY-through-trigger semantics are a seeded scenario',
+  },
+  {
+    construct: 'for_system_time',
+    pattern: /\bfor\s+system_time\b/gi,
+    suggested: 'range predicates over the emulated history table (valid_from/valid_to)',
+    note: 'T-SQL FOR SYSTEM_TIME (temporal tables) -> queries over the pack-emulated history table',
+  },
+  {
+    construct: 'contains_freetext',
+    pattern: /(?<![A-Za-z0-9_])(?:contains|freetext|containstable|freetexttable)\s*\(/gi,
+    suggested: 'tsvector @@ to_tsquery / websearch_to_tsquery (+ ts_rank)',
+    note: 'T-SQL full-text CONTAINS/FREETEXT -> Postgres full-text search over the pack-emulated tsvector column (ranking and stemming differ)',
+  },
+  {
+    construct: 'xml_method',
+    pattern: /\.(?:value|query|nodes|exist|modify)\s*\(\s*'/gi,
+    suggested: 'xpath() / xmltable() / xpath_exists()',
+    note: 'T-SQL XML methods (.value/.query/.nodes/.exist/.modify) -> Postgres xpath()/xmltable(); .modify() has no equivalent',
+  },
+  {
+    construct: 'datetimeoffset_fn',
+    pattern: /(?<![A-Za-z0-9_])(?:switchoffset|todatetimeoffset)\s*\(/gi,
+    suggested: 'AT TIME ZONE',
+    note: 'T-SQL SWITCHOFFSET/TODATETIMEOFFSET -> Postgres AT TIME ZONE over timestamptz (the original offset is not stored)',
+  },
+  {
+    construct: 'format_fn',
+    pattern: /(?<![A-Za-z0-9_])format\s*\(\s*[^,)]+,\s*'/gi,
+    suggested: 'to_char(value, pattern)',
+    note: 'T-SQL FORMAT(value, .NET pattern) -> Postgres to_char with a translated pattern (Postgres format() is printf-style, not a replacement)',
+  },
+  {
+    construct: 'sysutcdatetime',
+    pattern: tokenPattern('sysutcdatetime'),
+    suggested: "(now() AT TIME ZONE 'UTC')",
+    note: 'T-SQL SYSUTCDATETIME() (100 ns) -> Postgres now() AT TIME ZONE UTC (microseconds)',
+  },
+  {
+    construct: 'sysdatetimeoffset',
+    pattern: tokenPattern('sysdatetimeoffset'),
+    suggested: 'now()',
+    note: 'T-SQL SYSDATETIMEOFFSET() -> Postgres now() (timestamptz; the session offset is not carried)',
+  },
+  {
+    construct: 'bracket_identifier',
+    pattern: /\[[A-Za-z_][^\]]*\](?=\s*[.,=<>\s)]|$)/g,
+    suggested: 'unquoted lower-case identifier (or "double-quoted" when case/spaces matter)',
+    note: 'T-SQL [bracketed] identifiers -> Postgres unquoted (case-folded) or double-quoted identifiers',
   },
 ];
 
@@ -343,7 +475,7 @@ export function extractProcCallNames(text: string | null | undefined): string[] 
     out.push(trimmed);
   };
 
-  // The exec arm tolerates the Sybase RETURN-STATUS form `exec @rc = proc`
+  // The exec arm tolerates the T-SQL RETURN-STATUS form `exec @rc = proc`
   // (Spec 1, 2026-09-09 — mirrors the SCL emitter's PROC_CALL_RE; without
   // it `proc_call_unmatched` under-reported on exactly that idiom).
   const execRe = /(?<![A-Za-z0-9_])exec(?:ute)?\s+(?:@[A-Za-z0-9_]+\s*=\s*)?([A-Za-z_[][\w.$[\]]*)/gi;
