@@ -1,0 +1,548 @@
+{
+  "pair_id": "sqlserver16-postgres18",
+  "version": 2,
+  "rules_prefix": "MSPG.",
+  "source": {
+    "engine": "mssql",
+    "version": "16",
+    "display": "SQL Server 2022 (16.x)"
+  },
+  "target": {
+    "engine": "postgres",
+    "version": "18",
+    "display": "PostgreSQL 18"
+  },
+  "guidance_heading": "T-SQL dialect rewrite guidance (SQL Server → PostgreSQL)",
+  "notes": "Migration-pair ruleset for SQL Server 2022 (16.x) → PostgreSQL 18 (second-pair programme, 2026-09-11, shaping doc agent-os/planning/2026-09-11-sqlserver-postgres-pair-shaping.md). Pair knowledge lives HERE as data — generic code never names an engine. Rules with a `comparison` block drive the data-parity and proc-parity comparators; guidance-only rules (comparison: null) carry rewrite/seed knowledge and conventions. Owner rulings bound into this file: CI collation is the estate default (MSPG.COLL.001 enabled); datetime2(7)/time(7) precision loss is a cited rule (MSPG.DT.002); cross-database references and indexed views are OUT by ruling and carry named untranslatable reasons rather than rules.",
+  "translation_profile": {
+    "source_display": "SQL Server 2022 (16.x)",
+    "source_dialect": "T-SQL (SQL Server)",
+    "catalog_refusal": ["sys.", "INFORMATION_SCHEMA.", "OBJECT_ID(", "OBJECT_NAME(", "OBJECTPROPERTY(", "msdb.", "master.", "tempdb."],
+    "scheduler_name": "SQL Server Agent",
+    "scheduler_source": "msdb.dbo.sysjobs",
+    "identity_reseed_form": "DBCC CHECKIDENT ('<schema>.<table>', RESEED, <n>)",
+    "untranslatable_reasons": {
+      "cross_database_reference": "references another database or a linked server (OUT by ruling — rewrite in the application or consolidate databases first)",
+      "indexed_view": "depends on an indexed (materialised, auto-maintained) view (OUT by ruling)",
+      "clr_object": "CLR assembly code has no database-resident equivalent (decision: rewrite_in_app | external_service | drop)",
+      "service_broker_object": "Service Broker messaging has no database-resident equivalent (decision: rewrite_in_app | external_service | drop)",
+      "filestream": "FILESTREAM storage has no database-resident equivalent (decision: bytea | external_store | drop)"
+    }
+  },
+  "rules": [
+    {
+      "id": "MSPG.DT.001",
+      "divergence_class": "datetime_precision",
+      "title": "SQL Server datetime carries 1/300s precision (.000/.003/.007); Postgres timestamp is microseconds",
+      "applies_to": { "column_types": ["datetime"] },
+      "comparison": { "strategy": "timestamp-truncate", "params": { "ticks_per_second": 300 } },
+      "rewrite_guidance": "Map datetime to timestamp(3) (zoneless). Values loaded from SQL Server datetime never carry sub-1/300s precision; the target must not synthesise finer precision on like-for-like paths (getdate() → now() is governed by MSPG.PROC.VOL.001).",
+      "scenario_seed": "Round-trip a timestamp whose milliseconds are not a multiple of 1/300s and assert the persisted+returned value matches the source rounding (.003/.007).",
+      "severity": "value_divergence"
+    },
+    {
+      "id": "MSPG.DT.002",
+      "divergence_class": "datetime_precision",
+      "title": "datetime2(7) and time(7) carry 100 ns; Postgres carries microseconds — the 7th digit is lost on load (cited, never silent)",
+      "applies_to": { "column_types": ["datetime2", "time"] },
+      "comparison": { "strategy": "timestamp-truncate", "params": { "granularity_us": 1 } },
+      "rewrite_guidance": "Map datetime2(p) to timestamp(min(p,6)) and time(p) to time(min(p,6)). Columns declared with p = 7 are flagged precision_loss in the pack manifest; the loader TRUNCATES the 7th fractional digit (never rounds) so source and target canonical forms agree; application code that compares datetime2 values for equality across the boundary must compare at microsecond precision.",
+      "scenario_seed": "Insert a datetime2(7) value with a non-zero 7th digit; assert the migrated value equals the source truncated to microseconds and that ordering/keyset paging over the column is stable.",
+      "severity": "value_divergence",
+      "notes": "Comparison canonical form is STRING-based (the wire renders the full fraction): both sides are cut at 6 fractional digits before comparison. Applies equally to datetimeoffset fractions via MSPG.DT.004."
+    },
+    {
+      "id": "MSPG.DT.003",
+      "divergence_class": "datetime_precision",
+      "title": "smalldatetime has minute precision",
+      "applies_to": { "column_types": ["smalldatetime"] },
+      "comparison": { "strategy": "timestamp-truncate", "params": { "granularity_ms": 60000 } },
+      "rewrite_guidance": "Map to timestamp(0); the source rounds to the nearest minute (29.998 s rounds up) — the loader carries the stored minute value verbatim.",
+      "scenario_seed": "Round-trip a value with seconds and assert minute rounding matches.",
+      "severity": "value_divergence"
+    },
+    {
+      "id": "MSPG.DT.004",
+      "divergence_class": "datetime_offset",
+      "title": "datetimeoffset compares as an instant (offset-normalised, microsecond precision)",
+      "applies_to": { "column_types": ["datetimeoffset"] },
+      "comparison": { "strategy": "instant", "params": { "granularity_us": 1 } },
+      "rewrite_guidance": "Map datetimeoffset(p) to timestamptz(min(p,6)); the stored instant is preserved but the ORIGINAL offset is not (Postgres normalises to UTC). Application code that reads the offset back (DATEPART(tz, …), SWITCHOFFSET, the offset in FORMAT/CONVERT output) is a flagged rewrite site: carry the offset in a companion smallint column when it is response-visible.",
+      "scenario_seed": "Store the same instant with two different offsets; assert both read back as the same instant and document that the offset itself is not round-tripped.",
+      "severity": "value_divergence"
+    },
+    {
+      "id": "MSPG.DT.005",
+      "divergence_class": "datetime_precision",
+      "title": "date compares at day granularity (textual shape differences are not divergence)",
+      "applies_to": { "column_types": ["date"] },
+      "comparison": { "strategy": "timestamp-truncate", "params": { "granularity_ms": 86400000 } },
+      "rewrite_guidance": "Map to date. Style-formatted CONVERT() output (101, 103, 112, 120…) is response-visible and follows the convert construct guidance.",
+      "scenario_seed": "Round-trip a date and a CONVERT(varchar, date, 112) rendering.",
+      "severity": "value_divergence"
+    },
+    {
+      "id": "MSPG.STR.001",
+      "divergence_class": "string_padding",
+      "title": "SQL Server char/varchar equality ignores trailing spaces (ANSI_PADDING); empty strings are preserved",
+      "applies_to": { "column_types": ["char", "nchar", "varchar", "nvarchar"] },
+      "comparison": { "strategy": "string-rtrim" },
+      "rewrite_guidance": "Postgres compares varchar/text byte-exactly; only char(n) pads. WHERE col = 'x' with trailing-space data diverges — the rewrite right-trims on the comparison side where the application relied on padding-insensitive equality. Unlike Sybase, an empty string stays '' (no single-space coercion).",
+      "scenario_seed": "Insert 'abc ' and query with 'abc'; assert the same match behaviour. Insert '' and assert it reads back as '' on both engines.",
+      "severity": "value_divergence"
+    },
+    {
+      "id": "MSPG.STR.002",
+      "divergence_class": "charset_conversion",
+      "title": "nvarchar/nchar/ntext are UTF-16; the target stores UTF-8 (NFC-normalised)",
+      "applies_to": { "column_types": ["nvarchar", "nchar", "ntext"] },
+      "comparison": { "strategy": "charset-normalize", "params": { "form": "NFC" } },
+      "rewrite_guidance": "N-typed columns map to varchar/text in a UTF-8 database; supplementary characters (surrogate pairs) are one code point on the target — LEN()/DATALENGTH() arithmetic on UTF-16 units is a flagged rewrite site (use length()/octet_length()).",
+      "scenario_seed": "Store a string with a supplementary character and a combining sequence; assert equality after NFC normalisation and document the LEN() difference.",
+      "severity": "value_divergence"
+    },
+    {
+      "id": "MSPG.STR.003",
+      "divergence_class": "charset_conversion",
+      "title": "varchar/char under a code-page collation converts to UTF-8 on load",
+      "applies_to": { "column_types": ["varchar", "char", "text"] },
+      "comparison": { "strategy": "charset-normalize", "params": { "form": "NFC" } },
+      "rewrite_guidance": "Non-Unicode columns are decoded with the column's collation code page by the driver and re-encoded as UTF-8; characters the code page could not represent were already lost at the source ('?' substitution) — never a target defect.",
+      "scenario_seed": "Store an accented character in a varchar column under a Latin1 collation; assert it round-trips as the same code point.",
+      "severity": "value_divergence"
+    },
+    {
+      "id": "MSPG.COLL.001",
+      "divergence_class": "collation_case",
+      "title": "SQL Server default collations are case-insensitive (_CI_); Postgres default collations are case-sensitive",
+      "applies_to": { "column_types": ["char", "nchar", "varchar", "nvarchar", "text", "ntext", "sysname"] },
+      "comparison": { "strategy": "collation-case" },
+      "enabled_by_default": true,
+      "rewrite_guidance": "The estate default is case-insensitive, so every string equality, GROUP BY, DISTINCT, UNIQUE constraint and JOIN relies on it. Pack-wide decision `collation`: default `citext` for every affected column (keeps LIKE, uniqueness and index behaviour); alternative `icu_nondeterministic` (CREATE COLLATION … provider = icu, locale = 'und-u-ks-level2', deterministic = false — LIKE / regex / pattern operators are NOT supported on such columns); alternative `accept_case_sensitive_change`. The comparator applies case folding only to columns whose source collation contains _CI_ (manifest collation_affected_columns).",
+      "scenario_seed": "Insert 'ABC' and 'abc' into a UNIQUE column on the source (fails) and assert the target rejects the same; query WHERE name = 'abc' against 'ABC' and assert the same hit.",
+      "severity": "value_divergence",
+      "notes": "Owner ruling 2026-09-11: CI default = citext; ICU nondeterministic explicit alternative with its LIKE restriction documented; accept-CS third."
+    },
+    {
+      "id": "MSPG.NUM.001",
+      "divergence_class": "numeric_scale",
+      "title": "money/smallmoney are fixed 4-decimal scale",
+      "applies_to": { "column_types": ["money", "smallmoney"] },
+      "comparison": { "strategy": "numeric-rescale", "params": { "scale": 4 } },
+      "rewrite_guidance": "Map to numeric(19,4)/numeric(10,4); never to floating types. Rounding at scale 4 is part of the observed contract; money arithmetic in T-SQL rounds intermediate results to 4 places.",
+      "scenario_seed": "Write an amount requiring rounding at the 4th decimal and assert identical rounding behaviour.",
+      "severity": "value_divergence"
+    },
+    {
+      "id": "MSPG.NUM.002",
+      "divergence_class": "float_representation",
+      "title": "float/real representational differences across engines",
+      "applies_to": { "column_types": ["float", "real"] },
+      "comparison": { "strategy": "numeric-epsilon", "params": { "relative": 1e-12, "absolute": 1e-9 } },
+      "rewrite_guidance": "float(n) with n ≤ 24 is real; otherwise double precision. Aggregations over floats may differ in the last ulp; response-visible float formatting (STR(), FORMAT()) is a flagged rewrite site.",
+      "scenario_seed": "Sum a column of floats and compare within epsilon; render one with STR() and assert the formatted text.",
+      "severity": "tolerated_divergence"
+    },
+    {
+      "id": "MSPG.NUM.003",
+      "divergence_class": "numeric_scale",
+      "title": "numeric/decimal exact-value canonical form",
+      "applies_to": { "column_types": ["numeric", "decimal"] },
+      "comparison": { "strategy": "numeric-canonical" },
+      "rewrite_guidance": "Map numeric(p,s)/decimal(p,s) like-for-like (p ≤ 38 fits Postgres numeric). Both wires carry decimals as strings; trailing-zero scale differences are canonicalised without float parsing.",
+      "scenario_seed": "Write 123.4500 and assert equality with 123.45 on the canonical form.",
+      "severity": "value_divergence"
+    },
+    {
+      "id": "MSPG.BIT.001",
+      "divergence_class": "type_nullability",
+      "title": "SQL Server bit is nullable 0/1; Postgres boolean",
+      "applies_to": { "column_types": ["bit"] },
+      "comparison": null,
+      "rewrite_guidance": "Map bit to boolean; the loader coerces 0/1 to false/true. Unlike Sybase, a SQL Server bit column CAN be NULL, so NULL is preserved (no default-0 coercion).",
+      "scenario_seed": "Insert NULL, 0 and 1; assert NULL, false, true on the target.",
+      "severity": "schema_divergence"
+    },
+    {
+      "id": "MSPG.INT.001",
+      "divergence_class": "integer_range",
+      "title": "tinyint is unsigned 0..255; Postgres has no unsigned single-byte type",
+      "applies_to": { "column_types": ["tinyint"] },
+      "comparison": null,
+      "rewrite_guidance": "Map to smallint with a CHECK (0..255) so out-of-range writes fail as they did at the source.",
+      "scenario_seed": "Insert 255 and 256; assert the second fails on both engines.",
+      "severity": "schema_divergence"
+    },
+    {
+      "id": "MSPG.LOB.001",
+      "divergence_class": "lob_semantics",
+      "title": "text/ntext/varchar(max)/nvarchar(max) map to text",
+      "applies_to": { "column_types": ["text", "ntext", "varchar(max)", "nvarchar(max)"] },
+      "comparison": { "strategy": "charset-normalize", "params": { "form": "NFC" } },
+      "rewrite_guidance": "Map to text. TEXTPTR/WRITETEXT/UPDATETEXT (deprecated) and SUBSTRING over LOBs are rewrite sites; length arithmetic follows MSPG.STR.002.",
+      "scenario_seed": "Store a > 8000-byte value and assert byte-for-byte equality after NFC.",
+      "severity": "value_divergence"
+    },
+    {
+      "id": "MSPG.BIN.001",
+      "divergence_class": "binary_encoding",
+      "title": "binary/varbinary/image/rowversion byte-exact hex comparison",
+      "applies_to": { "column_types": ["binary", "varbinary", "image", "rowversion", "timestamp", "varbinary(max)"] },
+      "comparison": { "strategy": "bytes-hex" },
+      "rewrite_guidance": "Map binary types to bytea. `rowversion`/`timestamp` is an auto-incrementing row version, NOT a datetime — a decision (map_to_bytea | drop_column | application_managed) because Postgres has no auto-maintained equivalent (xmin is not stable).",
+      "scenario_seed": "Round-trip a varbinary with a leading 0x00 byte and assert hex equality.",
+      "severity": "value_divergence"
+    },
+    {
+      "id": "MSPG.UUID.001",
+      "divergence_class": "uuid_canonical",
+      "title": "uniqueidentifier compares as a lowercase canonical UUID",
+      "applies_to": { "column_types": ["uniqueidentifier"] },
+      "comparison": { "strategy": "uuid-canonical" },
+      "rewrite_guidance": "Map to uuid (the loader lower-cases the text form). NEWID() → gen_random_uuid(); NEWSEQUENTIALID() has no sequential equivalent (gen_random_uuid() is random — index locality changes, values do not). Byte order differs between the SQL Server binary form and RFC 4122; migrate via the TEXT form only.",
+      "scenario_seed": "Round-trip a GUID and assert the text forms match case-insensitively; insert through a NEWSEQUENTIALID() default and assert only presence.",
+      "severity": "value_divergence"
+    },
+    {
+      "id": "MSPG.SEQ.001",
+      "divergence_class": "identity_semantics",
+      "title": "IDENTITY seed/increment, SCOPE_IDENTITY() and identity caching gaps",
+      "applies_to": { "column_types": ["identity"] },
+      "comparison": null,
+      "rewrite_guidance": "IDENTITY(seed, inc) → GENERATED BY DEFAULT AS IDENTITY (START WITH seed INCREMENT BY inc) with the sequence restarted above the source MAX. SCOPE_IDENTITY()/@@IDENTITY/IDENT_CURRENT() → RETURNING id / currval(pg_get_serial_sequence()). SQL Server caches identity values (gaps after restarts) — value gaps are never divergence. SET IDENTITY_INSERT ON → OVERRIDING SYSTEM VALUE.",
+      "scenario_seed": "Insert through a trigger that also inserts; assert the application observes the same id (SCOPE_IDENTITY vs @@IDENTITY semantics).",
+      "severity": "behaviour_divergence"
+    },
+    {
+      "id": "MSPG.XML.001",
+      "divergence_class": "xml_canonical",
+      "title": "xml columns compare after whitespace canonicalisation",
+      "applies_to": { "column_types": ["xml"] },
+      "comparison": { "strategy": "xml-canonical" },
+      "rewrite_guidance": "Map to xml. SQL Server stores XML as a parsed binary form and re-serialises it (attribute order and insignificant whitespace may differ from the input); Postgres stores the text. Typed XML (schema collections) loses validation — flagged.",
+      "scenario_seed": "Store an XML document with insignificant whitespace and assert canonical equality.",
+      "severity": "value_divergence"
+    },
+    {
+      "id": "MSPG.XML.002",
+      "divergence_class": "xml_methods",
+      "title": "XML methods (.value(), .query(), .nodes(), .exist(), .modify()) are rewrite sites",
+      "applies_to": { "object_kinds": ["procedure", "function", "trigger"], "constructs": ["xml_method"] },
+      "comparison": null,
+      "rewrite_guidance": ".value('xpath', 'type') → (xpath('xpath/text()', col))[1]::type; .exist() → xpath_exists(); .nodes() → xmltable(); .query() → xpath() array; .modify() has no equivalent — rebuild the document. OPENXML → xmltable. FOR XML PATH/AUTO/RAW → xmlagg/xmlelement (or string_agg for the ‘concatenation’ idiom).",
+      "scenario_seed": "Drive each XML-method site with a representative document and compare the extracted values.",
+      "severity": "behaviour_divergence"
+    },
+    {
+      "id": "MSPG.VARIANT.001",
+      "divergence_class": "sql_variant",
+      "title": "sql_variant has no Postgres equivalent",
+      "applies_to": { "column_types": ["sql_variant"] },
+      "comparison": null,
+      "rewrite_guidance": "Pack decision sql_variant_column: default jsonb ({\"type\": <base type>, \"value\": <text>}), alternatives text (value only, type lost) and drop_column. SQL_VARIANT_PROPERTY() reads → jsonb accessors.",
+      "scenario_seed": "Store an int, a string and a datetime in one sql_variant column; assert type + value survive in the jsonb form.",
+      "severity": "schema_divergence"
+    },
+    {
+      "id": "MSPG.HIER.001",
+      "divergence_class": "hierarchyid",
+      "title": "hierarchyid maps to ltree (string form)",
+      "applies_to": { "column_types": ["hierarchyid"] },
+      "comparison": { "strategy": "string-rtrim" },
+      "rewrite_guidance": "Extract with col.ToString() ('/1/2/'); map to ltree (extension) with '/'-paths converted to '.'-labels (decision hierarchyid_column: ltree default | text). GetAncestor/GetDescendant/IsDescendantOf/GetLevel → ltree operators (subpath, @>, <@, nlevel).",
+      "scenario_seed": "Store a three-level path and assert ancestor/descendant queries return the same rows.",
+      "severity": "schema_divergence"
+    },
+    {
+      "id": "MSPG.GEO.001",
+      "divergence_class": "spatial",
+      "title": "geography/geometry map to PostGIS types; compared as WKT",
+      "applies_to": { "column_types": ["geography", "geometry"] },
+      "comparison": { "strategy": "string-rtrim" },
+      "rewrite_guidance": "Extract as WKT (col.STAsText()) with SRID (col.STSrid); load as ST_GeomFromText(wkt, srid). PostGIS must be installed on the target (pack runbook prerequisite). STDistance/STIntersects/STArea → ST_Distance/ST_Intersects/ST_Area. Decision spatial_column: postgis default | wkt_text | drop_column.",
+      "scenario_seed": "Store a polygon and a point; assert STIntersects and ST_Intersects agree.",
+      "severity": "schema_divergence"
+    },
+    {
+      "id": "MSPG.TEMPORAL.001",
+      "divergence_class": "temporal_table",
+      "title": "System-versioned temporal tables are emulated with a history table and a versioning trigger",
+      "applies_to": { "object_kinds": ["procedure", "function", "trigger"], "constructs": ["for_system_time"] },
+      "comparison": null,
+      "convention": {
+        "history_table": "<schema>.<table>_history with the base columns plus valid_from/valid_to timestamptz",
+        "trigger": "haikai_temporal_versioning() AFTER UPDATE OR DELETE copies the OLD row into the history table with valid_to = clock_timestamp()",
+        "for_system_time_rewrite": "FOR SYSTEM_TIME AS OF t → base rows UNION ALL history rows WHERE valid_from <= t AND valid_to > t; BETWEEN/FROM/CONTAINED IN → the equivalent range predicates; ALL → base UNION ALL history"
+      },
+      "rewrite_guidance": "Pack decision temporal_table: emulate_history_table (default) | drop_history | application_managed. Period columns (GENERATED ALWAYS AS ROW START/END) become valid_from/valid_to maintained by the trigger. The source history table is loaded into the emulated history table.",
+      "scenario_seed": "Update a row twice and query FOR SYSTEM_TIME AS OF the midpoint; assert the same historical version is returned.",
+      "severity": "behaviour_divergence"
+    },
+    {
+      "id": "MSPG.FULLTEXT.001",
+      "divergence_class": "fulltext",
+      "title": "Full-text indexes are emulated with tsvector + GIN; CONTAINS/FREETEXT are rewrite sites",
+      "applies_to": { "object_kinds": ["procedure", "function", "trigger"], "constructs": ["contains_freetext"] },
+      "comparison": null,
+      "rewrite_guidance": "Pack decision fulltext_index: tsvector_gin (default: generated tsvector column + GIN index) | drop_index. CONTAINS(col, 'a AND b') → col_tsv @@ to_tsquery('a & b'); FREETEXT → plainto_tsquery / websearch_to_tsquery; CONTAINSTABLE/FREETEXTTABLE rank → ts_rank. Ranking and stemming differ — results are compared as sets with an advisory note on order.",
+      "scenario_seed": "Run a CONTAINS query with an AND and a prefix term; assert the same row set (order advisory).",
+      "severity": "behaviour_divergence"
+    },
+    {
+      "id": "MSPG.PROC.ABI.001",
+      "divergence_class": "calling_convention",
+      "title": "Shape-adaptive calling convention for translated procedures and functions",
+      "applies_to": { "object_kinds": ["procedure", "function"] },
+      "comparison": null,
+      "convention": {
+        "language": "plpgsql",
+        "function_name": "routine name, lower case, in the mapped target schema",
+        "arg_naming": "source parameter name without the @ sigil, lower case, source order",
+        "out_param_naming": "same as arg_naming; OUTPUT parameters become OUT arguments",
+        "return_status_out_name": "return_status",
+        "refcursor_prefix": "rs",
+        "table_valued_params": "READONLY table-type parameters become arguments of the emitted composite type array (<type>[]); the caller passes an array literal or unnests",
+        "shapes": {
+          "return_status": "no result set, no OUTPUT parameter: RETURNS integer (the RETURN value; 0 when the source returns nothing)",
+          "single_result_set": "exactly one result-producing SELECT and a trivial return status: RETURNS TABLE(<columns of that SELECT>) / SETOF; the existing {call}+executeQuery JDBC pattern keeps working",
+          "out_params": "OUTPUT parameters and no result set: OUT arguments (plus OUT return_status when the status is non-trivial); the registered-parameter JDBC pattern keeps working",
+          "rich": "more than one result set, or a result set combined with OUTPUT parameters or a non-trivial return status: OUT refcursor arguments rs1..rsN in source order + OUT return_status + OUT parameters; the caller must run inside a transaction and FETCH ALL from each cursor",
+          "table_function": "inline and multi-statement table-valued functions: RETURNS TABLE(<columns>) — called as SELECT * FROM f(...) exactly as on the source",
+          "scalar_function": "scalar user-defined functions: RETURNS <mapped type>; called as SELECT f(...) exactly as on the source"
+        },
+        "selection": "table_function for TVFs and scalar_function for scalar UDFs; else rich when max_result_sets > 1 or (max_result_sets == 1 and (has_output_params or not return_status_trivial)); single_result_set when max_result_sets == 1; out_params when has_output_params; otherwise return_status"
+      },
+      "rewrite_guidance": "Emit EXACTLY the header the descriptor prescribes (name, argument names/order/types, OUT arguments, RETURNS clause). Keep every ORDER BY. Lower-case unquoted identifiers. Never add behaviour the source lacks.",
+      "scenario_seed": "Invoke through the descriptor's shape on the target and compare the full envelope (return status, OUT values, every result set, messages, state delta) against the captured baseline.",
+      "severity": "schema_divergence"
+    },
+    {
+      "id": "MSPG.PROC.ERR.001",
+      "divergence_class": "error_carriage",
+      "title": "RAISERROR and THROW carry their source error number, severity and state through a fixed SQLSTATE",
+      "applies_to": { "object_kinds": ["procedure", "function", "trigger"], "dimensions": ["outcome"] },
+      "comparison": { "strategy": "error-source-number" },
+      "convention": {
+        "sqlstate": "P0001",
+        "raise_form": "RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = <text>, DETAIL = '{\"source_error\": <n>, \"severity\": <s>, \"state\": <st>}'",
+        "detail_json_keys": ["source_error", "severity", "state"],
+        "throw_numbers": "THROW n, msg, state carries n verbatim (user numbers are >= 50000); RAISERROR('text', sev, state) without a number carries 50000; sys.messages ids (RAISERROR(50001, …)) carry the id",
+        "rethrow": "a bare THROW inside CATCH becomes RAISE; (re-raise the caught exception unchanged)",
+        "error_functions": "ERROR_NUMBER() → (PG_EXCEPTION_DETAIL ->> 'source_error')::int, ERROR_MESSAGE() → SQLERRM, ERROR_SEVERITY()/ERROR_STATE() → DETAIL keys, ERROR_PROCEDURE()/ERROR_LINE() → GET STACKED DIAGNOSTICS PG_EXCEPTION_CONTEXT",
+        "engine_errors": "engine-raised errors (547 FK, 2627/2601 unique, 515 not-null, 8152 truncation, 245/8114 conversion) map onto the Postgres SQLSTATE class (23503, 23505, 23502, 22001, 22P02) — the comparator matches error FAMILY for engine errors and source_error for user errors"
+      },
+      "rewrite_guidance": "Every RAISERROR/THROW becomes RAISE EXCEPTION with SQLSTATE P0001 and a DETAIL JSON carrying the source number/severity/state; the message text is carried verbatim (RAISERROR printf-style %s/%d substitution is rendered with format()). Never map business errors onto engine SQLSTATEs.",
+      "scenario_seed": "Drive each RAISERROR/THROW site and assert the same source error number surfaces on both engines; drive a constraint violation and assert the same error family.",
+      "severity": "behaviour_divergence"
+    },
+    {
+      "id": "MSPG.PROC.MSG.001",
+      "divergence_class": "message_carriage",
+      "title": "PRINT and informational messages become RAISE NOTICE and are advisory in comparison",
+      "applies_to": { "object_kinds": ["procedure", "function", "trigger"], "dimensions": ["messages"] },
+      "comparison": { "strategy": "advisory" },
+      "rewrite_guidance": "PRINT <text> becomes RAISE NOTICE '%', <text>; RAISERROR(..., 0..10, ...) WITH NOWAIT (informational severities) also becomes RAISE NOTICE. Message text differences never fail a comparison on their own.",
+      "scenario_seed": "Drive a PRINT path and confirm the notice is captured on both sides.",
+      "severity": "tolerated_divergence"
+    },
+    {
+      "id": "MSPG.PROC.RS.ORDER.001",
+      "divergence_class": "result_set_ordering",
+      "title": "Result-set rows compare ordered only when the producing SELECT carries ORDER BY",
+      "applies_to": { "object_kinds": ["procedure", "function"], "dimensions": ["result_sets"] },
+      "comparison": { "strategy": "multiset", "params": { "ordered_when": "order_by_present" } },
+      "rewrite_guidance": "Keep every ORDER BY exactly (including OFFSET … FETCH → OFFSET … LIMIT); never add one the source lacks. TOP without ORDER BY is engine-dependent and compared as a multiset.",
+      "scenario_seed": "Drive a result set whose SELECT has no ORDER BY and confirm the multiset comparison; drive one with ORDER BY on a tie and confirm the tiebreak.",
+      "severity": "tolerated_divergence"
+    },
+    {
+      "id": "MSPG.PROC.RS.COLNAME.001",
+      "divergence_class": "result_set_column_names",
+      "title": "Result-set column names compare case-insensitively; translations emit lower-case unquoted names",
+      "applies_to": { "object_kinds": ["procedure", "function"], "dimensions": ["result_set_columns"] },
+      "comparison": { "strategy": "collation-case" },
+      "rewrite_guidance": "Emit lower-case, unquoted column aliases matching the source select list ([Bracketed Alias] → bracketed_alias with spaces replaced by underscores, noted); pgjdbc column lookup is case-insensitive so DB-only call sites keep working.",
+      "scenario_seed": "Confirm every source column name is present (case-insensitively) and in the same position.",
+      "severity": "tolerated_divergence"
+    },
+    {
+      "id": "MSPG.PROC.RS.TYPE.001",
+      "divergence_class": "result_set_cell_types",
+      "title": "Result-set and OUT-parameter cells compare under the column-type rules via a driver-type map",
+      "applies_to": { "object_kinds": ["procedure", "function"], "dimensions": ["result_set_cells", "output_params"] },
+      "comparison": null,
+      "type_map": {
+        "int": "int", "integer": "int", "int4": "int", "smallint": "smallint", "int2": "smallint", "tinyint": "tinyint",
+        "bigint": "bigint", "int8": "bigint",
+        "numeric": "numeric", "decimal": "numeric", "money": "money", "smallmoney": "smallmoney",
+        "float": "float", "float8": "float", "real": "real", "float4": "real", "double": "float",
+        "datetime": "datetime", "datetime2": "datetime2", "smalldatetime": "smalldatetime", "date": "date", "time": "time",
+        "datetimeoffset": "datetimeoffset", "timestamptz": "datetimeoffset", "timestamp": "datetime2",
+        "char": "char", "bpchar": "char", "nchar": "nchar", "varchar": "varchar", "nvarchar": "nvarchar", "text": "text", "ntext": "ntext", "sysname": "varchar",
+        "bit": "bit", "bool": "bit", "boolean": "bit",
+        "binary": "binary", "varbinary": "varbinary", "image": "image", "bytea": "varbinary", "rowversion": "rowversion",
+        "uniqueidentifier": "uniqueidentifier", "uuid": "uniqueidentifier",
+        "xml": "xml", "sql_variant": "sql_variant", "hierarchyid": "hierarchyid", "geography": "geography", "geometry": "geometry", "ltree": "hierarchyid"
+      },
+      "rewrite_guidance": "Not a rewrite rule: the comparator maps each engine's reported cell type onto the ruleset column-type vocabulary so DT/STR/NUM/BIT/BIN/UUID/XML rules apply to envelope cells exactly as to table cells. NOTE: the Postgres driver token `timestamp` maps to datetime2 (microsecond family), never to the 1/300 s datetime family.",
+      "scenario_seed": "n/a",
+      "severity": "value_divergence"
+    },
+    {
+      "id": "MSPG.PROC.TXN.001",
+      "divergence_class": "transaction_control",
+      "title": "TRY/CATCH, XACT_ABORT, nested transactions and statement-level error continuation",
+      "applies_to": { "object_kinds": ["procedure", "function", "trigger"], "constructs": ["transaction_control", "try_catch", "throw", "xact_abort", "trancount", "save_tran", "error_continuation"] },
+      "comparison": null,
+      "convention": {
+        "try_catch": "BEGIN TRY … END TRY BEGIN CATCH … END CATCH → BEGIN … EXCEPTION WHEN OTHERS THEN … END with GET STACKED DIAGNOSTICS for the ERROR_* functions (MSPG.PROC.ERR.001)",
+        "rethrow": "THROW; inside CATCH → RAISE;",
+        "xact_abort_on": "SET XACT_ABORT ON = whole-routine abort on error = the Postgres default; no extra structure",
+        "xact_abort_off_continuation": "SET XACT_ABORT OFF (the default) with a fallible statement followed by further statements and no enclosing TRY/CATCH or @@ERROR check (profile construct error_continuation) → each such statement is wrapped in its own BEGIN … EXCEPTION WHEN OTHERS THEN <record the error into a local @@ERROR-equivalent> END sub-block carrying the comment '-- MSPG.PROC.TXN.001 continue-after-error', so the routine continues exactly as the source did (like-for-like; capture evidence is the oracle)",
+        "nested_begin_tran": "BEGIN TRAN inside a routine with @@TRANCOUNT > 0 → SAVEPOINT; COMMIT at depth > 1 → RELEASE SAVEPOINT; ROLLBACK TRAN → ROLLBACK (aborts the whole transaction, as the source does); ROLLBACK TRAN <savepoint> → ROLLBACK TO SAVEPOINT",
+        "outermost_commit": "an outermost COMMIT inside a PROCEDURE is allowed (CALL outside a transaction block); inside a FUNCTION it cannot exist — the translator emits RAISE EXCEPTION USING ERRCODE = 'P0002', MESSAGE = 'source routine committed inside a function' only when the source shape is a function, otherwise the routine is emitted as a PROCEDURE",
+        "trancount_reads": "@@TRANCOUNT reads → a local depth counter maintained by the emitted savepoint sub-blocks (1 when called inside a transaction)",
+        "inner_rollback": "RAISE EXCEPTION USING ERRCODE = 'P0002', MESSAGE = 'source routine rolled back' when the source ROLLBACK aborts the caller's transaction"
+      },
+      "rewrite_guidance": "Preserve the observed error and transaction behaviour like-for-like: error-continuation paths are reproduced with per-statement sub-blocks, TRY/CATCH becomes an EXCEPTION block, XACT_ABORT ON needs nothing, nested transactions become savepoints. Never emit COMMIT/ROLLBACK inside a function body.",
+      "scenario_seed": "Drive a constraint violation on the first fallible write and assert whether the following statements ran (continue-after-error) or not, and assert the caller's transaction state matches; drive the inner-rollback path.",
+      "severity": "behaviour_divergence"
+    },
+    {
+      "id": "MSPG.PROC.VOL.001",
+      "divergence_class": "clock_volatility",
+      "title": "Clock-derived cells are volatility: compared as non-null timestamps within the run window",
+      "applies_to": { "object_kinds": ["procedure", "function"], "constructs": ["getdate", "getutcdate", "sysdatetime", "sysutcdatetime", "sysdatetimeoffset", "current_timestamp"], "dimensions": ["result_set_cells", "output_params"] },
+      "comparison": { "strategy": "timestamp-window", "params": { "window_ms": 86400000 } },
+      "rewrite_guidance": "getdate()/sysdatetime() → now() (statement start) or clock_timestamp() (per call); getutcdate()/sysutcdatetime() → (now() AT TIME ZONE 'UTC'); sysdatetimeoffset() → now() (timestamptz). The comparator never asserts equality of clock values captured at different wall times.",
+      "scenario_seed": "Capture a clock-bearing result twice and confirm the volatility evidence marks the cell.",
+      "severity": "tolerated_divergence"
+    },
+    {
+      "id": "MSPG.PROC.VOL.002",
+      "divergence_class": "random_volatility",
+      "title": "Random / generated-id cells are volatility: compared by presence only",
+      "applies_to": { "object_kinds": ["procedure", "function"], "constructs": ["newid", "newsequentialid", "rand", "crypt_gen_random"], "dimensions": ["result_set_cells", "output_params"] },
+      "comparison": { "strategy": "masked" },
+      "rewrite_guidance": "newid()/newsequentialid() → gen_random_uuid(); rand() → random(); crypt_gen_random(n) → gen_random_bytes(n) (pgcrypto). Values are never asserted equal.",
+      "scenario_seed": "Confirm the cell is non-null on both sides.",
+      "severity": "tolerated_divergence"
+    },
+    {
+      "id": "MSPG.PROC.SESSION.001",
+      "divergence_class": "session_settings",
+      "title": "Capture connections apply the application driver's session defaults explicitly",
+      "applies_to": { "object_kinds": ["procedure", "function", "trigger"] },
+      "comparison": null,
+      "session_profile": {
+        "driver": "mssql-jdbc",
+        "set": [
+          "set ansi_nulls on",
+          "set ansi_padding on",
+          "set ansi_warnings on",
+          "set arithabort on",
+          "set quoted_identifier on",
+          "set concat_null_yields_null on",
+          "set nocount off",
+          "set xact_abort off",
+          "set dateformat mdy",
+          "set transaction isolation level read committed"
+        ]
+      },
+      "rewrite_guidance": "These are the SQL Server client-library defaults (mssql-jdbc / ODBC / .NET) — closer to Postgres semantics than Sybase's (ANSI nulls ON, NULL-propagating concatenation). Behaviour that depends on a session option (ANSI_NULLS OFF procs, ARITHABORT, CONCAT_NULL_YIELDS_NULL OFF) is reproduced explicitly on the target; procs compiled with SET ANSI_NULLS OFF carry that fact in their profile.",
+      "scenario_seed": "n/a — the profile is applied on every capture connection and recorded in the envelope.",
+      "severity": "behaviour_divergence",
+      "notes": "PROC_CALL_SESSION_SET overrides the list (semicolon-separated). Numeric isolation levels are NOT valid on SQL Server; the named form is used."
+    },
+    {
+      "id": "MSPG.PROC.CALLSITE.001",
+      "divergence_class": "call_site_compatibility",
+      "title": "JDBC call-pattern compatibility per target shape",
+      "applies_to": { "object_kinds": ["procedure", "function"] },
+      "comparison": null,
+      "matrix": {
+        "return_status": {
+          "jdbc_call_return": "compatible",
+          "jdbc_call": "compatible",
+          "exec_text": "needs_change: EXEC text is T-SQL; call SELECT <function>() instead",
+          "bare_reference": "unknown",
+          "error_number_branching": "needs_change: SQL Server error numbers arrive in SQLSTATE P0001 DETAIL (user errors) or as a Postgres SQLSTATE family (engine errors), not SQLServerException.getErrorCode()"
+        },
+        "single_result_set": {
+          "jdbc_call_return": "needs_change: a set-returning function has no return value; drop the ? = and read the result set",
+          "jdbc_call": "compatible",
+          "exec_text": "needs_change: EXEC text is T-SQL; SELECT * FROM <function>(...) instead",
+          "bare_reference": "unknown",
+          "error_number_branching": "needs_change: SQL Server error numbers arrive in SQLSTATE P0001 DETAIL (user errors) or as a Postgres SQLSTATE family (engine errors), not SQLServerException.getErrorCode()"
+        },
+        "out_params": {
+          "jdbc_call_return": "needs_change: the return status is an OUT argument named return_status, not the ? = slot",
+          "jdbc_call": "compatible",
+          "exec_text": "needs_change: EXEC text is T-SQL; SELECT * FROM <function>(...) instead",
+          "bare_reference": "unknown",
+          "error_number_branching": "needs_change: SQL Server error numbers arrive in SQLSTATE P0001 DETAIL (user errors) or as a Postgres SQLSTATE family (engine errors), not SQLServerException.getErrorCode()"
+        },
+        "rich": {
+          "jdbc_call_return": "needs_change: refcursor shape — run inside a transaction and register OUT cursor parameters (Types.REF_CURSOR)",
+          "jdbc_call": "needs_change: refcursor shape — run inside a transaction and register OUT cursor parameters (Types.REF_CURSOR)",
+          "exec_text": "needs_change: refcursor shape — run inside a transaction and register OUT cursor parameters (Types.REF_CURSOR)",
+          "bare_reference": "needs_change: refcursor shape — run inside a transaction and register OUT cursor parameters (Types.REF_CURSOR)",
+          "error_number_branching": "needs_change: SQL Server error numbers arrive in SQLSTATE P0001 DETAIL (user errors) or as a Postgres SQLSTATE family (engine errors), not SQLServerException.getErrorCode()"
+        },
+        "table_function": {
+          "jdbc_call_return": "needs_change: a table-valued function is queried with SELECT * FROM f(...), not called",
+          "jdbc_call": "needs_change: a table-valued function is queried with SELECT * FROM f(...), not called",
+          "exec_text": "compatible: SELECT * FROM f(...) text is the same on both engines",
+          "bare_reference": "unknown",
+          "error_number_branching": "needs_change: SQL Server error numbers arrive in SQLSTATE P0001 DETAIL (user errors) or as a Postgres SQLSTATE family (engine errors), not SQLServerException.getErrorCode()"
+        },
+        "scalar_function": {
+          "jdbc_call_return": "compatible",
+          "jdbc_call": "compatible",
+          "exec_text": "compatible: SELECT f(...) text is the same on both engines",
+          "bare_reference": "unknown",
+          "error_number_branching": "needs_change: SQL Server error numbers arrive in SQLSTATE P0001 DETAIL (user errors) or as a Postgres SQLSTATE family (engine errors), not SQLServerException.getErrorCode()"
+        }
+      },
+      "rewrite_guidance": "Service-plane rewrites read the per-routine descriptor and this matrix; call sites classified compatible keep their code, needs_change sites carry the named change. Code branching on SQLServerException.getErrorCode() (547, 2627, 2601, 50000+) is a flagged call site.",
+      "scenario_seed": "n/a — deterministic classification of code-scan call sites.",
+      "severity": "behaviour_divergence"
+    }
+  ],
+  "construct_refs": [
+    { "construct": "getdate", "seed": "Freeze/inject clock or mark timestamp fields volatile; getdate() precision follows MSPG.DT.001, sysdatetime() follows MSPG.DT.002." },
+    { "construct": "isnull", "seed": "Probe NULL-argument paths: isnull(x,y) typing follows the FIRST arg in T-SQL, coalesce follows the highest type — seed a scenario where the types differ." },
+    { "construct": "convert", "seed": "Seed each convert() style code in use — date style codes (101, 103, 112, 120, 121, 126, 127) have no direct to_char equivalent and formatting is response-visible; TRY_CONVERT returns NULL instead of raising." },
+    { "construct": "@@identity", "seed": "Seed an insert-through-trigger path: @@identity sees the LAST identity including triggers, SCOPE_IDENTITY() the current scope; the rewrite must preserve which id the app observed." },
+    { "construct": "@@rowcount", "seed": "Seed an update-zero-rows path; branch logic on @@rowcount must behave identically (GET DIAGNOSTICS row_count)." },
+    { "construct": "@@error", "seed": "Seed a constraint-violation path; vendor error-code branching must map to the equivalent condition, and the API-visible error body is part of the oracle." },
+    { "construct": "try_catch", "seed": "Seed the CATCH path with a constraint violation AND a user THROW; assert ERROR_NUMBER()/ERROR_MESSAGE() derived values and whether the transaction remained committable (XACT_STATE)." },
+    { "construct": "throw", "seed": "Seed every THROW site (user number ≥ 50000) and a bare re-THROW inside CATCH; assert the same source error number surfaces." },
+    { "construct": "xact_abort", "seed": "Seed an error under SET XACT_ABORT ON and OFF; assert whether subsequent statements ran and whether the transaction was rolled back." },
+    { "construct": "error_continuation", "seed": "Seed a failing statement that the source silently continues past; assert the following statements' effects are present on both engines (like-for-like)." },
+    { "construct": "trancount", "seed": "Call the routine inside and outside an outer transaction; assert @@TRANCOUNT-dependent branches behave the same." },
+    { "construct": "save_tran", "seed": "Seed a partial rollback to a savepoint and assert only the inner work is undone." },
+    { "construct": "merge", "seed": "Seed MERGE with matched/not-matched/not-matched-by-source branches and OUTPUT; assert row effects (PG 15+ MERGE; NOT MATCHED BY SOURCE needs PG 17+)." },
+    { "construct": "output_clause", "seed": "Seed OUTPUT INSERTED.*/DELETED.* into a table variable and as a result set; assert the same rows are returned (RETURNING / CTE)." },
+    { "construct": "table_variable", "seed": "Seed a table-variable path with > 1 row; scoping and statistics differences never change results — assert equality." },
+    { "construct": "tvp_param", "seed": "Seed a READONLY table-valued parameter call with 0, 1 and many rows." },
+    { "construct": "offset_fetch", "seed": "Seed OFFSET … FETCH on a tie; without a deterministic ORDER BY the page contents may legitimately differ." },
+    { "construct": "apply", "seed": "Seed CROSS/OUTER APPLY over a TVF (→ LATERAL); assert row multiplicity." },
+    { "construct": "iif", "seed": "Seed IIF with a NULL condition (→ CASE)." },
+    { "construct": "try_convert", "seed": "Seed TRY_CONVERT/TRY_CAST with an unconvertible value; assert NULL is produced, not an error." },
+    { "construct": "string_agg", "seed": "Seed STRING_AGG with WITHIN GROUP (ORDER BY …) and with NULL elements." },
+    { "construct": "sp_executesql_params", "seed": "Seed parameterised dynamic SQL (sp_executesql @stmt, @params, …) including an OUTPUT parameter (→ EXECUTE … USING / INTO)." },
+    { "construct": "next_value_for", "seed": "Seed NEXT VALUE FOR in an INSERT and in a SELECT; assert monotonic values (nextval)." },
+    { "construct": "for_system_time", "seed": "Seed FOR SYSTEM_TIME AS OF / BETWEEN over the emulated history table (MSPG.TEMPORAL.001)." },
+    { "construct": "contains_freetext", "seed": "Seed CONTAINS/FREETEXT with AND, OR and prefix terms (MSPG.FULLTEXT.001) — row set compared, order advisory." },
+    { "construct": "xml_method", "seed": "Seed each .value()/.query()/.nodes()/.exist() site with a representative document (MSPG.XML.002)." },
+    { "construct": "TOP", "seed": "Seed a TOP-n / TOP (n) PERCENT / WITH TIES query on a tie: without a deterministic ORDER BY tiebreak the selected rows may legitimately differ." },
+    { "construct": "HOLDLOCK", "seed": "Concurrency detour: lock-hint semantics do not map onto MVCC; seed a two-session scenario if the estate relies on blocking reads (→ SELECT … FOR UPDATE)." },
+    { "construct": "NOLOCK", "seed": "NOLOCK dirty reads have no MVCC equivalent; the like-for-like target reads committed data — seed only to document the intentional divergence." },
+    { "construct": "temp_table", "seed": "Seed the proc paths using #temp tables end-to-end; scoping and implicit creation semantics differ (CREATE TEMP TABLE … ON COMMIT DROP)." },
+    { "construct": "RAISERROR", "seed": "Seed the error path: raiserror severity/message formatting (printf %s/%d) is response-visible where procs surface errors to the API." },
+    { "construct": "SET_ROWCOUNT", "seed": "SET ROWCOUNT limits DML in T-SQL (deprecated for DML on SQL Server); seed the affected update path — silent partial updates are a data-integrity trap." },
+    { "construct": "scope_identity", "seed": "Seed SCOPE_IDENTITY() after an insert that fires a trigger inserting elsewhere; assert the id the application observed." },
+    { "construct": "cross_database", "seed": "OUT by ruling: routines referencing another database or a linked server carry the named reason cross_database_reference and are not attempted." }
+  ]
+}

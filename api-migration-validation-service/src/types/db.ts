@@ -22,6 +22,40 @@ export function isDbType(value: unknown): value is DbType {
 /** The 4xx message fragment routes use for an unsupported engine value. */
 export const DB_TYPE_CHOICES = DB_TYPES.map((t) => `'${t}'`).join(' | ');
 
+/**
+ * SQL Server connection extras (second-pair programme, Spec 3). Pure-Java
+ * authentication only: SQL logins or NTLM domain logins; Kerberos SSO is out
+ * by ruling. Encryption is ON by default; `trustServerCertificate` exists for
+ * self-signed corporate certificates.
+ */
+export interface MssqlAuth {
+  authScheme: 'sql' | 'ntlm';
+  domain?: string | null;
+  encrypt?: boolean;
+  trustServerCertificate?: boolean;
+  instanceName?: string | null;
+}
+
+/** Parse the snake_case (`mssql_auth`) or camelCase wire form; null when absent/invalid. */
+export function parseMssqlAuthWire(raw: unknown): MssqlAuth | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const pick = (a: string, b: string): unknown => (r[a] !== undefined ? r[a] : r[b]);
+  const scheme = pick('auth_scheme', 'authScheme');
+  const authScheme: 'sql' | 'ntlm' = scheme === 'ntlm' ? 'ntlm' : 'sql';
+  const domain = pick('domain', 'domain');
+  const encrypt = pick('encrypt', 'encrypt');
+  const trust = pick('trust_server_certificate', 'trustServerCertificate');
+  const instance = pick('instance_name', 'instanceName');
+  return {
+    authScheme,
+    domain: typeof domain === 'string' && domain.trim() !== '' ? domain.trim() : null,
+    encrypt: typeof encrypt === 'boolean' ? encrypt : true,
+    trustServerCertificate: typeof trust === 'boolean' ? trust : false,
+    instanceName: typeof instance === 'string' && instance.trim() !== '' ? instance.trim() : null,
+  };
+}
+
 export interface DbConnectionConfig {
   dbType: DbType;
   host: string;
@@ -38,6 +72,8 @@ export interface DbConnectionConfig {
    *  connections so extraction decodes single-byte data correctly
    *  (2026-08-23; carried from the DB scan / pack manifest). */
   charset?: string | null;
+  /** SQL Server only (ignored by other engines). */
+  mssqlAuth?: MssqlAuth | null;
 }
 
 export interface DbAllowlist {

@@ -16,7 +16,7 @@
 import { Router, Request, Response } from 'express';
 
 import { createDbAdapter } from '../services/db/dbAdapterFactory';
-import { isDbType, DB_TYPE_CHOICES, type DbConnectionConfig, type DbType } from '../types/db';
+import { isDbType, DB_TYPE_CHOICES, parseMssqlAuthWire, type DbConnectionConfig, type DbType } from '../types/db';
 import {
   buildIndexFromTableSpecs,
   fetchCompensationMetadataIndex,
@@ -43,6 +43,7 @@ interface DbBlock {
   schema?: string | null;
   username?: string;
   password?: string;
+  mssql_auth?: unknown;
 }
 
 interface S0Body {
@@ -86,6 +87,7 @@ function toConnectionConfig(block: DbBlock): DbConnectionConfig {
     schema: block.schema ?? null,
     username: block.username as string,
     password: block.password as string,
+    mssqlAuth: parseMssqlAuthWire(block.mssql_auth),
   };
 }
 

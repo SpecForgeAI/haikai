@@ -70,8 +70,10 @@ export const OAS_SPECS_DIR: string =
  * Mirrors the discovery-service env var of the same name so a single
  * sidecar instance serves both Node services.
  */
-export const SYBASE_SIDECAR_URL: string =
-  process.env.SYBASE_SIDECAR_URL || 'http://localhost:8093';
+export const DB_SIDECAR_URL: string =
+  process.env.DB_SIDECAR_URL || process.env.SYBASE_SIDECAR_URL || 'http://localhost:8093';
+/** Alias kept for the original single-engine name (second-pair programme, 2026-09-11). */
+export const SYBASE_SIDECAR_URL: string = DB_SIDECAR_URL;
 
 /**
  * Maximum number of BUDGET-CONSUMING LLM/tool-call rounds per scenario

@@ -9,7 +9,7 @@
 import { compareScenario, summariseRoutineParity } from '../services/procParity/procParityComparator';
 import { runRoutineParity } from '../services/procParity/procParityRunner';
 import { applyRoutineWithClient, dropStatementsFor } from '../services/db/postgresRoutineApply';
-import { loadPairRuleset, resetPairRulesetCacheForTest } from '../migrationPairRules';
+import { pairRulesetForSource, resetPairRulesetCacheForTest } from '../migrationPairRules';
 import type { RoutineDescriptor, RoutineInvocationEnvelope } from '../services/db/routineEnvelope';
 import type { ProcBaselineItemDto, RoutineCatalogRow } from '../services/procCapture/types';
 import type { DbAdapter } from '../services/db/DbAdapter';
@@ -31,7 +31,7 @@ function env(partial: Partial<RoutineInvocationEnvelope> = {}): RoutineInvocatio
 
 describe('compareScenario', () => {
   beforeEach(() => resetPairRulesetCacheForTest());
-  const rs = () => loadPairRuleset();
+  const rs = () => pairRulesetForSource('sybase');
   const base = { scenarioName: 'happy', scenarioType: 'happy_path', objectKind: 'procedure' as const, ruleset: rs() };
 
   it('matches identical envelopes and reports advisory-only differences as tolerated', () => {
@@ -114,6 +114,7 @@ describe('runRoutineParity', () => {
     const runBracket = async (a: { tables: string[]; readTables?: string[]; fire: () => Promise<unknown> }) => { brackets.push([...a.tables, ...(a.readTables ?? [])]); return { outcome: { kind: 'compensated' }, fired: true, fireResult: await a.fire(), fireError: null }; };
     const report = await runRoutineParity({
       routine, items: [item(), item({ scenario_name: 'off', expected_envelope_json: env({ return_status: 1 }) })], baselineId: 'b1', descriptor,
+      sourceEngine: 'sybase',
       targetAdapter: adapter(() => env()), compensation: { writeAdapter: {}, engine: 'postgres', schema: null, metadata: {} } as never, routinesById: new Map([['r1', routine]]),
       purpose: 'workbench', limits: { max_rows_per_result_set: 100, max_result_sets: 5, timeout_seconds: 10 }, snapshotTables: async () => ({ tables: [] }), runBracket: runBracket as never,
     });

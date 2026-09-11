@@ -14,7 +14,7 @@ import type { RoutineDescriptor, RoutineInvocationRequest } from '../services/db
 import {
   canonicalColumnType,
   compareWithRules,
-  loadPairRuleset,
+  pairRulesetForSource,
   resetPairRulesetCacheForTest,
   rulesForDimension,
   type MigrationPairRule,
@@ -160,7 +160,7 @@ describe('pair ruleset v2 — routine selectors and strategies', () => {
   beforeEach(() => resetPairRulesetCacheForTest());
 
   it('loads the repo ruleset as version 2 with the PROC family', () => {
-    const rs = loadPairRuleset();
+    const rs = pairRulesetForSource('sybase');
     expect(rs).not.toBeNull();
     expect(rs?.version).toBe(2);
     const ids = (rs?.rules ?? []).map((r) => r.id);
@@ -178,7 +178,7 @@ describe('pair ruleset v2 — routine selectors and strategies', () => {
   });
 
   it('rulesForDimension honours object kind and construct presence', () => {
-    const rs = loadPairRuleset()!;
+    const rs = pairRulesetForSource('sybase')!;
     const clockRules = rulesForDimension(rs, 'result_set_cells', 'procedure', ['getdate']).map((r) => r.id);
     expect(clockRules).toContain('SYBPG.PROC.VOL.001');
     expect(clockRules).not.toContain('SYBPG.PROC.VOL.002');
@@ -188,7 +188,7 @@ describe('pair ruleset v2 — routine selectors and strategies', () => {
   });
 
   it('canonicalColumnType maps driver tokens onto the ruleset vocabulary', () => {
-    const rs = loadPairRuleset()!;
+    const rs = pairRulesetForSource('sybase')!;
     expect(canonicalColumnType(rs, 'int4')).toBe('int');
     expect(canonicalColumnType(rs, 'TIMESTAMP')).toBe('datetime');
     expect(canonicalColumnType(rs, 'varchar(40)')).toBe('varchar');

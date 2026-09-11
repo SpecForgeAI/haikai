@@ -20,6 +20,7 @@ import {
   compareWithRules,
   loadPairRuleset,
   resetPairRulesetCacheForTest,
+  resolvePairRuleset,
   rulesForColumnType,
 } from '../migrationPairRules';
 
@@ -46,11 +47,11 @@ function rule(partial: Partial<MigrationPairRule> & { id: string }): MigrationPa
 }
 
 describe('loader', () => {
-  test('discovers and loads the single repo ruleset without env config', () => {
+  test('resolves the repo ruleset for its source engine without env config', () => {
     delete process.env.MIGRATION_PAIR;
     delete process.env.MIGRATION_PAIR_RULESET_PATH;
     resetPairRulesetCacheForTest();
-    const rs = loadPairRuleset();
+    const rs = resolvePairRuleset({ sourceEngine: 'sybase' });
     expect(rs).not.toBeNull();
     expect(rs!.pair_id.length).toBeGreaterThan(0);
     expect(rs!.version).toBeGreaterThanOrEqual(1);
@@ -59,7 +60,7 @@ describe('loader', () => {
   });
 
   test('MIGRATION_PAIR selects the ruleset by id', () => {
-    const discovered = loadPairRuleset();
+    const discovered = resolvePairRuleset({ sourceEngine: 'sybase' });
     expect(discovered).not.toBeNull();
     resetPairRulesetCacheForTest();
     process.env.MIGRATION_PAIR = discovered!.pair_id;
@@ -85,7 +86,7 @@ describe('loader', () => {
   });
 
   test('rulesForColumnType matches case-insensitively and excludes disabled rules', () => {
-    const rs = loadPairRuleset();
+    const rs = resolvePairRuleset({ sourceEngine: 'sybase' });
     expect(rs).not.toBeNull();
     const varcharRules = rulesForColumnType(rs!, 'VARCHAR');
     expect(varcharRules.length).toBeGreaterThan(0);

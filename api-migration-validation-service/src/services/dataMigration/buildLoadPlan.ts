@@ -14,7 +14,7 @@
 import { LoadPlan, TableLoadSpec } from './types';
 
 /** Target types that are not usable in a deterministic order key. */
-const UNORDERABLE_TYPE_FRAGMENTS = ['json', 'xml', 'image', 'text', 'binary', 'blob', 'bytea'];
+const UNORDERABLE_TYPE_FRAGMENTS = ['json', 'xml', 'image', 'text', 'binary', 'blob', 'bytea', 'sql_variant', 'geography', 'geometry', 'hierarchyid'];
 
 function qn(schema: string, table: string): string {
   return `${schema}.${table}`;
