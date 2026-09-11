@@ -43,6 +43,7 @@ import type {
   ConnectionResult,
   DatabaseDiscoveryConfig,
   DatabaseDiscoveryCredentials,
+  ExtendedObjectMetadata,
   IntrospectionResult,
   KeyOrIndexMetadata,
   ProcedureMetadata,
@@ -187,6 +188,20 @@ export interface DatabaseDiscoveryPack {
   introspectScheduledJobs?(
     ctx: DatabaseDiscoveryPackContext,
   ): Promise<ScheduledJobMetadata[]>;
+
+  /**
+   * Introspect objects that have no row in the six classic arrays -- queues,
+   * table types, synonyms, full-text catalogs, assemblies, partitioning,
+   * change tracking, row-level-security policies (SQL Server 16 -> PostgreSQL
+   * 18 pair programme, Spec 2, 2026-09-11). Optional: a pack that does not
+   * introspect them is tolerated (the orchestrator leaves
+   * `IntrospectionResult.extendedObjects` undefined). The result feeds the
+   * per-kind unsupported-feature / decision Findings. NO new architecture
+   * entity type is produced -- an extended object is a Finding, not an entity.
+   */
+  introspectExtendedObjects?(
+    ctx: DatabaseDiscoveryPackContext,
+  ): Promise<ExtendedObjectMetadata[]>;
 
   /**
    * VERIFICATION-ONLY scan mode (Spec 2026-06-11 DB Schema + Data Migration

@@ -147,6 +147,43 @@ export interface DatabaseDiscoveryConfig {
    * explicit values force one driver. Ignored by non-Sybase engines.
    */
   sybaseDriver?: 'auto' | 'jtds' | 'jconnect';
+
+  /**
+   * Engine-scoped connection extras carried for engines whose JDBC URL needs
+   * more than host/port/database/user/password. Populated by the scan entry
+   * form; passed straight through to the sidecar's connection block. The
+   * secret-bearing half of a connection NEVER lives here -- only the
+   * NON-secret knobs (auth scheme, domain, TLS posture, named instance).
+   * Ignored by engines that do not declare the extras.
+   */
+  mssqlAuth?: MssqlAuthConfig;
+}
+
+/**
+ * SQL-Server-shaped connection extras (WIRE-CONTRACT v2 §1). Carried on the
+ * discovery config and forwarded verbatim to the sidecar's connection block.
+ *
+ * NO SECRETS: the username / password travel in
+ * {@link DatabaseDiscoveryCredentials} exactly as for every other engine.
+ * `domain` is a Windows DOMAIN name, not a credential -- it is part of the
+ * NTLM principal, and is safe to persist in the redacted config snapshot.
+ */
+export interface MssqlAuthConfig {
+  /**
+   * `sql` = a SQL login (Mixed Mode). `ntlm` = a Windows domain login,
+   * performed in pure Java by `mssql-jdbc`
+   * (`authenticationScheme=NTLM;domain=...`). Kerberos SSO is deliberately
+   * out of scope: it needs a native DLL.
+   */
+  scheme: 'sql' | 'ntlm';
+  /** Windows domain. REQUIRED when `scheme === 'ntlm'`. */
+  domain?: string | null;
+  /** TLS on the wire. Defaults ON -- `mssql-jdbc` 12.x encrypts by default. */
+  encrypt: boolean;
+  /** Accept a self-signed / non-CA-trusted server certificate. Defaults OFF. */
+  trustServerCertificate: boolean;
+  /** Named instance. The port is still honoured when both are supplied. */
+  instanceName?: string | null;
 }
 
 /**
@@ -181,6 +218,13 @@ export interface RedactedDatabaseDiscoveryConfig {
   deepProfilingConfirmed: boolean;
   /** Sybase-only driver choice ('auto' / 'jtds' / 'jconnect'). null for non-Sybase. */
   sybaseDriver?: 'auto' | 'jtds' | 'jconnect' | null;
+  /**
+   * Engine connection extras, MINUS every secret. The scheme / TLS posture /
+   * named instance / Windows domain are audit-relevant connection facts, so
+   * they survive into the persisted snapshot; the credentials never do (see
+   * {@link containsCredentials}). null when the engine declares no extras.
+   */
+  mssqlAuth?: MssqlAuthConfig | null;
   /** D4 readiness flag — whether the run was supplied a workload log file. */
   workloadLogProvided: boolean;
   /**
@@ -220,6 +264,19 @@ export function toRedactedConfig(
     readOnlyConfirmed: config.readOnlyConfirmed === true,
     deepProfilingConfirmed: config.deepProfilingConfirmed === true,
     sybaseDriver: config.dbEngine === 'sybase' ? (config.sybaseDriver ?? 'auto') : null,
+    // Connection extras minus secrets. Only the non-secret knobs are copied,
+    // field by field -- a spread would carry forward any future secret-bearing
+    // addition silently.
+    mssqlAuth: config.mssqlAuth
+      ? {
+          scheme: config.mssqlAuth.scheme,
+          domain: config.mssqlAuth.domain ?? null,
+          encrypt: config.mssqlAuth.encrypt !== false,
+          trustServerCertificate:
+            config.mssqlAuth.trustServerCertificate === true,
+          instanceName: config.mssqlAuth.instanceName ?? null,
+        }
+      : null,
     workloadLogProvided: hasWorkloadLog === true,
     containsCredentials: false,
   };
@@ -453,6 +510,51 @@ export interface ScheduledJobMetadata {
    * undefined when unknown / not introspected.
    */
   enabled?: boolean;
+}
+
+/**
+ * An object that has no row in the six classic introspection arrays
+ * (schemas / tables / columns / keys / views / procedures / triggers) but
+ * whose existence changes the migration: a queue, a table type, a synonym, a
+ * full-text catalog, an assembly, a partition scheme, a change-tracking
+ * registration, a row-level-security policy, ...
+ *
+ * SQL Server 16 -> PostgreSQL 18 pair programme, Spec 2 (2026-09-11). The
+ * carrier is deliberately ENGINE-NEUTRAL: `kind` is a free string owned by
+ * the producing pack's vocabulary (the sidecar wire contract lists the values
+ * the SQL Server pack emits), and `detail` is a free map. Packs that have no
+ * such objects simply never populate the array, so the Sybase and Postgres
+ * paths are untouched.
+ *
+ * Like sequences and scheduled jobs, an extended object is IR + Findings
+ * reality -- it NEVER mints a new architecture meta-model entity type.
+ */
+export interface ExtendedObjectMetadata {
+  /**
+   * The object's kind, VERBATIM from the producing pack's vocabulary (e.g.
+   * `service_broker_queue`, `user_defined_table_type`, `synonym`,
+   * `fulltext_catalog`, `assembly`, `xml_schema_collection`,
+   * `partition_scheme`, `partition_function`, `cdc_capture_instance`,
+   * `change_tracking`, `filestream_filegroup`, `database_trigger`,
+   * `rowlevel_security_policy`, `external_table`, `temporal_history_link`).
+   */
+  kind: string;
+  /** Schema / owner where the engine exposes one; '' otherwise. */
+  schemaName: string;
+  /** The object name. */
+  name: string;
+  /**
+   * The object's verbatim definition / body where the engine exposes one
+   * (e.g. an assembly's permission set, a partition function's boundary
+   * list, a policy's predicate). Finding builders redact + size-cap this
+   * before persistence. null when the catalog reports no body.
+   */
+  definition?: string | null;
+  /**
+   * Free-form per-kind detail map, VERBATIM (e.g. a table type's columns, a
+   * synonym's base object, a queue's activation procedure). No normalization.
+   */
+  detail?: Record<string, unknown> | null;
 }
 
 /**
@@ -714,6 +816,13 @@ export interface IntrospectionResult {
    * pack does not introspect them. Feeds the DB-resident jobs/agents Finding.
    */
   scheduledJobs?: ScheduledJobMetadata[];
+  /**
+   * Objects with no row in the six classic arrays (SQL Server pair programme,
+   * Spec 2, 2026-09-11). OPTIONAL: a pack that does not introspect them omits
+   * the array entirely and every existing consumer is unaffected. Feeds the
+   * per-kind unsupported-feature / decision Findings.
+   */
+  extendedObjects?: ExtendedObjectMetadata[];
   /**
    * Per-group enrichment-metadata applicability (Spec 2026-05-31
    * sybase-metadata-enrichment, decision 2). Resolved discovery-side from the

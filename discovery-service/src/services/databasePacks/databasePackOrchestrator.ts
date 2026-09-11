@@ -825,6 +825,17 @@ async function runIntrospectionPhase(
         pack.engineKey,
       )) ?? []
     : [];
+  // Objects with no row in the six classic arrays (SQL Server pair programme,
+  // Spec 2, 2026-09-11) -- optional pack method; default to [] when a pack
+  // does not implement it. Feeds the per-kind unsupported-feature Findings.
+  const extendedObjects = pack.introspectExtendedObjects
+    ? (await withDbPackSoftFail(
+        'introspectExtendedObjects',
+        () => pack.introspectExtendedObjects!(ctx),
+        onWarning,
+        pack.engineKey,
+      )) ?? []
+    : [];
   return {
     schemas,
     tables,
@@ -836,6 +847,7 @@ async function runIntrospectionPhase(
     sequences,
     databaseCollation,
     scheduledJobs,
+    extendedObjects,
   };
 }
 

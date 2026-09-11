@@ -264,4 +264,108 @@ describe('startDatabaseRun candidate persistence (Spec 2026-05-16 follow-up fix)
       expect(col.parentCandidateId).toBe(table!.id);
     }
   });
+
+  // ---------------------------------------------------------------------------
+  // SQL Server 16 -> PostgreSQL 18 pair programme, Spec 2 (2026-09-11): the
+  // persistence path is engine-NEUTRAL. It must carry an `mssql` payload --
+  // `db://mssql/` URIs, `mstab:` client ids, `data.dbEngine = 'mssql'` --
+  // through unchanged, with the parent linkage resolved exactly as for Sybase.
+  // ---------------------------------------------------------------------------
+
+  it('persists an mssql payload with its engine vocabulary and parent linkage intact', async () => {
+    const table: DatabaseCandidatePayload = {
+      candidateType: 'physical_data_entities',
+      name: 'Customers',
+      filePath: 'db://mssql/Sales/Customers',
+      clientId: 'mstab:Sales.Customers',
+      data: {
+        dbEngine: 'mssql',
+        databaseName: 'WideWorldImporters',
+        schemaName: 'Sales',
+        objectName: 'Customers',
+        objectType: 'table',
+        confidence: 1.0,
+      },
+    };
+    const column: DatabaseCandidatePayload = {
+      candidateType: 'physical_data_attributes',
+      name: 'CustomerName',
+      filePath: 'db://mssql/Sales/Customers#CustomerName',
+      clientId: 'mstab:Sales.Customers#CustomerName',
+      parentCandidateClientId: 'mstab:Sales.Customers',
+      data: {
+        dbEngine: 'mssql',
+        databaseName: 'WideWorldImporters',
+        schemaName: 'Sales',
+        tableName: 'Customers',
+        columnName: 'CustomerName',
+        dataType: 'nvarchar',
+        maxLength: 100,
+        isNullable: false,
+        ordinalPosition: 2,
+        collation: 'Latin1_General_CI_AS',
+        confidence: 1.0,
+      },
+    };
+    const result = makeOrchestratorResult([table, column]);
+    result.engineKey = 'mssql';
+    mockRunDatabasePackDiscovery.mockResolvedValue(result);
+
+    await startDatabaseRun('proj', 'run', 'arch', {
+      ...baseOptions,
+      databaseConfig: {
+        ...baseOptions.databaseConfig,
+        dbEngine: 'mssql' as const,
+        port: 1433,
+        databaseName: 'WideWorldImporters',
+        mssqlAuth: {
+          scheme: 'ntlm' as const,
+          domain: 'CORPDOMAIN',
+          encrypt: true,
+          trustServerCertificate: false,
+          instanceName: null,
+        },
+      },
+    } as never);
+
+    expect(mockBulkSaveCandidates).toHaveBeenCalledTimes(1);
+    const batch = mockBulkSaveCandidates.mock.calls[0][2] as Array<{
+      candidateType: string;
+      name: string;
+      id: string;
+      runId: string;
+      status: string;
+      sourceClusterIds?: string[];
+      parentCandidateId?: string;
+      data?: Record<string, unknown>;
+    }>;
+    expect(batch).toHaveLength(2);
+    const persistedTable = batch.find(
+      (c) => c.candidateType === 'physical_data_entities',
+    );
+    const persistedColumn = batch.find(
+      (c) => c.candidateType === 'physical_data_attributes',
+    );
+    // `sourceClusterIds` is the persisted carrier for the pack's synthetic
+    // `db://` URI (see the conversion in runManager).
+    expect(persistedTable?.sourceClusterIds).toEqual(['db://mssql/Sales/Customers']);
+    expect((persistedTable?.data ?? {}).dbEngine).toBe('mssql');
+    expect((persistedColumn?.data ?? {}).collation).toBe('Latin1_General_CI_AS');
+    expect(persistedColumn?.parentCandidateId).toBe(persistedTable!.id);
+    for (const c of batch) {
+      expect(c.runId).toBe('run');
+      expect(c.status).toBe('proposed');
+    }
+
+    const finalUpdate = mockUpdateDiscoveryRun.mock.calls.find(
+      (call) => (call[2] as { status?: string })?.status === 'COMPLETED',
+    );
+    expect(finalUpdate).toBeDefined();
+    const stepsPayload = (
+      finalUpdate![2] as { steps_payload?: { database?: Record<string, unknown> } }
+    ).steps_payload;
+    expect(stepsPayload?.database?.candidatesPersisted).toBe(2);
+    // The run's own record of which engine it scanned.
+    expect(stepsPayload?.database?.engineKey).toBe('mssql');
+  });
 });

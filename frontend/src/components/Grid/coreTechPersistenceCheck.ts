@@ -3,13 +3,15 @@
  * service's parent application component is set to "Persistence Tier".
  *
  * Spec 2026-06-06: Persistence-Tier Core Tech expects a DATABASE scan pack.
- * Discovery can scan PostgreSQL and Sybase databases -- those are the only
+ * Discovery can scan PostgreSQL, Sybase and (SQL Server 16 -> PostgreSQL 18
+ * pair programme, Spec 2, 2026-09-11) SQL Server databases -- those are the
  * registered database packs (discovery-service `databasePackFactory.ts`
- * registers exactly `postgres` and `sybase`). The actual scan engine is chosen
- * by the user in the subsequent scan modal; this check is MESSAGE-ONLY -- it
- * gives inline feedback while the Core Tech is being entered:
+ * registers exactly `postgres`, `sybase` and `mssql`). The actual scan engine
+ * is chosen by the user in the subsequent scan modal; this check is
+ * MESSAGE-ONLY -- it gives inline feedback while the Core Tech is being
+ * entered:
  *
- *   - PostgreSQL / Sybase                  -> recognised database pack (ok)
+ *   - PostgreSQL / Sybase / SQL Server     -> recognised database pack (ok)
  *   - another database (Oracle, MySQL, ..) -> no scan pack available for it
  *   - a code-related tech (resolves to a   -> the parent component tier is wrong
  *     language / framework pack)              for a code pack
@@ -39,11 +41,29 @@ interface DatabaseEntry {
 /**
  * Databases discovery can actually scan -- MUST stay in lockstep with the
  * discovery-service database pack registry (`databasePackFactory.ts`, which
- * registers `postgres` and `sybase`). Aliases are lowercase.
+ * registers `postgres`, `sybase` and `mssql`). Aliases are lowercase.
+ *
+ * `t-sql` / `tsql` deliberately map to SQL Server here: the dialect name is
+ * how a persistence-tier service is usually labelled in this estate, and both
+ * T-SQL engines now have a pack, so the token can no longer send the user to
+ * an "unsupported" message.
  */
 const SUPPORTED_DATABASES: DatabaseEntry[] = [
   { canonical: 'PostgreSQL', aliases: ['postgresql', 'postgres', 'postgre', 'pg'] },
   { canonical: 'Sybase', aliases: ['sybase', 'sap ase', 'sybase ase', 'sybase iq', 'adaptive server'] },
+  {
+    canonical: 'SQL Server',
+    aliases: [
+      'sql server',
+      'sqlserver',
+      'mssql',
+      'ms sql',
+      'ms sql server',
+      'microsoft sql server',
+      't-sql',
+      'tsql',
+    ],
+  },
 ];
 
 /**
@@ -55,7 +75,6 @@ const OTHER_DATABASES: DatabaseEntry[] = [
   { canonical: 'Oracle', aliases: ['oracle', 'pl/sql', 'plsql'] },
   { canonical: 'MySQL', aliases: ['mysql'] },
   { canonical: 'MariaDB', aliases: ['mariadb'] },
-  { canonical: 'SQL Server', aliases: ['sql server', 'sqlserver', 'mssql', 'microsoft sql server', 't-sql', 'tsql'] },
   { canonical: 'MongoDB', aliases: ['mongodb', 'mongo'] },
   { canonical: 'Db2', aliases: ['db2'] },
   { canonical: 'SQLite', aliases: ['sqlite'] },

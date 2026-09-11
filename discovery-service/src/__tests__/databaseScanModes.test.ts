@@ -187,6 +187,47 @@ function fakeSybasePack(): FakePack {
   };
 }
 
+function fakeMssqlPack(): FakePack {
+  return {
+    engineKey: 'mssql',
+    displayName: 'SQL Server',
+    connect: jest.fn().mockResolvedValue(undefined),
+    close: jest.fn().mockResolvedValue(undefined),
+    introspectSequences: jest.fn().mockResolvedValue([
+      {
+        schemaName: 'Sequences',
+        sequenceName: 'CustomerID',
+        currentValue: '1062',
+        startValue: '1110',
+        ownedByTable: null,
+        ownedByColumn: null,
+      },
+    ]),
+    introspectColumns: jest.fn().mockResolvedValue([
+      {
+        schemaName: 'Warehouse',
+        tableName: 'VehicleTemperatures',
+        columnName: 'VehicleTemperatureID',
+        dataType: 'bigint',
+        isNullable: false,
+        ordinalPosition: 1,
+        isIdentity: true,
+      },
+      {
+        schemaName: 'Sales',
+        tableName: 'Customers',
+        columnName: 'CustomerName',
+        dataType: 'nvarchar',
+        isNullable: false,
+        ordinalPosition: 2,
+        isIdentity: false,
+      },
+    ]),
+    emitCandidates: jest.fn(),
+    emitFindings: jest.fn(),
+  };
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
   resetAllForTests();
@@ -271,6 +312,82 @@ describe('POST /discovery/db/refresh-seeds-scan (Task 4.3)', () => {
     expectZeroModelWrites();
     expect(pack.emitCandidates).not.toHaveBeenCalled();
     expect(pack.emitFindings).not.toHaveBeenCalled();
+    // No `dbEngine` in the body => `sybase`, the back-compat default every
+    // caller written before SQL Server became a source engine sends.
+    expect(mockGetDatabasePack).toHaveBeenCalledWith('sybase');
+    expect(res.body.engine).toBe('sybase');
+  });
+
+  // SQL Server 16 -> PostgreSQL 18 pair programme, Spec 2 (2026-09-11): the
+  // refresh-seeds scan reads the migration SOURCE, so it takes the source
+  // engine from the request instead of hardcoding one. VERIFICATION-ONLY is
+  // deliberately NOT widened: it reads the TARGET, which is PostgreSQL for
+  // every supported pair.
+  it('routes to the mssql pack when the body asks for it, and echoes the engine back', async () => {
+    const pack = fakeMssqlPack();
+    mockGetDatabasePack.mockReturnValue(pack);
+
+    const res = await request(createTestApp())
+      .post('/discovery/db/refresh-seeds-scan')
+      .send({
+        dbEngine: 'mssql',
+        host: 'sqlsrv-src',
+        port: 1433,
+        databaseName: 'WideWorldImporters',
+        username: 'reader',
+        password: 'pw',
+        mssqlAuth: {
+          scheme: 'ntlm',
+          domain: 'CORPDOMAIN',
+          encrypt: true,
+          trustServerCertificate: false,
+        },
+      });
+
+    expect(res.status).toBe(200);
+    expect(mockGetDatabasePack).toHaveBeenCalledWith('mssql');
+    expect(res.body.engine).toBe('mssql');
+    expect(res.body.scan_mode).toBe('refresh_seeds');
+    expect(res.body.sequences).toEqual([
+      expect.objectContaining({ sequenceName: 'CustomerID', currentValue: '1062' }),
+    ]);
+    expect(res.body.identity_columns).toEqual([
+      {
+        schemaName: 'Warehouse',
+        tableName: 'VehicleTemperatures',
+        columnName: 'VehicleTemperatureID',
+        sequenceName: null,
+      },
+    ]);
+    // The connection extras reach the pack through the run config.
+    const ctx = pack.connect.mock.calls[0][0] as {
+      config: { dbEngine: string; mssqlAuth?: { scheme?: string; domain?: string } };
+    };
+    expect(ctx.config.dbEngine).toBe('mssql');
+    expect(ctx.config.mssqlAuth).toMatchObject({
+      scheme: 'ntlm',
+      domain: 'CORPDOMAIN',
+    });
+    expectZeroModelWrites();
+  });
+
+  it('rejects a TARGET engine (postgres) with a 400 naming the accepted source engines', async () => {
+    const res = await request(createTestApp())
+      .post('/discovery/db/refresh-seeds-scan')
+      .send({
+        dbEngine: 'postgres',
+        host: 'pg-target',
+        port: 5432,
+        databaseName: 'target_db',
+        username: 'reader',
+        password: 'pw',
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.message).toMatch(/"sybase", "mssql"/);
+    expect(res.body.error.message).toMatch(/SOURCE/);
+    expect(mockGetDatabasePack).not.toHaveBeenCalled();
+    expectZeroModelWrites();
   });
 });
 

@@ -62,6 +62,36 @@ function withDefaults(
     deepProfilingConfirmed: body.deepProfilingConfirmed ?? false,
     username: body.username,
     sybaseDriver: body.sybaseDriver ?? 'auto',
+    // Engine connection extras. Carried through verbatim when supplied so the
+    // pack can hand them to the sidecar's connection block; the defaults
+    // (SQL login, encryption ON, certificate NOT trusted) are applied by the
+    // pack, not here, so an omitted block and an explicit default block
+    // behave identically.
+    mssqlAuth: normaliseMssqlAuth(body.mssqlAuth),
+  };
+}
+
+/**
+ * Normalise the SQL-Server connection extras from a request body. Returns
+ * undefined when the caller sent nothing, so the pack's own defaults apply.
+ * An unrecognised auth scheme falls back to `sql` rather than being rejected:
+ * the scheme is not a security boundary (the credentials are), and a hard 400
+ * here would fail a scan for a typo the sidecar would have defaulted anyway.
+ */
+function normaliseMssqlAuth(
+  raw: unknown,
+): DatabaseDiscoveryConfig['mssqlAuth'] | undefined {
+  if (raw === null || typeof raw !== 'object') return undefined;
+  const v = raw as Record<string, unknown>;
+  return {
+    scheme: v.scheme === 'ntlm' ? 'ntlm' : 'sql',
+    domain: typeof v.domain === 'string' && v.domain.trim() !== '' ? v.domain.trim() : null,
+    encrypt: v.encrypt !== false,
+    trustServerCertificate: v.trustServerCertificate === true,
+    instanceName:
+      typeof v.instanceName === 'string' && v.instanceName.trim() !== ''
+        ? v.instanceName.trim()
+        : null,
   };
 }
 
@@ -120,9 +150,7 @@ databaseRouter.post('/test-connection', async (req: Request, res: Response) => {
     res.status(400).json({
       error: {
         code: 400,
-        message:
-          `No discovery pack registered for engine '${config.dbEngine}'. ` +
-          `PostgreSQL is wired in Group 3; Sybase is wired in Group 4.`,
+        message: `No discovery pack registered for engine '${config.dbEngine}'.`,
       },
     });
     return;

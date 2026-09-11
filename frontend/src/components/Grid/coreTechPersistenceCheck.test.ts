@@ -10,7 +10,7 @@ import { describe, it, expect } from 'vitest';
 import { checkPersistenceCoreTech } from './coreTechPersistenceCheck';
 
 describe('checkPersistenceCoreTech', () => {
-  describe('supported databases (PostgreSQL / Sybase)', () => {
+  describe('supported databases (PostgreSQL / Sybase / SQL Server)', () => {
     it('recognises PostgreSQL (with a version) as available', () => {
       const r = checkPersistenceCoreTech('PostgreSQL 16', false);
       expect(r.status).toBe('ok');
@@ -26,6 +26,31 @@ describe('checkPersistenceCoreTech', () => {
     it('recognises Sybase (and SAP ASE)', () => {
       expect(checkPersistenceCoreTech('Sybase ASE 16', false).database).toBe('Sybase');
       expect(checkPersistenceCoreTech('SAP ASE', false).database).toBe('Sybase');
+    });
+
+    // SQL Server 16 -> PostgreSQL 18 pair programme, Spec 2 (2026-09-11):
+    // SQL Server moved from OTHER_DATABASES ("no scan pack available") into
+    // SUPPORTED_DATABASES the moment the `mssql` pack was registered. This is
+    // the pin that keeps the two lists in lockstep with the pack registry.
+    it('recognises SQL Server, its abbreviations, and the T-SQL dialect name', () => {
+      for (const text of [
+        'SQL Server 2022',
+        'Microsoft SQL Server',
+        'MSSQL',
+        'MS SQL Server',
+        'T-SQL',
+        'tsql',
+      ]) {
+        const r = checkPersistenceCoreTech(text, false);
+        expect(r.status).toBe('ok');
+        expect(r.database).toBe('SQL Server');
+      }
+    });
+
+    it('offers SQL Server the scan pack instead of the no-pack message', () => {
+      const r = checkPersistenceCoreTech('Microsoft SQL Server', false);
+      expect(r.status).not.toBe('unsupported-db');
+      expect(r.message).toContain('SQL Server database scan pack available');
     });
 
     it('is case-insensitive', () => {
@@ -53,11 +78,11 @@ describe('checkPersistenceCoreTech', () => {
       expect(checkPersistenceCoreTech('MySQL 8', false).message).toBe(
         'No database scan pack available for MySQL.',
       );
-      expect(checkPersistenceCoreTech('Microsoft SQL Server', false).message).toBe(
-        'No database scan pack available for SQL Server.',
-      );
       expect(checkPersistenceCoreTech('MongoDB', false).message).toBe(
         'No database scan pack available for MongoDB.',
+      );
+      expect(checkPersistenceCoreTech('Db2', false).message).toBe(
+        'No database scan pack available for Db2.',
       );
     });
 

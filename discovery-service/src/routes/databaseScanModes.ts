@@ -13,9 +13,13 @@
  *     against the migration pack's expected-schema JSON).
  *
  *   POST /discovery/db/refresh-seeds-scan
- *     Re-reads ONLY sequence/identity current values over the Sybase
+ *     Re-reads ONLY sequence/identity current values over the SOURCE engine's
  *     pack/sidecar path and returns them (the gateway regenerates ONLY the
- *     pack's sequences-seed changeset from the values).
+ *     pack's sequences-seed changeset from the values). The source engine
+ *     comes from the request body (`dbEngine`), defaulting to `sybase` for
+ *     back-compat with callers written before SQL Server was a source.
+ *     VERIFICATION-ONLY stays hardcoded to `postgres`: it reads the TARGET,
+ *     and the target of every supported pair is PostgreSQL.
  *
  * HARD CONTRACT (both endpoints):
  *   - NOTHING is written to the model: no candidates, no findings, no
@@ -36,7 +40,25 @@ import type {
   DatabaseDiscoveryConfig,
   DatabaseDiscoveryCredentials,
 } from '../services/databasePacks/types';
-import { DEFAULT_PORT_BY_ENGINE, type DatabaseEngine } from '../services/databasePacks/types';
+import {
+  DEFAULT_PORT_BY_ENGINE,
+  isDatabaseEngine,
+  type DatabaseEngine,
+} from '../services/databasePacks/types';
+
+/**
+ * Source engines the refresh-seeds scan can read. PostgreSQL is deliberately
+ * absent: it is the TARGET of every supported pair, and re-seeding is a
+ * source-side read.
+ */
+const REFRESH_SEED_SOURCE_ENGINES: ReadonlyArray<DatabaseEngine> = [
+  'sybase',
+  'mssql',
+];
+
+const REFRESH_SEED_ENGINE_CHOICES = REFRESH_SEED_SOURCE_ENGINES.map(
+  (e) => `"${e}"`,
+).join(', ');
 
 /**
  * Shared body validation for the two scan modes. Returns the validation
@@ -91,6 +113,7 @@ function scanConfig(
     deepProfilingConfirmed: false,
     username: body.username,
     sybaseDriver: body.sybaseDriver ?? 'auto',
+    mssqlAuth: body.mssqlAuth,
   };
 }
 
@@ -227,18 +250,38 @@ export function registerDatabaseScanModeRoutes(router: Router): void {
       return;
     }
 
-    const config = scanConfig(body, 'sybase');
+    // The SOURCE engine drives which pack re-reads the seeds. Absent =>
+    // `sybase`, which is what every caller written before SQL Server became a
+    // source engine sends.
+    const requestedEngine = body.dbEngine ?? 'sybase';
+    if (
+      !isDatabaseEngine(requestedEngine) ||
+      !REFRESH_SEED_SOURCE_ENGINES.includes(requestedEngine)
+    ) {
+      res.status(400).json({
+        error: {
+          code: 400,
+          message:
+            `dbEngine must be one of ${REFRESH_SEED_ENGINE_CHOICES} for a ` +
+            `refresh-seeds scan (it reads the migration SOURCE).`,
+        },
+      });
+      return;
+    }
+    const engine: DatabaseEngine = requestedEngine;
+
+    const config = scanConfig(body, engine);
     const credentials: DatabaseDiscoveryCredentials = {
       username: body.username as string,
       password: body.password as string,
     };
 
-    const pack = getDatabasePack('sybase');
+    const pack = getDatabasePack(engine);
     if (!pack) {
       res.status(400).json({
         error: {
           code: 400,
-          message: "No discovery pack registered for engine 'sybase'.",
+          message: `No discovery pack registered for engine '${engine}'.`,
         },
       });
       return;
@@ -280,12 +323,13 @@ export function registerDatabaseScanModeRoutes(router: Router): void {
           sequenceName: c.sequenceName ?? null,
         }));
       console.log(
-        `[discovery/db/refresh-seeds-scan] ok sequences=${sequences.length} ` +
+        `[discovery/db/refresh-seeds-scan] ok engine=${engine} ` +
+          `sequences=${sequences.length} ` +
           `identity_columns=${identityColumns.length} (no model writes by contract)`,
       );
       res.json({
         success: true,
-        engine: 'sybase',
+        engine,
         scan_mode: 'refresh_seeds',
         sequences,
         identity_columns: identityColumns,
@@ -293,11 +337,12 @@ export function registerDatabaseScanModeRoutes(router: Router): void {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.warn(
-        `[discovery/db/refresh-seeds-scan] scan failed. host='${config.host}' error='${message}'`,
+        `[discovery/db/refresh-seeds-scan] scan failed. engine='${engine}' ` +
+          `host='${config.host}' error='${message}'`,
       );
       res.status(400).json({
         success: false,
-        engine: 'sybase',
+        engine,
         error: { code: 400, message },
       });
     } finally {

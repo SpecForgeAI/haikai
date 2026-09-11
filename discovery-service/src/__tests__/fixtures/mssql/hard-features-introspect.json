@@ -1,0 +1,426 @@
+{
+  "ok": true,
+  "error": null,
+  "engine": "mssql",
+  "serverVersion": "Microsoft SQL Server 2022 (RTM) - 16.0.1000.6 (X64)",
+  "serverEdition": "Enterprise Edition (64-bit)",
+  "databaseCollation": "Latin1_General_100_CI_AS",
+  "serverCollation": "Latin1_General_100_CI_AS",
+  "capabilities": [
+    "collation",
+    "computed_columns",
+    "sequence_current_value",
+    "fk_actions",
+    "index_clustering",
+    "index_predicate",
+    "native_sequence",
+    "db_jobs"
+  ],
+  "schemas": [
+    { "schemaName": "Ledger", "owner": "dbo" },
+    { "schemaName": "Ops", "owner": "dbo" }
+  ],
+  "tables": [
+    {
+      "schemaName": "Ledger",
+      "tableName": "Postings",
+      "temporalType": null,
+      "historyTable": null,
+      "periodStartColumn": null,
+      "periodEndColumn": null,
+      "isMemoryOptimized": false,
+      "isFiletable": false
+    },
+    {
+      "schemaName": "Ops",
+      "tableName": "SensorArchive",
+      "temporalType": null,
+      "historyTable": null,
+      "periodStartColumn": null,
+      "periodEndColumn": null,
+      "isMemoryOptimized": false,
+      "isFiletable": false
+    }
+  ],
+  "columns": [
+    {
+      "schemaName": "Ledger",
+      "tableName": "Postings",
+      "columnName": "PostingID",
+      "dataType": "bigint",
+      "maxLength": 8,
+      "isNullable": false,
+      "ordinalPosition": 1,
+      "isIdentity": true,
+      "identitySeed": "1",
+      "identityIncrement": "1",
+      "collation": null,
+      "isComputed": false
+    },
+    {
+      "schemaName": "Ledger",
+      "tableName": "Postings",
+      "columnName": "PostedBy",
+      "dataType": "nvarchar",
+      "maxLength": 60,
+      "isNullable": false,
+      "ordinalPosition": 2,
+      "collation": "Latin1_General_CI_AS",
+      "isComputed": false
+    },
+    {
+      "schemaName": "Ledger",
+      "tableName": "Postings",
+      "columnName": "IsVoided",
+      "dataType": "bit",
+      "maxLength": 1,
+      "isNullable": false,
+      "ordinalPosition": 3,
+      "collation": null,
+      "isComputed": false
+    },
+    {
+      "schemaName": "Ledger",
+      "tableName": "Postings",
+      "columnName": "PayloadDocument",
+      "dataType": "xml",
+      "maxLength": -1,
+      "isNullable": true,
+      "ordinalPosition": 4,
+      "collation": null,
+      "isComputed": false,
+      "xmlSchemaCollection": "Ledger.PostingSchema"
+    },
+    {
+      "schemaName": "Ledger",
+      "tableName": "Postings",
+      "columnName": "LooseValue",
+      "dataType": "sql_variant",
+      "maxLength": 8016,
+      "isNullable": true,
+      "ordinalPosition": 5,
+      "collation": null,
+      "isComputed": false
+    },
+    {
+      "schemaName": "Ledger",
+      "tableName": "Postings",
+      "columnName": "OrgNode",
+      "dataType": "hierarchyid",
+      "maxLength": 892,
+      "isNullable": true,
+      "ordinalPosition": 6,
+      "collation": null,
+      "isComputed": false
+    },
+    {
+      "schemaName": "Ledger",
+      "tableName": "Postings",
+      "columnName": "SiteShape",
+      "dataType": "geometry",
+      "maxLength": -1,
+      "isNullable": true,
+      "ordinalPosition": 7,
+      "collation": null,
+      "isComputed": false
+    },
+    {
+      "schemaName": "Ledger",
+      "tableName": "Postings",
+      "columnName": "ScannedDocument",
+      "dataType": "varbinary",
+      "maxLength": -1,
+      "isNullable": true,
+      "ordinalPosition": 8,
+      "collation": null,
+      "isComputed": false,
+      "isFilestream": true
+    },
+    {
+      "schemaName": "Ledger",
+      "tableName": "Postings",
+      "columnName": "RowGuid",
+      "dataType": "uniqueidentifier",
+      "maxLength": 16,
+      "isNullable": false,
+      "ordinalPosition": 9,
+      "defaultExpression": "(newid())",
+      "defaultConstraintName": "DF_Ledger_Postings_RowGuid",
+      "collation": null,
+      "isComputed": false,
+      "isRowGuidCol": true
+    },
+    {
+      "schemaName": "Ops",
+      "tableName": "SensorArchive",
+      "columnName": "SensorArchiveID",
+      "dataType": "bigint",
+      "maxLength": 8,
+      "isNullable": false,
+      "ordinalPosition": 1,
+      "collation": null,
+      "isComputed": false
+    },
+    {
+      "schemaName": "Ops",
+      "tableName": "SensorArchive",
+      "columnName": "ReadingNote",
+      "dataType": "nvarchar",
+      "maxLength": -1,
+      "isNullable": true,
+      "ordinalPosition": 2,
+      "collation": "Latin1_General_CI_AS",
+      "isComputed": false
+    }
+  ],
+  "keys": [
+    {
+      "schemaName": "Ledger",
+      "tableName": "Postings",
+      "kind": "primary_key",
+      "name": "PK_Ledger_Postings",
+      "columns": ["PostingID"],
+      "referencedSchema": null,
+      "referencedTable": null,
+      "referencedColumns": null,
+      "isUnique": true,
+      "indexType": "clustered",
+      "isClustered": true
+    },
+    {
+      "schemaName": "Ledger",
+      "tableName": "Postings",
+      "kind": "index",
+      "name": "IX_Ledger_Postings_Active",
+      "columns": ["PostedBy"],
+      "referencedSchema": null,
+      "referencedTable": null,
+      "referencedColumns": null,
+      "isUnique": false,
+      "indexType": "nonclustered",
+      "isClustered": false,
+      "filterDefinition": "([IsVoided]=(0))",
+      "includeColumns": ["PostingID"],
+      "columnDirections": ["ASC"]
+    },
+    {
+      "schemaName": "Ops",
+      "tableName": "SensorArchive",
+      "kind": "index",
+      "name": "CCI_Ops_SensorArchive",
+      "columns": [],
+      "referencedSchema": null,
+      "referencedTable": null,
+      "referencedColumns": null,
+      "isUnique": false,
+      "indexType": "clustered_columnstore",
+      "isClustered": true
+    },
+    {
+      "schemaName": "Ops",
+      "tableName": "SensorArchive",
+      "kind": "index",
+      "name": "FT_Ops_SensorArchive_ReadingNote",
+      "columns": ["ReadingNote"],
+      "referencedSchema": null,
+      "referencedTable": null,
+      "referencedColumns": null,
+      "isUnique": false,
+      "indexType": "fulltext",
+      "fulltextCatalog": "OpsSearchCatalog"
+    },
+    {
+      "schemaName": "Ledger",
+      "tableName": "Postings",
+      "kind": "foreign_key",
+      "name": "FK_Ledger_Postings_Ops_SensorArchive",
+      "columns": ["PostingID"],
+      "referencedSchema": "Ops",
+      "referencedTable": "SensorArchive",
+      "referencedColumns": ["SensorArchiveID"],
+      "isUnique": false,
+      "updateRule": "NO_ACTION",
+      "deleteRule": "SET_NULL",
+      "isNotTrusted": true
+    }
+  ],
+  "views": [
+    {
+      "schemaName": "Ledger",
+      "viewName": "PostingTotals",
+      "isMaterialized": false,
+      "isSchemaBound": true,
+      "isIndexedView": true,
+      "definition": "CREATE VIEW Ledger.PostingTotals WITH SCHEMABINDING AS SELECT PostedBy, COUNT_BIG(*) AS PostingCount FROM Ledger.Postings GROUP BY PostedBy"
+    }
+  ],
+  "procedures": [
+    {
+      "schemaName": "Ledger",
+      "procedureName": "SyncFromWarehouse",
+      "routineKind": "procedure",
+      "language": "TSQL",
+      "executeAs": null,
+      "functionKind": null,
+      "assemblyName": null,
+      "returnsType": null,
+      "parameters": [
+        {
+          "name": "@AsOf",
+          "dataType": "date",
+          "maxLength": 3,
+          "precision": 10,
+          "scale": 0,
+          "isOutput": false,
+          "hasDefault": true,
+          "isReadonly": false,
+          "ordinal": 1,
+          "userTypeName": null
+        },
+        {
+          "name": "@RowsCopied",
+          "dataType": "int",
+          "maxLength": 4,
+          "precision": 10,
+          "scale": 0,
+          "isOutput": true,
+          "hasDefault": false,
+          "isReadonly": false,
+          "ordinal": 2,
+          "userTypeName": null
+        }
+      ],
+      "body": "CREATE PROCEDURE Ledger.SyncFromWarehouse\n  @AsOf date = NULL,\n  @RowsCopied int OUTPUT\nAS\nBEGIN\n  SET NOCOUNT ON;\n  INSERT INTO Ledger.Postings (PostedBy, IsVoided)\n  SELECT p.PostedBy, 0\n  FROM ReportingWarehouse.dbo.StagedPostings AS p\n  WHERE p.PostedOn >= ISNULL(@AsOf, '1900-01-01');\n\n  SELECT @RowsCopied = @@ROWCOUNT;\n\n  SELECT * FROM OPENQUERY(LEGACY_LINK, 'SELECT posting_id FROM legacy.postings');\n\n  MERGE Ledger.Postings AS tgt\n  USING (SELECT PostingID FROM Ops.SensorArchive) AS src\n  ON tgt.PostingID = src.PostingID\n  WHEN NOT MATCHED THEN INSERT (PostedBy, IsVoided) VALUES (N'sync', 0)\n  OUTPUT inserted.PostingID INTO @Inserted;\n\n  RETURN 0;\nEND;"
+    },
+    {
+      "schemaName": "Ledger",
+      "procedureName": "ScoreRisk",
+      "routineKind": "clr_procedure",
+      "language": "CLR",
+      "executeAs": null,
+      "functionKind": null,
+      "assemblyName": "LedgerRiskScoring",
+      "returnsType": null,
+      "parameters": [
+        {
+          "name": "@PostingID",
+          "dataType": "bigint",
+          "maxLength": 8,
+          "precision": 19,
+          "scale": 0,
+          "isOutput": false,
+          "hasDefault": false,
+          "isReadonly": false,
+          "ordinal": 1,
+          "userTypeName": null
+        }
+      ],
+      "body": ""
+    }
+  ],
+  "triggers": [
+    {
+      "schemaName": "Ledger",
+      "triggerName": "trg_PostingTotals_InsteadOfInsert",
+      "tableSchema": "Ledger",
+      "tableName": "PostingTotals",
+      "timing": "instead_of",
+      "events": ["insert"],
+      "parentKind": "view",
+      "isDisabled": false,
+      "isDatabaseTrigger": false,
+      "orderFirstEvents": [],
+      "orderLastEvents": [],
+      "actionStatement": "CREATE TRIGGER Ledger.trg_PostingTotals_InsteadOfInsert ON Ledger.PostingTotals INSTEAD OF INSERT AS BEGIN SET NOCOUNT ON; INSERT INTO Ledger.Postings (PostedBy, IsVoided) SELECT PostedBy, 0 FROM inserted; END;"
+    },
+    {
+      "schemaName": "Ledger",
+      "triggerName": "trg_Postings_AfterUpdate",
+      "tableSchema": "Ledger",
+      "tableName": "Postings",
+      "timing": "after",
+      "events": ["update", "delete"],
+      "parentKind": "table",
+      "isDisabled": true,
+      "isDatabaseTrigger": false,
+      "orderFirstEvents": ["update"],
+      "orderLastEvents": [],
+      "actionStatement": "CREATE TRIGGER Ledger.trg_Postings_AfterUpdate ON Ledger.Postings AFTER UPDATE, DELETE AS BEGIN SET NOCOUNT ON; INSERT INTO Ops.SensorArchive (SensorArchiveID, ReadingNote) SELECT PostingID, N'changed' FROM deleted; END;"
+    }
+  ],
+  "sequences": [],
+  "scheduledJobs": [
+    {
+      "schemaName": null,
+      "jobName": "Ledger nightly rollup",
+      "scheduler": "sql_server_agent",
+      "schedule": null,
+      "scheduleText": "Occurs every day at 02:15:00",
+      "scheduleFrequency": {
+        "freq_type": 4,
+        "freq_interval": 1,
+        "active_start_time": 21500
+      },
+      "command": null,
+      "enabled": true,
+      "steps": [
+        {
+          "ordinal": 1,
+          "subsystem": "TSQL",
+          "command": "EXEC Ledger.SyncFromWarehouse @RowsCopied = NULL;",
+          "databaseName": "LedgerDemo"
+        },
+        {
+          "ordinal": 2,
+          "subsystem": "CmdExec",
+          "command": "rollup.cmd --mode nightly",
+          "databaseName": null
+        }
+      ]
+    }
+  ],
+  "extendedObjects": [
+    {
+      "kind": "service_broker_queue",
+      "schema": "Ops",
+      "name": "SensorIngestQueue",
+      "definition": null,
+      "detail": { "activationProcedure": "Ops.ProcessSensorIngest", "maxQueueReaders": 4 }
+    },
+    {
+      "kind": "service_broker_service",
+      "schema": "Ops",
+      "name": "SensorIngestService",
+      "definition": null,
+      "detail": { "queue": "Ops.SensorIngestQueue" }
+    },
+    {
+      "kind": "synonym",
+      "schema": "Ledger",
+      "name": "StagedPostings",
+      "definition": null,
+      "detail": { "baseObject": "ReportingWarehouse.dbo.StagedPostings" }
+    },
+    {
+      "kind": "assembly",
+      "schema": "",
+      "name": "LedgerRiskScoring",
+      "definition": null,
+      "detail": { "permissionSet": "SAFE", "clrVersion": "v4.0.30319" }
+    },
+    {
+      "kind": "fulltext_catalog",
+      "schema": "Ops",
+      "name": "OpsSearchCatalog",
+      "definition": null,
+      "detail": { "isDefault": true }
+    },
+    {
+      "kind": "filestream_filegroup",
+      "schema": "",
+      "name": "LedgerDocuments",
+      "definition": null,
+      "detail": { "isDefault": true, "containerCount": 1 }
+    }
+  ]
+}

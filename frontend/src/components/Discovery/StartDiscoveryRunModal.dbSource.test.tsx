@@ -121,7 +121,7 @@ describe('StartDiscoveryRunModal Source toggle (Spec 2026-05-16, Group 5)', () =
   // -------------------------------------------------------------------------
   // 2. Selecting Database swaps in the DB form; engine dropdown shows BOTH
   // -------------------------------------------------------------------------
-  it('selecting Database swaps in the connection form; engine dropdown shows BOTH Postgres and Sybase enabled', () => {
+  it('selecting Database swaps in the connection form; engine dropdown shows Postgres, Sybase and SQL Server enabled', () => {
     renderModal();
 
     fireEvent.click(screen.getByTestId('start-discovery-run-modal-source-database'));
@@ -137,12 +137,173 @@ describe('StartDiscoveryRunModal Source toggle (Spec 2026-05-16, Group 5)', () =
     ) as HTMLSelectElement;
     expect(engineSelect).toBeInTheDocument();
 
-    // Both engine options are enabled (Sybase via the sidecar in Group 4).
+    // Every engine option is enabled (Sybase via the sidecar in Group 4; SQL
+    // Server via the same sidecar in the pair programme's Spec 2).
     const options = Array.from(engineSelect.querySelectorAll('option')) as HTMLOptionElement[];
     const values = options.map((o) => o.value);
-    expect(values).toContain('postgres');
-    expect(values).toContain('sybase');
+    expect(values).toEqual(['postgres', 'sybase', 'mssql']);
+    expect(options.map((o) => o.textContent)).toEqual([
+      'PostgreSQL',
+      'Sybase ASE',
+      'SQL Server',
+    ]);
     options.forEach((opt) => expect(opt.disabled).toBe(false));
+  });
+
+  // -------------------------------------------------------------------------
+  // 2b. SQL Server 16 -> PostgreSQL 18 pair programme, Spec 2 (2026-09-11):
+  //     the SQL Server scan entry -- port default + the connection extras that
+  //     appear ONLY for this engine.
+  // -------------------------------------------------------------------------
+  it('selecting SQL Server defaults the port to 1433 and reveals the MSSQL connection extras', () => {
+    renderModal();
+    fireEvent.click(screen.getByTestId('start-discovery-run-modal-source-database'));
+
+    const portInput = screen.getByTestId(
+      'start-discovery-run-modal-db-port',
+    ) as HTMLInputElement;
+    expect(portInput.value).toBe('5432');
+    // The extras block belongs to mssql alone.
+    expect(
+      screen.queryByTestId('start-discovery-run-modal-db-mssql-extras'),
+    ).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByTestId('start-discovery-run-modal-db-engine'), {
+      target: { value: 'mssql' },
+    });
+
+    expect(portInput.value).toBe('1433');
+    expect(
+      screen.getByTestId('start-discovery-run-modal-db-mssql-extras'),
+    ).toBeInTheDocument();
+    // Encryption ON, certificate NOT trusted -- the safe default posture.
+    expect(
+      (screen.getByTestId('start-discovery-run-modal-db-mssql-encrypt') as HTMLInputElement)
+        .checked,
+    ).toBe(true);
+    expect(
+      (screen.getByTestId('start-discovery-run-modal-db-mssql-trust') as HTMLInputElement)
+        .checked,
+    ).toBe(false);
+    // The Sybase driver picker is NOT shown for SQL Server.
+    expect(
+      screen.queryByTestId('start-discovery-run-modal-db-sybase-driver'),
+    ).not.toBeInTheDocument();
+
+    // The Windows-domain field only appears once NTLM is chosen.
+    expect(
+      screen.queryByTestId('start-discovery-run-modal-db-mssql-domain'),
+    ).not.toBeInTheDocument();
+    fireEvent.change(
+      screen.getByTestId('start-discovery-run-modal-db-mssql-auth-scheme'),
+      { target: { value: 'ntlm' } },
+    );
+    expect(
+      screen.getByTestId('start-discovery-run-modal-db-mssql-domain'),
+    ).toBeInTheDocument();
+
+    // Switching away hides the whole block again (and restores the Sybase one).
+    fireEvent.change(screen.getByTestId('start-discovery-run-modal-db-engine'), {
+      target: { value: 'sybase' },
+    });
+    expect(
+      screen.queryByTestId('start-discovery-run-modal-db-mssql-extras'),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByTestId('start-discovery-run-modal-db-sybase-driver'),
+    ).toBeInTheDocument();
+    expect(portInput.value).toBe('5000');
+  });
+
+  it('sends the MSSQL connection extras on the test-connection probe, and NOT the Sybase driver', async () => {
+    mockTestDatabaseConnection.mockResolvedValue({
+      success: true,
+      engine: 'mssql',
+      serverVersion: 'Microsoft SQL Server 2022 (RTM) - 16.0.1000.6',
+      serverEdition: 'Developer Edition (64-bit)',
+    });
+    renderModal();
+    fireEvent.click(screen.getByTestId('start-discovery-run-modal-source-database'));
+    fireEvent.change(screen.getByTestId('start-discovery-run-modal-db-engine'), {
+      target: { value: 'mssql' },
+    });
+    fireEvent.change(screen.getByTestId('start-discovery-run-modal-db-host'), {
+      target: { value: 'sqlsrv.internal' },
+    });
+    fireEvent.change(screen.getByTestId('start-discovery-run-modal-db-name'), {
+      target: { value: 'WideWorldImporters' },
+    });
+    fireEvent.change(screen.getByTestId('start-discovery-run-modal-db-username'), {
+      target: { value: 'ro_user' },
+    });
+    fireEvent.change(screen.getByTestId('start-discovery-run-modal-db-password'), {
+      target: { value: 'pw-secret' },
+    });
+    fireEvent.change(
+      screen.getByTestId('start-discovery-run-modal-db-mssql-auth-scheme'),
+      { target: { value: 'ntlm' } },
+    );
+    fireEvent.change(screen.getByTestId('start-discovery-run-modal-db-mssql-domain'), {
+      target: { value: 'CORPDOMAIN' },
+    });
+    fireEvent.change(screen.getByTestId('start-discovery-run-modal-db-mssql-instance'), {
+      target: { value: 'REPORTING' },
+    });
+    fireEvent.click(screen.getByTestId('start-discovery-run-modal-db-mssql-trust'));
+    fireEvent.click(screen.getByTestId('start-discovery-run-modal-db-readonly-confirmed'));
+
+    fireEvent.click(
+      screen.getByTestId('start-discovery-run-modal-db-test-connection-button'),
+    );
+    await waitFor(() => expect(mockTestDatabaseConnection).toHaveBeenCalledTimes(1));
+
+    const sent = mockTestDatabaseConnection.mock.calls[0][0];
+    expect(sent.dbEngine).toBe('mssql');
+    expect(sent.port).toBe(1433);
+    expect(sent.mssqlAuth).toEqual({
+      scheme: 'ntlm',
+      domain: 'CORPDOMAIN',
+      encrypt: true,
+      trustServerCertificate: true,
+      instanceName: 'REPORTING',
+    });
+    // The Sybase-only field is not on an mssql payload.
+    expect(sent.sybaseDriver).toBeUndefined();
+  });
+
+  it('omits the mssqlAuth block entirely on a non-mssql payload', async () => {
+    mockTestDatabaseConnection.mockResolvedValue({
+      success: true,
+      engine: 'sybase',
+      serverVersion: 'Adaptive Server Enterprise/16.0',
+    });
+    renderModal();
+    fireEvent.click(screen.getByTestId('start-discovery-run-modal-source-database'));
+    fireEvent.change(screen.getByTestId('start-discovery-run-modal-db-engine'), {
+      target: { value: 'sybase' },
+    });
+    fireEvent.change(screen.getByTestId('start-discovery-run-modal-db-host'), {
+      target: { value: 'ase.internal' },
+    });
+    fireEvent.change(screen.getByTestId('start-discovery-run-modal-db-name'), {
+      target: { value: 'legacy_db' },
+    });
+    fireEvent.change(screen.getByTestId('start-discovery-run-modal-db-username'), {
+      target: { value: 'ro_user' },
+    });
+    fireEvent.change(screen.getByTestId('start-discovery-run-modal-db-password'), {
+      target: { value: 'pw-secret' },
+    });
+    fireEvent.click(screen.getByTestId('start-discovery-run-modal-db-readonly-confirmed'));
+    fireEvent.click(
+      screen.getByTestId('start-discovery-run-modal-db-test-connection-button'),
+    );
+    await waitFor(() => expect(mockTestDatabaseConnection).toHaveBeenCalledTimes(1));
+
+    const sent = mockTestDatabaseConnection.mock.calls[0][0];
+    expect(sent.dbEngine).toBe('sybase');
+    expect(sent.mssqlAuth).toBeUndefined();
+    expect(sent.sybaseDriver).toBe('auto');
   });
 
   // -------------------------------------------------------------------------

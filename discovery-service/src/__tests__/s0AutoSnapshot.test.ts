@@ -109,6 +109,40 @@ describe('takeS0AutoSnapshot', () => {
     ]);
   });
 
+  // SQL Server 16 -> PostgreSQL 18 pair programme, Spec 2 (2026-09-11): the
+  // auto-snapshot is engine-NEUTRAL -- it posts whatever engine the scan ran
+  // against, so `mssql` reaches the validation service with no arm of its own.
+  it('posts db_type=mssql for a SQL Server scan (no engine allowlist of its own)', async () => {
+    const fetchFn = jest.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ snapshot_id: 's0-auto-ms', manifest: { tables: [{}, {}] } }),
+    })) as unknown as typeof fetch;
+
+    const outcome = await takeS0AutoSnapshot({
+      projectId: 'p1',
+      architectureId: 'a1',
+      config: {
+        ...CONFIG,
+        dbEngine: 'mssql',
+        port: 1433,
+        databaseName: 'WideWorldImporters',
+      } as DatabaseDiscoveryConfig,
+      credentials: CREDS,
+      introspection: INTROSPECTION,
+      fetchFn,
+    });
+
+    expect(outcome.status).toBe('taken');
+    const [, init] = (fetchFn as jest.Mock).mock.calls[0];
+    const body = JSON.parse((init as { body: string }).body);
+    expect(body.source_db).toMatchObject({
+      db_type: 'mssql',
+      port: 1433,
+      database: 'WideWorldImporters',
+    });
+  });
+
   it('reports failed with the service reason (fail-soft, never throws)', async () => {
     const fetchFn = jest.fn(async () => ({
       ok: false,

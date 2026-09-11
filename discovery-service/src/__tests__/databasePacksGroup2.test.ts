@@ -633,6 +633,44 @@ describe('toRedactedConfig', () => {
     expect(json).not.toContain('super-secret-user');
     expect(json).not.toContain('password');
   });
+
+  // SQL Server 16 -> PostgreSQL 18 pair programme, Spec 2 (2026-09-11): the
+  // SQL Server connection extras survive into the persisted snapshot MINUS
+  // every secret. The auth scheme, TLS posture, named instance and Windows
+  // domain are audit-relevant connection facts; the credentials still are not.
+  it('keeps the mssql connection extras minus secrets, and nulls them for other engines', () => {
+    const cfg = baseConfig({
+      dbEngine: 'mssql',
+      port: 1433,
+      username: 'svc_ro_account',
+      mssqlAuth: {
+        scheme: 'ntlm',
+        domain: 'CORPDOMAIN',
+        encrypt: true,
+        trustServerCertificate: true,
+        instanceName: 'REPORTING',
+      },
+    });
+    const redacted = toRedactedConfig(cfg, false);
+    expect(redacted.engine).toBe('mssql');
+    expect(redacted.mssqlAuth).toEqual({
+      scheme: 'ntlm',
+      domain: 'CORPDOMAIN',
+      encrypt: true,
+      trustServerCertificate: true,
+      instanceName: 'REPORTING',
+    });
+    // Still no credentials anywhere in the persisted shape.
+    const json = JSON.stringify(redacted);
+    expect(json).not.toContain('svc_ro_account');
+    expect(json).not.toContain('password');
+    expect(redacted.containsCredentials).toBe(false);
+    // The Sybase-only driver is nulled for a non-Sybase engine, as before.
+    expect(redacted.sybaseDriver).toBeNull();
+
+    // A config with no extras nulls the block rather than inventing defaults.
+    expect(toRedactedConfig(baseConfig(), false).mssqlAuth).toBeNull();
+  });
 });
 
 // -----------------------------------------------------------------------------
