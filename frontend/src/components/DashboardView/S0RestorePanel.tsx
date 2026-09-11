@@ -27,6 +27,7 @@ import {
 } from '../../api/s0SnapshotApi';
 import styles from './ApiBaselinesListPage.module.css';
 import type { DbEngineKey } from '../../api/dbEngines';
+import { DB_ENGINE_OPTIONS, isDbEngineKey } from '../../api/dbEngines';
 
 export interface S0RestorePanelProps {
   projectId: string;
@@ -59,7 +60,7 @@ function prefillFrom(session: ApiBehaviourCaptureSessionDto): RestoreFormState {
   };
   const dbTypeRaw = pick('dbType', 'db_type').toLowerCase();
   return {
-    dbType: dbTypeRaw === 'sybase' ? 'sybase' : 'postgres',
+    dbType: isDbEngineKey(dbTypeRaw) ? dbTypeRaw : 'postgres',
     host: pick('host'),
     port: pick('port'),
     database: pick('database', 'databaseName', 'database_name'),
@@ -217,13 +218,16 @@ export const S0RestorePanel: React.FC<S0RestorePanelProps> = ({
                 onChange={(e) =>
                   setForm((f) => ({
                     ...f,
-                    dbType: e.target.value === 'sybase' ? 'sybase' : 'postgres',
+                    dbType: isDbEngineKey(e.target.value) ? e.target.value : 'postgres',
                   }))
                 }
                 data-testid="s0-restore-dbType"
               >
-                <option value="postgres">postgres</option>
-                <option value="sybase">sybase</option>
+                {DB_ENGINE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
               </select>
             </label>
             {field('Host', 'host')}

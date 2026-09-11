@@ -73,6 +73,8 @@ export interface DbMigrationPackTranslationReviewerProps {
    * old terminal "translate it by hand in your IDE" dead-end is gone.
    */
   onSupplyBody?: (sourceBody: string) => void;
+  /** Source engine display name (pane title); neutral when absent. */
+  sourceEngineDisplay?: string | null;
   /** Behaviour evidence + guidance/waive controls for a routine row. */
   workbench?: DbMigrationPackReviewerWorkbench;
 }
@@ -85,7 +87,7 @@ interface AlignedLine {
 
 export const DbMigrationPackTranslationReviewer: React.FC<
   DbMigrationPackTranslationReviewerProps
-> = ({ translation, busy, onReview, onClose, onSupplyBody, workbench }) => {
+> = ({ translation, busy, onReview, onClose, onSupplyBody, workbench, sourceEngineDisplay }) => {
   const [notes, setNotes] = useState<string>(translation.reviewer_notes ?? '');
   const [suppliedBody, setSuppliedBody] = useState<string>('');
   // --- workbench-only local state (2026-09-09 Spec 4) ------------------------
@@ -221,7 +223,7 @@ export const DbMigrationPackTranslationReviewer: React.FC<
           <textarea
             className={styles.reviewerNotesInput}
             rows={10}
-            placeholder="Paste the COMPLETE source body (T-SQL) here…"
+            placeholder="Paste the COMPLETE source body here…"
             value={suppliedBody}
             onChange={(e) => setSuppliedBody(e.target.value)}
             disabled={busy}
@@ -258,7 +260,7 @@ export const DbMigrationPackTranslationReviewer: React.FC<
           className={styles.reviewerPane}
           data-testid="db-pack-translation-source"
         >
-          <div className={styles.reviewerPaneTitle}>Source T-SQL (Sybase ASE)</div>
+          <div className={styles.reviewerPaneTitle}>Source T-SQL ({sourceEngineDisplay ?? 'source engine'})</div>
           {alignedLines.map((line, idx) => (
             <div
               key={`l-${idx}`}

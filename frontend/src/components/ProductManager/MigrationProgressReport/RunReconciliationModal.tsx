@@ -50,6 +50,7 @@ import {
 } from '../../shared/ApiAuthFields';
 import styles from './MigrationProgressReport.module.css';
 import type { DbEngineKey } from '../../../api/dbEngines';
+import { DB_ENGINE_OPTIONS } from '../../../api/dbEngines';
 
 // ============================================================================
 // Field state
@@ -151,8 +152,11 @@ function DbFields({
           data-testid={`${idPrefix}-dbType`}
           onChange={(e) => onChange({ ...value, dbType: e.target.value as DbEngineKey })}
         >
-          <option value="sybase">Sybase</option>
-          <option value="postgres">PostgreSQL</option>
+          {DB_ENGINE_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
         </select>
       </label>
       {field('host', 'Host')}

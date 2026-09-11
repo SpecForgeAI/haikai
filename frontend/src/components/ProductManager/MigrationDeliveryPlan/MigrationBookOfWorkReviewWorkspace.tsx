@@ -140,6 +140,7 @@ import ApiAuthFields, {
   toApiAuthSecret,
   type ApiAuthValue,
 } from '../../shared/ApiAuthFields';
+import { DB_ENGINE_DEFAULT_PORT, DB_ENGINE_LABEL, DB_ENGINE_OPTIONS, isDbEngineKey, type DbEngineKey } from '../../../api/dbEngines';
 
 /**
  * Group the server gate's blocking reasons by machine code with a friendly
@@ -1104,9 +1105,12 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
   // Stage-1 SOURCE database section (2026-07-31): previously only
   // registerable via the drift-watch flow — the live run halted at the DB
   // chain's inputs guard because of exactly that gap.
+  // Source engine is the operator's pick (the plan workspace has no pack
+  // manifest at hand); the original single-engine default stays the default.
+  const [sourceDbEngine, setSourceDbEngine] = useState<DbEngineKey>('sybase');
   const [sourceDbFields, setSourceDbFields] = useState({
     host: '',
-    port: 5000,
+    port: DB_ENGINE_DEFAULT_PORT.sybase,
     database: '',
     schema: '',
     username: '',
@@ -1338,7 +1342,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
           }
           if (sourceDbPassword.trim().length > 0 && sourceDbFields.host.trim() !== '') {
             opts.sourceDb = {
-              dbType: 'sybase',
+              dbType: sourceDbEngine,
               host: sourceDbFields.host,
               port: sourceDbFields.port,
               database: sourceDbFields.database,
@@ -2674,6 +2678,26 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
                       : ''}
                   </p>
                   <div className={styles.modalInputRow}>
+                    <label htmlFor="src-engine">Engine</label>
+                    <select
+                      id="src-engine"
+                      className={styles.modalInput}
+                      value={sourceDbEngine}
+                      onChange={(e) => {
+                        const next = isDbEngineKey(e.target.value) ? e.target.value : 'sybase';
+                        setSourceDbEngine(next);
+                        setSourceDbFields((f) => ({ ...f, port: DB_ENGINE_DEFAULT_PORT[next] }));
+                      }}
+                      data-testid="start-stage-source-engine"
+                    >
+                      {DB_ENGINE_OPTIONS.filter((o) => o.value !== 'postgres').map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className={styles.modalInputRow}>
                     <label htmlFor="src-host">Host</label>
                     <input
                       id="src-host"
@@ -2734,7 +2758,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
                       data-testid="start-stage-source-password"
                     />
                     <span className={styles.modalHint}>
-                      Sybase (the source engine). In gateway memory only —
+                      {DB_ENGINE_LABEL[sourceDbEngine]} (the source engine). In gateway memory only —
                       never persisted, never logged. Leave the password blank
                       to skip: the data load will halt with a named
                       &quot;source DB credentials are not registered&quot;
