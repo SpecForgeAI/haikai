@@ -70,7 +70,7 @@ import {
 // snapshot on bracket residue (minimal-diff single-table restore).
 import { latestSnapshotId, readManifest, snapshotDirFor } from './s0/manifest';
 import { restoreSingleTableFromSnapshot } from './s0/restoreRunner';
-import { isDbType } from '../types/db';
+import { isDbType, parseMssqlAuthWire } from '../types/db';
 
 // Haikai workflow trace logger (OFF by default; no-op unless HAIKAI_TRACE is
 // set). See docs/trace-logging.md. The corr bag always carries project + arch
@@ -1704,6 +1704,7 @@ export async function orchestrateCaptureSession(
       schema: cfg.schema,
       username: readonlySplit ? (secrets.db.readonlyUsername as string) : cfg.username,
       password: readonlySplit ? (secrets.db.readonlyPassword as string) : secrets.db.password,
+      mssqlAuth: parseMssqlAuthWire((cfg as { mssqlAuth?: unknown; mssql_auth?: unknown }).mssqlAuth ?? (cfg as { mssql_auth?: unknown }).mssql_auth),
     });
   })();
 
@@ -1727,6 +1728,7 @@ export async function orchestrateCaptureSession(
           schema: cfg.schema ?? null,
           username: cfg.username as string,
           password: secrets.db.password,
+          mssqlAuth: parseMssqlAuthWire((cfg as { mssqlAuth?: unknown; mssql_auth?: unknown }).mssqlAuth ?? (cfg as { mssql_auth?: unknown }).mssql_auth),
         },
         readAdapter: dbAdapter,
         metadataFetcher: deps.compensationSeams?.metadataFetcher,

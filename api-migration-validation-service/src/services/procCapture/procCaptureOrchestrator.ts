@@ -341,6 +341,7 @@ export async function orchestrateProcCaptureSession(
       schema: cfg.schema ?? null,
       username: cfg.username,
       password: secrets.db.password,
+      mssqlAuth: cfg.mssqlAuth ?? null,
     };
     const readAdapter = createAdapter({
       ...primaryConfig,

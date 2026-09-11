@@ -32,6 +32,16 @@ const NUMERIC_TYPE_FRAGMENTS = [
 ];
 
 const PLAIN_NUMBER = /^-?\d+(\.\d+)?$/;
+/** SQL Server UTF-16 families: string literals render as N'…'. */
+const NATIONAL_TYPE_FRAGMENTS = ['nchar', 'nvarchar', 'ntext', 'sysname', 'xml'];
+/** Binary families: the `\x…` hex wire value renders as a 0x… literal on SQL Server. */
+const BINARY_TYPE_FRAGMENTS = ['binary', 'varbinary', 'image', 'rowversion', 'timestamp'];
+const HEX_WIRE = /^\\x([0-9a-fA-F]*)$/;
+
+function hasFragment(sourceType: string | null | undefined, fragments: string[]): boolean {
+  const t = (sourceType ?? '').toLowerCase();
+  return fragments.some((f) => t.includes(f));
+}
 
 function isNumericType(sourceType: string | null | undefined): boolean {
   const t = (sourceType ?? '').toLowerCase();
@@ -55,6 +65,12 @@ export function renderLiteral(
   if (typeof value === 'string') {
     if (isNumericType(sourceType) && PLAIN_NUMBER.test(value.trim())) {
       return value.trim();
+    }
+    if (engine === 'mssql') {
+      const hex = hasFragment(sourceType, BINARY_TYPE_FRAGMENTS) ? HEX_WIRE.exec(value.trim()) : null;
+      if (hex) return `0x${hex[1].toLowerCase()}`;
+      const quoted = `'${value.replace(/'/g, "''")}'`;
+      return hasFragment(sourceType, NATIONAL_TYPE_FRAGMENTS) ? `N${quoted}` : quoted;
     }
     return `'${value.replace(/'/g, "''")}'`;
   }

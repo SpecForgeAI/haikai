@@ -20,6 +20,8 @@ export class FakeStore {
   tables = new Map<string, Row[]>();
   reseeds: string[] = [];
   truncates: string[] = [];
+  /** Bare DELETE FROM <t> (the SQL Server restore fallback for FK-referenced parents). */
+  deletes: string[] = [];
 
   snapshotJson(): string {
     const ordered: Record<string, Row[]> = {};
@@ -152,8 +154,11 @@ export function splitTopLevel(input: string, separator: string): string[] {
 }
 
 export function parseLiteral(raw: string): unknown {
-  const t = raw.trim();
+  let t = raw.trim();
   if (/^NULL$/i.test(t)) return null;
+  // SQL Server national literal N'…' and 0x… binary literal (wire form `\x…`).
+  if (/^N'/.test(t)) t = t.slice(1);
+  if (/^0x[0-9a-fA-F]*$/.test(t)) return `\\x${t.slice(2).toLowerCase()}`;
   if (t.startsWith("'") && t.endsWith("'")) {
     return t.slice(1, -1).replace(/''/g, "'");
   }
@@ -172,9 +177,23 @@ function rowMatches(row: Row, predicate: string): boolean {
   });
 }
 
-export function applyStatement(store: FakeStore, sql: string): number {
+export function applyStatement(store: FakeStore, rawSql: string): number {
+  // SQL Server bracket quoting is stripped so one fake serves every engine.
+  const sql = rawSql.replace(/\[([^\]]+)\]/g, '$1');
   let m = sql.match(/^SET IDENTITY_INSERT \S+ (ON|OFF)$/i);
   if (m) return 0;
+  m = sql.match(/^DBCC CHECKIDENT \('([^']+)', RESEED, (\d+)\)$/i);
+  if (m) {
+    store.reseeds.push(sql);
+    return 0;
+  }
+  m = sql.match(/^DELETE FROM (\S+)$/i);
+  if (m) {
+    const rows = store.tables.get(m[1]) ?? [];
+    store.tables.set(m[1], []);
+    store.deletes.push(m[1]);
+    return rows.length;
+  }
   m = sql.match(/^EXEC sp_chgattribute '([^']+)', 'identity_burn_max', 0, '(\d+)'$/i);
   if (m) {
     store.reseeds.push(sql);

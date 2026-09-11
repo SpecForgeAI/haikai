@@ -62,8 +62,18 @@ export function hasChanges(diff: TableRowDiff): boolean {
 }
 
 function qualify(table: string, schema: string | null | undefined, engine: CompensationEngine): string {
+  if (engine === 'mssql') {
+    // Bracket quoting is independent of the QUOTED_IDENTIFIER session option.
+    const q = (s: string): string => `[${s.replace(/]/g, ']]')}]`;
+    return schema ? `${q(schema)}.${q(table)}` : q(table);
+  }
   if (!schema) return engine === 'postgres' ? `"${table}"` : table;
   return engine === 'postgres' ? `"${schema}"."${table}"` : `${schema}.${table}`;
+}
+
+/** Engines whose identity columns need SET IDENTITY_INSERT around explicit re-inserts. */
+function needsIdentityInsertToggle(engine: CompensationEngine): boolean {
+  return engine === 'sybase' || engine === 'mssql';
 }
 
 function typeOf(meta: CompensationTableMeta, column: string): string | null {
@@ -126,7 +136,7 @@ export function buildInverseStatements(
   //    the row set includes identity columns.
   const identityColumns = meta.columns.filter((c) => c.isIdentity).map((c) => c.name);
   const needsIdentityWrap =
-    engine === 'sybase' &&
+    needsIdentityInsertToggle(engine) &&
     identityColumns.length > 0 &&
     diff.deleted.some((row) =>
       identityColumns.some((c) => valueForColumn(row, c) !== undefined),
@@ -171,6 +181,12 @@ export function buildReseedStatements(
     // ASE: identity_burn_max pins the next minted identity to survivingMax+1.
     const bare = schema ? `${schema}.${meta.table}` : meta.table;
     return [`EXEC sp_chgattribute '${bare}', 'identity_burn_max', 0, '${survivingMax}'`];
+  }
+  if (engine === 'mssql') {
+    // SQL Server: DBCC CHECKIDENT RESEED pins the CURRENT identity value, so
+    // the next minted identity is survivingMax+1 on a table that has ever
+    // held rows (after TRUNCATE the engine itself resets to the seed).
+    return [`DBCC CHECKIDENT ('${target}', RESEED, ${survivingMax})`];
   }
   if (survivingMax >= 1) {
     return [

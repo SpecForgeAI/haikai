@@ -12,7 +12,7 @@ import {
 import type { ApiAuthSecret, SecretsBundle } from '../types/secrets';
 import { parseEndpointScopeKeys } from '../services/endpointScope';
 import { createDbAdapter } from '../services/db/dbAdapterFactory';
-import { isDbType } from '../types/db';
+import { isDbType, parseMssqlAuthWire } from '../types/db';
 
 /**
  * Target-side capture-session action endpoints. Mounted under the same
@@ -517,6 +517,7 @@ export function buildTargetCaptureSessionActionsRouter(
             schema: cfg.schema ?? null,
             username: cfg.username,
             password: dbSecret.password,
+            mssqlAuth: parseMssqlAuthWire((cfg as { mssqlAuth?: unknown; mssql_auth?: unknown }).mssqlAuth ?? (cfg as { mssql_auth?: unknown }).mssql_auth),
           };
         })();
         const dbAdapter = targetDbConfig

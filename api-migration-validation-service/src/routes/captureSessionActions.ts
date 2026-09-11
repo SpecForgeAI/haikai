@@ -107,7 +107,7 @@ import type {
   ToolExecutionContext,
   ArchModelToolWriteSurface,
 } from '../services/tools';
-import { isDbType, DB_TYPE_CHOICES } from '../types/db';
+import { isDbType, DB_TYPE_CHOICES, parseMssqlAuthWire } from '../types/db';
 
 // Haikai workflow trace logger (OFF by default; no-op unless HAIKAI_TRACE
 // is set). See docs/trace-logging.md. The /start orchestration writes the
@@ -3161,6 +3161,7 @@ export function buildCaptureSessionActionsRouter(
         schema: cfg.schema ?? null,
         username: cfg.username,
         password: secrets.db.password,
+        mssqlAuth: parseMssqlAuthWire((cfg as { mssqlAuth?: unknown; mssql_auth?: unknown }).mssqlAuth ?? (cfg as { mssql_auth?: unknown }).mssql_auth),
       });
       try {
         const result = await adapter.testConnection();
