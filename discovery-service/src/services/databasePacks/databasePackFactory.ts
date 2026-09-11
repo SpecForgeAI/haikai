@@ -14,7 +14,7 @@
  */
 
 import type { DatabaseDiscoveryPack } from './DatabaseDiscoveryPack';
-import type { DatabaseEngine } from './types';
+import { isDatabaseEngine, DATABASE_ENGINE_CHOICES, type DatabaseEngine } from './types';
 import { PostgresDiscoveryPack } from './postgres/PostgresDiscoveryPack';
 import { SybaseDiscoveryPack } from './sybase/SybaseDiscoveryPack';
 
@@ -56,18 +56,18 @@ export function registerDatabasePack(
 export function getDatabasePack(
   engineKey: string,
 ): DatabaseDiscoveryPack | null {
-  if (engineKey !== 'postgres' && engineKey !== 'sybase') {
+  if (!isDatabaseEngine(engineKey)) {
     console.warn(
       `[databasePackFactory] Unknown engine key '${engineKey}'. ` +
-        `Expected 'postgres' or 'sybase'.`,
+        `Expected one of ${DATABASE_ENGINE_CHOICES}.`,
     );
     return null;
   }
   const ctor = REGISTRY.get(engineKey);
   if (!ctor) {
     console.warn(
-      `[databasePackFactory] No pack registered for engine '${engineKey}'. ` +
-        `Group 3 wires 'postgres'; Group 4 wires 'sybase'.`,
+      `[databasePackFactory] No pack registered for engine '${engineKey}' ` +
+        `(registered: ${Array.from(REGISTRY.keys()).join(', ')}).`,
     );
     return null;
   }

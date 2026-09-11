@@ -26,7 +26,7 @@ import { Router, Request, Response } from 'express';
 
 import { ARCHITECTURE_MODEL_SERVICE_BASE_URL } from '../config';
 import type { ApiAuthSecret } from '../types/secrets';
-import type { DbConnectionConfig, DbType } from '../types/db';
+import { isDbType, type DbConnectionConfig, type DbType } from '../types/db';
 import {
   runLogReplayCurrentCapture,
   type LogReplayCorpusItemInput,
@@ -56,7 +56,7 @@ interface RunBody {
 
 function toDbConfig(block: DbBlock | null | undefined): DbConnectionConfig | null {
   if (!block) return null;
-  if (block.db_type !== 'sybase' && block.db_type !== 'postgres') return null;
+  if (!isDbType(block.db_type)) return null;
   if (!block.host || !block.database || !block.username || !block.password) return null;
   if (typeof block.port !== 'number' || !Number.isFinite(block.port)) return null;
   return {

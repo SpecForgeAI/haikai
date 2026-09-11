@@ -12,7 +12,7 @@ import type { RoutineDescriptor, RoutineInvocationEnvelope, RoutineInvocationReq
 import type { CaptureCompensationContext } from '../captureCompensation';
 import { runCompensationBracket } from '../compensation/compensationRunner';
 import { computeStateDelta, snapshotEffectTables } from '../stateDelta';
-import { loadPairRuleset, type MigrationPairRuleset } from '../../migrationPairRules';
+import { pairRulesetForSource, type MigrationPairRuleset } from '../../migrationPairRules';
 import { bindInputs } from '../procCapture/routineScenarioSeeds';
 import type { ProcBaselineItemDto, RoutineCatalogRow } from '../procCapture/types';
 import { compareScenario, procRuleIds, summariseRoutineParity, type RoutineParitySummary, type ScenarioParityResult } from './procParityComparator';
@@ -50,6 +50,8 @@ export interface RunRoutineParityArgs {
   compensation: CaptureCompensationContext | null;
   routinesById: Map<string, RoutineCatalogRow>;
   ruleset?: MigrationPairRuleset | null;
+  /** SOURCE engine key the baseline was captured on (selects the pair ruleset). */
+  sourceEngine?: string | null;
   waivers?: ProcParityWaiver[];
   upstreamDivergentTables?: string[];
   purpose: RoutineParityReport['purpose'];
@@ -68,7 +70,7 @@ function uniqLower(values: string[]): string[] {
 
 /** Replay + compare every baseline item of ONE routine. */
 export async function runRoutineParity(args: RunRoutineParityArgs): Promise<RoutineParityReport> {
-  const ruleset = args.ruleset === undefined ? loadPairRuleset() : args.ruleset;
+  const ruleset = args.ruleset === undefined ? pairRulesetForSource(args.sourceEngine ?? null) : args.ruleset;
   const now = args.now ?? (() => new Date());
   const snapshot = args.snapshotTables ?? snapshotEffectTables;
   const runBracket = args.runBracket ?? runCompensationBracket;

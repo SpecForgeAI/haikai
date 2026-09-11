@@ -22,6 +22,7 @@ import type {
   DatabaseDiscoveryCredentials,
   IntrospectionResult,
 } from './types';
+import { isDatabaseEngine } from './types';
 
 export interface S0AutoSnapshotOutcome {
   status: 'taken' | 'failed' | 'skipped';
@@ -99,7 +100,7 @@ export async function takeS0AutoSnapshot(args: {
 }): Promise<S0AutoSnapshotOutcome> {
   const fetchFn = args.fetchFn ?? fetch;
 
-  if (args.config.dbEngine !== 'sybase' && args.config.dbEngine !== 'postgres') {
+  if (!isDatabaseEngine(args.config.dbEngine)) {
     return {
       status: 'skipped',
       snapshotId: null,

@@ -96,6 +96,8 @@ export async function runProcParityViaAmvs(args: {
   translationAttemptId?: string | null;
   waivers?: Array<{ scope: 'routine' | 'scenario'; routine: string; scenario?: string | null; reason: string }>;
   upstreamDivergentTables?: string[];
+  /** SOURCE engine key (pair-per-project): selects the pair ruleset in AMVS. */
+  sourceEngine?: string | null;
 }): Promise<ProcParityRunOutcome> {
   const url = `${amvsBase()}/api-migration-validation/api/proc-parity/run`;
   const resp = await longRunningPostJson(url, {
@@ -107,6 +109,7 @@ export async function runProcParityViaAmvs(args: {
     purpose: args.purpose,
     pack_id: args.packId ?? null,
     translation_attempt_id: args.translationAttemptId ?? null,
+    source_engine: args.sourceEngine ?? null,
     waivers: args.waivers ?? [],
     upstream_divergent_tables: args.upstreamDivergentTables ?? [],
   });

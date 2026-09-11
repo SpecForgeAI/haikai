@@ -34,7 +34,8 @@ import {
   runDataParityComparison,
 } from '../services/dataParity/dataParityComparator';
 import { archModelClient } from '../services/archModelClient';
-import { loadPairRuleset } from '../migrationPairRules';
+import { pairRulesetForSource } from '../migrationPairRules';
+import { isDbType, DB_TYPE_CHOICES } from '../types/db';
 import { createTracer } from '../trace';
 
 // DATA-stage predicate emission (predicate run-judging — see
@@ -79,8 +80,8 @@ interface RunBody {
 
 function dbBlockError(label: string, block: DbBlock | undefined): string | null {
   if (!block) return `${label} is required`;
-  if (block.db_type !== 'postgres' && block.db_type !== 'sybase') {
-    return `${label}.db_type must be 'postgres' or 'sybase'`;
+  if (!isDbType(block.db_type)) {
+    return `${label}.db_type must be one of ${DB_TYPE_CHOICES}`;
   }
   for (const field of ['host', 'database', 'username', 'password'] as const) {
     if (!block[field] || typeof block[field] !== 'string') {
@@ -170,7 +171,7 @@ export function buildDataParityRunRouter(deps: DataParityRunDeps = {}): Router {
 
     trace.stageStart('DATA', corr);
     try {
-      const ruleset = loadPairRuleset();
+      const ruleset = pairRulesetForSource(body.source_db!.db_type);
       const report = await runDataParityComparison({
         source,
         target,

@@ -1,6 +1,7 @@
 {
   "pair_id": "sybase15-postgres18",
   "version": 2,
+  "rules_prefix": "SYBPG.",
   "source": {
     "engine": "sybase",
     "version": "15",

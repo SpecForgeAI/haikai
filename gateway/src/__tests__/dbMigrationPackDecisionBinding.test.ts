@@ -248,8 +248,12 @@ describe('engine gate over the saved-fallback read (end-to-end)', () => {
     const inputs = await inputsViaDefaultReader();
 
     expect(assertSupportedEnginePair(inputs)).toEqual({
-      sourceEngine: 'sybase_ase',
-      targetEngine: 'postgresql',
+      sourceEngine: 'sybase',
+      targetEngine: 'postgres',
+      pairId: 'sybase15-postgres18',
+      rulesetVersion: 2,
+      sourceEngineDisplay: 'Sybase ASE 15',
+      targetEngineDisplay: 'PostgreSQL 18',
     });
     expect(inputs.resolvedTargetArchitectureId).toBe(SAVED_TARGET_ID);
   });

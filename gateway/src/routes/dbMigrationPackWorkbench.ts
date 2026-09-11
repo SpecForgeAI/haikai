@@ -27,6 +27,7 @@ import { defaultFetchPackRow, defaultFetchRoutineCatalog, defaultFetchTranslatio
 import { deriveDescriptorsByRoutine } from '../services/dbMigrationPack/routineInvocationDescriptor';
 import { loadPairRuleset } from '../migrationPairRules';
 import { runTranslationEmission } from '../services/dbMigrationPack/translationEmission';
+import { rulesetForManifest, manifestSourceEngine } from '../services/dbMigrationPack/pairRuleset';
 
 const BASE = '/projects/:projectId/db-migration-packs/:packId';
 
@@ -164,9 +165,10 @@ export function createDbMigrationPackWorkbenchRouter(deps: WorkbenchRouteDeps = 
       if (!architectureId || !row) return fail(res, 404, 'Translation not found on this pack.');
       if (!row.routine_id) return fail(res, 409, 'This translation has no routine-catalog row; run the DB scan first.', { code: 'NO_ROUTINE' });
       const routines = await fetchRoutines(projectId, architectureId);
-      const descriptors = deriveDescriptorsByRoutine(routines, loadPairRuleset());
+      const manifest = (pack.manifest_json ?? null) as Record<string, unknown> | null;
+      const descriptors = deriveDescriptorsByRoutine(routines, rulesetForManifest(manifest));
       const waivers = toRunnerWaivers(await fetchWaivers(projectId));
-      const outcome = await runParity({ projectId, architectureId, targetDb: target, routineIds: [row.routine_id], descriptors: Object.fromEntries(descriptors), purpose: 'workbench', packId, waivers });
+      const outcome = await runParity({ projectId, architectureId, targetDb: target, routineIds: [row.routine_id], descriptors: Object.fromEntries(descriptors), purpose: 'workbench', packId, waivers, sourceEngine: manifestSourceEngine(manifest) });
       if (outcome.error) return fail(res, 409, outcome.error);
       const report = outcome.reports[0] ?? null;
       if (report) {

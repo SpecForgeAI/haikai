@@ -69,6 +69,7 @@ import {
   StructuralDispositionRow,
   StructuralFindingState,
 } from './migrationStructuralFindings';
+import type { SupportedDbEngine } from './dbMigrationPack/dbCredentialBlock';
 
 // ---------------------------------------------------------------------------
 // Wire shapes
@@ -82,7 +83,9 @@ export interface HarvestConnection {
   username: string;
   /** Request-lifetime only — see module doc comment. */
   password: string;
-  /** Sybase driver selection; discovery-service defaults 'auto'. */
+  /** Source engine key; defaults to 'sybase' (the original harvest flow). */
+  dbEngine?: SupportedDbEngine;
+  /** Sybase driver selection; discovery-service defaults 'auto'. Ignored by other engines. */
   sybaseDriver?: string;
   /** Optional schema include filter for the catalog walk. */
   includeSchemas?: string[] | null;
@@ -199,7 +202,7 @@ const defaultCreateRun: NonNullable<HarvestDeps['createRun']> = async (args) => 
       // Field names are the discovery-service DatabaseDiscoveryConfig shape
       // (camelCase — NOT the AMS snake_case wire; runs.ts consumes it as-is).
       database_config: {
-        dbEngine: 'sybase',
+        dbEngine: connection.dbEngine ?? 'sybase',
         host: connection.host,
         port: connection.port,
         databaseName: connection.databaseName,
@@ -210,7 +213,9 @@ const defaultCreateRun: NonNullable<HarvestDeps['createRun']> = async (args) => 
         profilingMode: 'none',
         queryTimeoutSeconds: 30,
         readOnlyConfirmed: true,
-        sybaseDriver: connection.sybaseDriver ?? 'auto',
+        ...((connection.dbEngine ?? 'sybase') === 'sybase'
+          ? { sybaseDriver: connection.sybaseDriver ?? 'auto' }
+          : {}),
       },
       // The password lives in this request body ONLY; discovery-service stores
       // it in its in-memory secretsStore for the run's lifetime, never in AMS.

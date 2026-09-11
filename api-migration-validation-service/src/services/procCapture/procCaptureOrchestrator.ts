@@ -23,7 +23,7 @@ import { runCompensationBracket } from '../compensation/compensationRunner';
 import { computeStateDelta, snapshotEffectTables } from '../stateDelta';
 import { latestSnapshotId } from '../s0/manifest';
 import { gatewayClient as defaultGatewayClient, type GatewayClient } from '../gatewayClient';
-import { loadPairRuleset } from '../../migrationPairRules';
+import { pairRulesetForSource, sessionProfileRule } from '../../migrationPairRules';
 import { redactJson } from '../redactor';
 import { procBehaviourClient, type ProcBehaviourClientSurface } from '../procBehaviourClient';
 import { PROC_TOOLS } from './procTools';
@@ -130,13 +130,20 @@ const FINDING_CLASS: ReadonlySet<ProcDiagnosticType> = new Set([
   'result_set_truncated',
 ]);
 
-/** SESSION.001 SET list: env override, else the ruleset, else nothing. */
-export function resolveSessionSet(sessionProfile?: { set?: string[] } | null): string[] {
+/**
+ * Session SET list: env override, else the explicit profile, else the pair
+ * ruleset's session-profile rule for the SOURCE engine (looked up by role,
+ * never by a hardcoded rule id), else nothing.
+ */
+export function resolveSessionSet(
+  sessionProfile?: { set?: string[] } | null,
+  sourceEngine?: string | null,
+): string[] {
   const override = procCallSessionSetOverride();
   if (override) return override;
   if (sessionProfile?.set && sessionProfile.set.length > 0) return sessionProfile.set;
-  const ruleset = loadPairRuleset();
-  const rule = ruleset?.rules.find((r) => r.id === 'SYBPG.PROC.SESSION.001');
+  const ruleset = pairRulesetForSource(sourceEngine);
+  const rule = sessionProfileRule(ruleset);
   return rule?.session_profile?.set ?? [];
 }
 
@@ -300,7 +307,7 @@ export async function orchestrateProcCaptureSession(
       max_result_sets: tuning.max_result_sets ?? PROC_CALL_MAX_RESULT_SETS(),
       timeout_seconds: tuning.invocation_timeout_seconds ?? PROC_CALL_TIMEOUT_SECONDS(),
     };
-    const sessionSet = (deps.sessionSetResolver ?? (() => resolveSessionSet(session.session_profile_json)))();
+    const sessionSet = (deps.sessionSetResolver ?? (() => resolveSessionSet(session.session_profile_json, cfg.dbType)))();
 
     // ---- Routines in scope, callee-first ---------------------------------
     run.phase = 'loading_routines';

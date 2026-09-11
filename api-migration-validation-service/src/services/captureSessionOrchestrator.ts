@@ -70,6 +70,7 @@ import {
 // snapshot on bracket residue (minimal-diff single-table restore).
 import { latestSnapshotId, readManifest, snapshotDirFor } from './s0/manifest';
 import { restoreSingleTableFromSnapshot } from './s0/restoreRunner';
+import { isDbType } from '../types/db';
 
 // Haikai workflow trace logger (OFF by default; no-op unless HAIKAI_TRACE is
 // set). See docs/trace-logging.md. The corr bag always carries project + arch
@@ -1694,7 +1695,7 @@ export async function orchestrateCaptureSession(
     // which rejected out of the orchestrator setup (before its try/catch) and
     // left the session stuck in RUNNING. Only the two supported adapters
     // proceed; anything else skips DB sampling entirely.
-    if (cfg.dbType !== 'postgres' && cfg.dbType !== 'sybase') return null;
+    if (!isDbType(cfg.dbType)) return null;
     return createDbAdapter({
       dbType: cfg.dbType,
       host: cfg.host,
@@ -1714,7 +1715,7 @@ export async function orchestrateCaptureSession(
   let compensationInactiveReason: string | null = null;
   if (dbAdapter && secrets.db?.password) {
     const cfg = session.dbConfigRedactedJson;
-    if (cfg && (cfg.dbType === 'postgres' || cfg.dbType === 'sybase')) {
+    if (cfg && isDbType(cfg.dbType)) {
       const built = await buildCaptureCompensationContext({
         projectId: session.projectId,
         architectureId: session.architectureId,

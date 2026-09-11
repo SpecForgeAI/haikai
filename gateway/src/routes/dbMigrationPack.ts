@@ -95,6 +95,7 @@ import {
   resolveStructuralFindingStates,
 } from '../services/migrationStructuralFindings';
 import { runStructuralHarvest } from '../services/dbSchemaHarvest';
+import { SUPPORTED_DB_ENGINES, type SupportedDbEngine } from '../services/dbMigrationPack/dbCredentialBlock';
 
 export const dbMigrationPackRouter = Router();
 
@@ -1305,6 +1306,7 @@ dbMigrationPackRouter.post(`${BASE}/structural-harvest`, async (req, res) => {
     database_name?: string;
     username?: string;
     password?: string;
+    db_engine?: string;
     sybase_driver?: string;
     include_schemas?: string[];
     service_id?: string;
@@ -1352,6 +1354,9 @@ dbMigrationPackRouter.post(`${BASE}/structural-harvest`, async (req, res) => {
         databaseName: body.database_name!,
         username: body.username!,
         password: body.password!,
+        dbEngine: SUPPORTED_DB_ENGINES.includes(body.db_engine as SupportedDbEngine)
+          ? (body.db_engine as SupportedDbEngine)
+          : undefined,
         sybaseDriver:
           typeof body.sybase_driver === 'string' ? body.sybase_driver : undefined,
         includeSchemas: Array.isArray(body.include_schemas)

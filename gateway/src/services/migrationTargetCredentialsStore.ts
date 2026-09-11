@@ -26,6 +26,7 @@
  * Spec: Migration Reconciliation + Bug Loop (2026-06-14, Spec 4 of 4) --
  * Task Group 2.
  */
+import type { SupportedDbEngine } from './dbMigrationPack/dbCredentialBlock';
 
 /**
  * The target-side API auth bundle. Mirrors the validation service's
@@ -54,7 +55,7 @@ export interface TargetApiAuthSecret {
  * to the AMVS in-memory secrets route.
  */
 export interface TargetDbSecret {
-  dbType: 'postgres' | 'sybase';
+  dbType: SupportedDbEngine;
   host: string;
   port: number;
   database: string;

@@ -12,6 +12,7 @@ import {
 import type { ApiAuthSecret, SecretsBundle } from '../types/secrets';
 import { parseEndpointScopeKeys } from '../services/endpointScope';
 import { createDbAdapter } from '../services/db/dbAdapterFactory';
+import { isDbType } from '../types/db';
 
 /**
  * Target-side capture-session action endpoints. Mounted under the same
@@ -507,11 +508,9 @@ export function buildTargetCaptureSessionActionsRouter(
           const dbSecret = secretsStore.get(sessionId)?.db;
           if (!cfg || !cfg.host || !cfg.port || !cfg.database || !cfg.username) return null;
           if (!dbSecret?.password) return null;
-          if (cfg.dbType !== 'postgres' && cfg.dbType !== 'sybase') return null;
+          if (!isDbType(cfg.dbType)) return null;
           return {
-            // The guard above proves the literal; `dbType?: string` on the
-            // redacted-json shape defeats narrowing, hence the assertion.
-            dbType: cfg.dbType as 'postgres' | 'sybase',
+            dbType: cfg.dbType,
             host: cfg.host,
             port: cfg.port,
             database: cfg.database,

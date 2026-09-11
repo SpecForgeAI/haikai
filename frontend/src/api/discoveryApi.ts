@@ -57,6 +57,7 @@
  *   gateway's ATOMIC cascade endpoint (sibling of `bulkReviewCandidates`),
  *   REPLACING the best-effort per-row fan-out for the cascade-apply path.
  */
+import type { DbEngineKey } from './dbEngines';
 
 // ============================================================================
 // Constants
@@ -1714,7 +1715,7 @@ export async function uploadDiscoveryRunContractFiles(
  * `sybase-discovery-sidecar/` JVM helper (Group 4) so both are enabled in
  * the v1 UI.
  */
-export type DiscoveryDatabaseEngine = 'postgres' | 'sybase';
+export type DiscoveryDatabaseEngine = DbEngineKey;
 
 /**
  * Profiling-mode ladder (D8): `none | basic | standard | deep`. Default is

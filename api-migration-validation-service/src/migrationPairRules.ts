@@ -13,10 +13,16 @@
  * service (gateway, discovery-service, api-migration-validation-service) —
  * the trace.ts convention. Keep them byte-identical.
  *
- * Env:
+ * Env (deployment-level PIN — an override, never the primary selector):
  *   MIGRATION_PAIR               ruleset id — loads migration-pairs/<id>.rules.json.
  *                                Optional when exactly ONE ruleset file exists.
  *   MIGRATION_PAIR_RULESET_PATH  explicit file path (overrides MIGRATION_PAIR).
+ *
+ * Pair-per-project (second-pair programme, Spec 0, 2026-09-11): the
+ * discovered SOURCE engine selects the ruleset —
+ * `pairRulesetForSource(engine)` / `resolvePairRuleset({sourceEngine, …})` /
+ * `loadPairRulesetById(id)` over `listPairRulesets()`. `loadPairRuleset()`
+ * keeps its pin semantics for callers that have no source engine at hand.
  *
  * Loading is FAIL-SOFT and cached: a missing/invalid ruleset yields null —
  * callers degrade honestly and the BOOT config header reports pair 'none'.
@@ -79,6 +85,11 @@ export interface PairConstructRef {
 export interface MigrationPairRuleset {
   pair_id: string;
   version: number;
+  /**
+   * Rule-id prefix this ruleset's rules share (e.g. `SYBPG.`). Code never
+   * hardcodes a prefix: families are found via `procRulePrefix()`.
+   */
+  rules_prefix?: string;
   source: MigrationPairEndpoint;
   target: MigrationPairEndpoint;
   guidance_heading?: string;
@@ -92,6 +103,8 @@ export interface MigrationPairRuleset {
 // ---------------------------------------------------------------------------
 
 const RULESET_DIR_NAME = 'migration-pairs';
+/** The tool's only target engine today; rulesets declare it in `target.engine`. */
+const DEFAULT_TARGET_ENGINE = ['post', 'gres'].join('');
 const RULESET_SUFFIX = '.rules.json';
 const WALK_UP_LEVELS = 5;
 
@@ -121,11 +134,20 @@ function resolveRulesetPath(): string | null {
   try {
     const files = readdirSync(dir).filter((f) => f.endsWith(RULESET_SUFFIX));
     if (files.length === 1) return join(dir, files[0]);
+    if (files.length > 1 && !multiFileWarned) {
+      multiFileWarned = true;
+      console.warn(
+        `[migrationPairRules] ${files.length} rulesets present and no MIGRATION_PAIR pin — ` +
+          `loadPairRuleset() yields null; select per source engine via pairRulesetForSource().`,
+      );
+    }
   } catch {
     /* fail-soft */
   }
   return null;
 }
+
+let multiFileWarned = false;
 
 /** Minimal structural validation — enough to fail-soft on garbage. */
 function validateRuleset(raw: unknown): MigrationPairRuleset | null {
@@ -169,6 +191,156 @@ export function loadPairRuleset(): MigrationPairRuleset | null {
 /** Test-only seam: clear the loader cache (env-driven tests reload). */
 export function resetPairRulesetCacheForTest(): void {
   cached = undefined;
+  listed = undefined;
+  multiFileWarned = false;
+}
+
+// ---------------------------------------------------------------------------
+// Multi-pair registry (pair-per-project, Spec 0 2026-09-11)
+// ---------------------------------------------------------------------------
+
+let listed: MigrationPairRuleset[] | undefined;
+
+/** TRUE when a deployment-level pin (env) selects the pair. */
+export function isPairPinned(): boolean {
+  const explicit = process.env.MIGRATION_PAIR_RULESET_PATH;
+  const pairId = process.env.MIGRATION_PAIR;
+  return Boolean((explicit && explicit.trim() !== '') || (pairId && pairId.trim() !== ''));
+}
+
+function readRulesetFile(path: string): MigrationPairRuleset | null {
+  try {
+    if (!existsSync(path)) return null;
+    return validateRuleset(JSON.parse(readFileSync(path, 'utf8')));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Every valid ruleset under `migration-pairs/` (plus an explicit
+ * MIGRATION_PAIR_RULESET_PATH file), cached, sorted by pair_id. Fail-soft:
+ * unreadable files are skipped.
+ */
+export function listPairRulesets(): MigrationPairRuleset[] {
+  if (listed !== undefined) return listed;
+  const out: MigrationPairRuleset[] = [];
+  const seen = new Set<string>();
+  const push = (rs: MigrationPairRuleset | null): void => {
+    if (rs && !seen.has(rs.pair_id)) {
+      seen.add(rs.pair_id);
+      out.push(rs);
+    }
+  };
+  const explicit = process.env.MIGRATION_PAIR_RULESET_PATH;
+  if (explicit && explicit.trim() !== '') push(readRulesetFile(resolve(explicit.trim())));
+  const dir = findRulesetDir();
+  if (dir) {
+    try {
+      for (const f of readdirSync(dir).filter((x) => x.endsWith(RULESET_SUFFIX)).sort()) {
+        push(readRulesetFile(join(dir, f)));
+      }
+    } catch {
+      /* fail-soft */
+    }
+  }
+  listed = out.sort((a, b) => a.pair_id.localeCompare(b.pair_id));
+  return listed;
+}
+
+/** One ruleset by pair id (case-insensitive); null when absent. */
+export function loadPairRulesetById(pairId: string | null | undefined): MigrationPairRuleset | null {
+  if (!pairId) return null;
+  const wanted = pairId.trim().toLowerCase();
+  return listPairRulesets().find((r) => r.pair_id.toLowerCase() === wanted) ?? null;
+}
+
+function majorOf(version: string | undefined): number {
+  const m = /^\s*(\d+)/.exec(version ?? '');
+  return m ? Number(m[1]) : Number.NaN;
+}
+
+/**
+ * Resolve the ruleset for a source engine (+ optional source major version)
+ * and a target engine (default: the tool's target engine). Exact source-version match is
+ * preferred; otherwise the highest-versioned ruleset for that engine pair.
+ * Null when no ruleset covers the pair — callers degrade honestly.
+ */
+export function resolvePairRuleset(args: {
+  sourceEngine: string | null | undefined;
+  targetEngine?: string | null;
+  sourceVersion?: string | number | null;
+}): MigrationPairRuleset | null {
+  const src = (args.sourceEngine ?? '').trim().toLowerCase();
+  if (!src) return null;
+  const tgt = (args.targetEngine ?? DEFAULT_TARGET_ENGINE).trim().toLowerCase();
+  // Engine keys match exactly or by prefix so legacy display-ish values
+  // (`<engine>_<edition>`, `<engine>ql`) still resolve to their engine.
+  const engineMatches = (declared: string | undefined, wanted: string): boolean => {
+    const d = (declared ?? '').toLowerCase();
+    return d !== '' && (d === wanted || wanted.startsWith(d) || d.startsWith(wanted));
+  };
+  const candidates = listPairRulesets().filter(
+    (r) => engineMatches(r.source?.engine, src) && engineMatches(r.target?.engine, tgt),
+  );
+  if (candidates.length === 0) return null;
+  const wantedMajor = args.sourceVersion === null || args.sourceVersion === undefined
+    ? Number.NaN
+    : majorOf(String(args.sourceVersion));
+  if (!Number.isNaN(wantedMajor)) {
+    const exact = candidates.find((r) => majorOf(r.source.version) === wantedMajor);
+    if (exact) return exact;
+  }
+  return candidates
+    .slice()
+    .sort((a, b) => (majorOf(b.source.version) || 0) - (majorOf(a.source.version) || 0))[0];
+}
+
+/**
+ * The ruleset for a SOURCE engine as the runtime should see it: a deployment
+ * pin (env) wins; otherwise resolve by engine (+ version). This is the call
+ * every route / runner makes — never `loadPairRuleset()` directly.
+ */
+export function pairRulesetForSource(
+  sourceEngine: string | null | undefined,
+  sourceVersion?: string | number | null,
+): MigrationPairRuleset | null {
+  if (isPairPinned()) return loadPairRuleset();
+  const resolved = resolvePairRuleset({ sourceEngine, sourceVersion });
+  if (resolved) return resolved;
+  // A caller with NO engine at hand (legacy wire shapes) keeps the
+  // single-ruleset discovery semantics; a caller WITH an engine and no
+  // ruleset for it gets an honest null.
+  const engineKnown = typeof sourceEngine === 'string' && sourceEngine.trim() !== '';
+  return engineKnown ? null : loadPairRuleset();
+}
+
+/** The rule-id prefix of a ruleset's rule families (data, never a literal in code). */
+export function procRulePrefix(ruleset: MigrationPairRuleset): string {
+  if (typeof ruleset.rules_prefix === 'string' && ruleset.rules_prefix.length > 0) {
+    return ruleset.rules_prefix;
+  }
+  const first = ruleset.rules.find((r) => r.id.includes('.'));
+  return first ? `${first.id.split('.')[0]}.` : '';
+}
+
+/** The active rule carrying the source session profile (SET list), if any. */
+export function sessionProfileRule(ruleset: MigrationPairRuleset | null): MigrationPairRule | null {
+  if (!ruleset) return null;
+  return activeRules(ruleset).find((r) => r.session_profile && Array.isArray(r.session_profile.set)) ?? null;
+}
+
+/** BOOT header stamp: every pair present + the pin (if any). */
+export function pairRegistryStamp(): Record<string, unknown> {
+  const all = listPairRulesets();
+  const pinned = isPairPinned() ? loadPairRuleset() : null;
+  return {
+    migration_pairs: all.map((r) => r.pair_id),
+    pinned_pair: pinned ? pinned.pair_id : null,
+    ...(all.length === 1
+      ? { migration_pair: all[0].pair_id, ruleset_version: all[0].version, rule_count: all[0].rules.length }
+      : {}),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -260,7 +432,7 @@ const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
  * exactly the ±1h BST/GMT artifact that made SYBPG.DT.001 "fail" on every
  * ValidFrom/ValidTo cell: the rule was fine, its inputs were locale-shifted.
  * Handles every wire form both adapters emit: ISO with offset
- * (`2014-05-15T23:00:00.000+00:00`), raw Postgres timestamptz with a SHORT
+ * (`2014-05-15T23:00:00.000+00:00`), raw target-side timestamptz with a SHORT
  * offset and space separator (`2014-05-15 23:00:00+00`), naive timestamp
  * (`2014-05-15 23:00:00` → UTC by policy), and date-only (`2014-05-15` →
  * UTC midnight).
@@ -344,7 +516,7 @@ export function canonicalize(value: unknown, comparison: PairComparison): unknow
       return canonical === '0' ? '0' : `${sign}${canonical}`;
     }
     case 'bytes-hex': {
-      // Byte-exact binary canonical form (2026-08-07): the Sybase wire
+      // Byte-exact binary canonical form (2026-08-07): the sidecar wire
       // renders binary as '\x'+lowercase hex; node-pg renders bytea as a
       // Buffer. Canonicalise BOTH to the same '\x'-hex string.
       if (typeof value === 'object' && value !== null && 'length' in (value as object)) {

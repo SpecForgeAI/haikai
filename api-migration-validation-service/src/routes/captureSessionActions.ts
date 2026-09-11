@@ -107,6 +107,7 @@ import type {
   ToolExecutionContext,
   ArchModelToolWriteSurface,
 } from '../services/tools';
+import { isDbType, DB_TYPE_CHOICES } from '../types/db';
 
 // Haikai workflow trace logger (OFF by default; no-op unless HAIKAI_TRACE
 // is set). See docs/trace-logging.md. The /start orchestration writes the
@@ -3148,8 +3149,8 @@ export function buildCaptureSessionActionsRouter(
       if (!secrets.db?.password) {
         return fail(res, 400, 'DB password missing from in-memory secrets bundle.');
       }
-      if (cfg.dbType !== 'postgres' && cfg.dbType !== 'sybase') {
-        return fail(res, 400, `Unsupported dbType: ${String(cfg.dbType)}`);
+      if (!isDbType(cfg.dbType)) {
+        return fail(res, 400, `Unsupported dbType: ${String(cfg.dbType)} (expected one of ${DB_TYPE_CHOICES})`);
       }
 
       const adapter = dbAdapterFactory({

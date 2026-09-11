@@ -46,6 +46,7 @@ import {
   StructuralFinding,
   UnsupportedEnginePairError,
 } from './types';
+import { isPairPinned, loadPairRuleset, resolvePairRuleset } from '../../migrationPairRules';
 
 // ---------------------------------------------------------------------------
 // Raw wire shapes (AMS snake_case wire; relationship ids camel per the DTO)
@@ -317,22 +318,42 @@ export function computeInputSnapshotHash(inputs: GenerationInputs): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Reject any source/target pair other than Sybase ASE -> PostgreSQL.
- * Target engine = the `db.engine` captured decision (mandatory). Source
- * engine = the engineKey carried on db_discovery_pack findings (defaults to
- * sybase when no finding declares one — the committed model alone has no
- * engine discriminator).
+ * Source engines this deterministic generator can emit a pack for. The
+ * ruleset registry decides whether a PAIR exists; this list decides whether
+ * the GENERATOR knows the source dialect (type map, DDL rules, extract
+ * expressions). SQL Server joins the list in Spec 5 of the pair programme.
  */
-export function assertSupportedEnginePair(inputs: GenerationInputs): {
+export const GENERATOR_SUPPORTED_SOURCE_ENGINES: readonly string[] = ['sybase'];
+
+export interface ResolvedEnginePair {
+  /** Engine KEY (`sybase`, `mssql`, …) — the pair-resolution vocabulary. */
   sourceEngine: string;
+  /** Always `postgres` today (PostgreSQL is the only supported target). */
   targetEngine: string;
-} {
+  pairId: string | null;
+  rulesetVersion: number | null;
+  sourceEngineDisplay: string | null;
+  targetEngineDisplay: string | null;
+}
+
+/**
+ * Resolve + gate the source/target pair (pair-per-project, 2026-09-11).
+ * Target engine = the `db.engine` captured decision (mandatory; PostgreSQL
+ * only). Source engine = the engineKey carried on db_discovery_pack findings
+ * (defaults to sybase when no finding declares one — the committed model
+ * alone has no engine discriminator; a generator-supported engine wins when
+ * several are present). A ruleset must cover the pair AND the generator must
+ * know the source dialect — either gap is a loud, named refusal.
+ */
+export function assertSupportedEnginePair(inputs: GenerationInputs): ResolvedEnginePair {
   const engineKeys = new Set<string>();
   for (const f of inputs.findings) {
     const key = f.detail_json?.['engineKey'];
     if (typeof key === 'string' && key.length > 0) engineKeys.add(key.toLowerCase());
   }
-  const sourceEngine = engineKeys.size === 0 || engineKeys.has('sybase') ? 'sybase' : [...engineKeys].sort()[0];
+  const supportedPresent = [...engineKeys].filter((k) => GENERATOR_SUPPORTED_SOURCE_ENGINES.includes(k)).sort();
+  const sourceEngine =
+    engineKeys.size === 0 ? 'sybase' : supportedPresent[0] ?? [...engineKeys].sort()[0];
 
   const engineDecision = inputs.dbDecisions.find((d) => d.decisionCode === 'db.engine');
   if (!engineDecision) {
@@ -344,12 +365,36 @@ export function assertSupportedEnginePair(inputs: GenerationInputs): {
   }
   const targetEngine = engineDecision.answerValue;
   if (!/postgres/i.test(targetEngine)) {
-    throw new UnsupportedEnginePairError(sourceEngine, targetEngine);
+    throw new UnsupportedEnginePairError(
+      sourceEngine,
+      targetEngine,
+      'PostgreSQL is the only supported target engine.'
+    );
   }
-  if (sourceEngine !== 'sybase') {
-    throw new UnsupportedEnginePairError(sourceEngine, targetEngine);
+  const ruleset =
+    resolvePairRuleset({ sourceEngine, targetEngine: 'postgres' }) ?? (isPairPinned() ? loadPairRuleset() : null);
+  if (!ruleset) {
+    throw new UnsupportedEnginePairError(
+      sourceEngine,
+      targetEngine,
+      `No migration-pair ruleset covers ${sourceEngine} -> postgres (migration-pairs/*.rules.json).`
+    );
   }
-  return { sourceEngine: 'sybase_ase', targetEngine: 'postgresql' };
+  if (!GENERATOR_SUPPORTED_SOURCE_ENGINES.includes(sourceEngine)) {
+    throw new UnsupportedEnginePairError(
+      sourceEngine,
+      targetEngine,
+      `The pack generator does not support source engine '${sourceEngine}' yet (ruleset ${ruleset.pair_id} is present).`
+    );
+  }
+  return {
+    sourceEngine,
+    targetEngine: 'postgres',
+    pairId: ruleset.pair_id,
+    rulesetVersion: ruleset.version,
+    sourceEngineDisplay: ruleset.source.display ?? null,
+    targetEngineDisplay: ruleset.target.display ?? null,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -379,7 +424,8 @@ function columnKey(schema: string, table: string, column: string): string {
  * translator (type mapping + emission) consumes.
  */
 export function buildSourceSchemaIr(inputs: GenerationInputs): SourceSchemaIr {
-  const { sourceEngine, targetEngine } = assertSupportedEnginePair(inputs);
+  const pair = assertSupportedEnginePair(inputs);
+  const { sourceEngine, targetEngine } = pair;
 
   // --- tables + columns from the committed model -------------------------
   const tables: IrTable[] = [];
@@ -684,6 +730,10 @@ export function buildSourceSchemaIr(inputs: GenerationInputs): SourceSchemaIr {
     sourceCharset: null,
     sourceEngine,
     targetEngine,
+    pairId: pair.pairId,
+    rulesetVersion: pair.rulesetVersion,
+    sourceEngineDisplay: pair.sourceEngineDisplay,
+    targetEngineDisplay: pair.targetEngineDisplay,
     tables,
     foreignKeys,
     sequences: [...sequencesByKey.values()].sort((a, b) =>

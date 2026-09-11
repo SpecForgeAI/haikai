@@ -36,7 +36,7 @@ export async function withDbPackSoftFail<T>(
   stage: string,
   fn: () => Promise<T>,
   onWarning: (finding: FindingEmitInput) => void,
-  engineKey: 'postgres' | 'sybase' | 'unknown' = 'unknown',
+  engineKey: 'postgres' | 'sybase' | 'mssql' | 'unknown' = 'unknown',
 ): Promise<T | null> {
   try {
     return await fn();

@@ -36,6 +36,7 @@ import type {
   DatabaseDiscoveryConfig,
   DatabaseDiscoveryCredentials,
 } from '../services/databasePacks/types';
+import { DEFAULT_PORT_BY_ENGINE, type DatabaseEngine } from '../services/databasePacks/types';
 
 /**
  * Shared body validation for the two scan modes. Returns the validation
@@ -68,12 +69,12 @@ function validateScanBody(body: {
  */
 function scanConfig(
   body: Partial<DatabaseDiscoveryConfig>,
-  engine: 'postgres' | 'sybase',
+  engine: DatabaseEngine,
 ): DatabaseDiscoveryConfig {
   return {
     dbEngine: engine,
     host: body.host ?? '',
-    port: body.port ?? (engine === 'postgres' ? 5432 : 5000),
+    port: body.port ?? DEFAULT_PORT_BY_ENGINE[engine],
     databaseName: body.databaseName ?? '',
     catalogName: body.catalogName ?? null,
     schemaName: body.schemaName ?? null,

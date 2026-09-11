@@ -62,7 +62,7 @@ export type ProcSessionStatus =
   | 'cancelled';
 
 export interface ProcDbConfig {
-  dbType: 'postgres' | 'sybase';
+  dbType: import('../../types/db').DbType;
   host: string;
   port: number;
   database: string;

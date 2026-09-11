@@ -27,6 +27,7 @@ import {
 } from './dbMigrationPack/procWorkbenchClients';
 import { loadPairRuleset } from '../migrationPairRules';
 import { ROUTINE_TRANSLATION_KINDS } from './migrationProcParityGate';
+import { rulesetForManifest, manifestSourceEngine } from './dbMigrationPack/pairRuleset';
 
 const trace = createTracer('gateway');
 
@@ -57,7 +58,15 @@ export type ProcParityRunResult =
   | { ok: false; error: string };
 
 export type ProcParityPreconditions =
-  | { ok: true; packId: string; routineIds: string[]; baselineId: string | null }
+  | {
+      ok: true;
+      packId: string;
+      routineIds: string[];
+      baselineId: string | null;
+      /** Pack manifest (pair-per-project: selects the ruleset + source engine). */
+      manifest?: Record<string, unknown> | null;
+      sourceEngine?: string | null;
+    }
   | { ok: false; blocked: string };
 
 /**
@@ -83,8 +92,9 @@ export async function checkProcParityPreconditions(
   const routineIds = translations
     .filter((t) => ROUTINE_TRANSLATION_KINDS.has(t.kind) && t.disposition === 'translate' && !!t.routine_id)
     .map((t) => t.routine_id as string);
+  const manifest = (packView.manifest ?? null) as unknown as Record<string, unknown> | null;
   if (routineIds.length === 0) {
-    return { ok: true, packId: packView.packId, routineIds, baselineId: null };
+    return { ok: true, packId: packView.packId, routineIds, baselineId: null, manifest, sourceEngine: manifestSourceEngine(manifest) };
   }
   const baseline = await fetchBaselineItems(projectId, architectureId);
   if (!baseline.baselineId) {
@@ -93,7 +103,7 @@ export async function checkProcParityPreconditions(
       blocked: 'No pinned proc behaviour baseline — capture and pin one (Baselines → Stored procs) first.',
     };
   }
-  return { ok: true, packId: packView.packId, routineIds, baselineId: baseline.baselineId };
+  return { ok: true, packId: packView.packId, routineIds, baselineId: baseline.baselineId, manifest, sourceEngine: manifestSourceEngine(manifest) };
 }
 
 /**
@@ -126,7 +136,7 @@ export async function runProcParityForArchitecture(
       fetchRoutines(args.projectId, args.architectureId),
       fetchWaivers(args.projectId),
     ]);
-    const descriptors = Object.fromEntries(deriveDescriptorsByRoutine(routines, loadRuleset()));
+    const descriptors = Object.fromEntries(deriveDescriptorsByRoutine(routines, rulesetForManifest(pre.manifest, loadRuleset)));
     const outcome = await runParity({
       projectId: args.projectId,
       architectureId: args.architectureId,
@@ -136,6 +146,7 @@ export async function runProcParityForArchitecture(
       purpose: args.purpose,
       packId,
       waivers: toRunnerWaivers(waiverRows),
+      sourceEngine: pre.sourceEngine ?? null,
     });
     if (outcome.error) return { ok: false, error: outcome.error };
     const statuses = outcome.reports.map((r) => r.summary.status);

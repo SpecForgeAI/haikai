@@ -42,7 +42,7 @@ import { redactSnippet, redactFullBody } from '../../../utils/snippetRedaction';
 /**
  * Engine discriminator for cross-engine title separation.
  */
-export type DbFindingEngineKey = 'postgres' | 'sybase' | 'unknown';
+export type DbFindingEngineKey = 'postgres' | 'sybase' | 'mssql' | 'unknown';
 
 /**
  * `db_migration_risk` riskCategory payload (D6 consolidation). Consumes

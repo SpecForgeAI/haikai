@@ -1106,6 +1106,10 @@ export function buildDbMigrationPackArtifacts(
     scope_receipt: ir.scopeReceipt ?? null,
     source_engine: ir.sourceEngine,
     target_engine: ir.targetEngine,
+    pair_id: ir.pairId ?? null,
+    ruleset_version: ir.rulesetVersion ?? null,
+    source_engine_display: ir.sourceEngineDisplay ?? null,
+    target_engine_display: ir.targetEngineDisplay ?? null,
     type_mapping_version: TYPE_MAPPING_VERSION,
     seed_margin: seedMargin,
     seed_margin_note:

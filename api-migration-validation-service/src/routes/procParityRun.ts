@@ -30,6 +30,7 @@ import { runRoutineParity, type ProcParityWaiver, type RoutineParityReport } fro
 import { resolveSessionSet } from '../services/procCapture/procCaptureOrchestrator';
 import { PROC_CALL_MAX_RESULT_SETS, PROC_CALL_MAX_ROWS_PER_RESULT_SET, PROC_CALL_TIMEOUT_SECONDS } from '../services/procCapture/procConfig';
 import { createTracer } from '../trace';
+import { isDbType, DB_TYPE_CHOICES, type DbType } from '../types/db';
 
 const trace = createTracer('amvs');
 
@@ -45,7 +46,7 @@ interface DbBlock {
 
 function dbBlockError(label: string, block: DbBlock | undefined): string | null {
   if (!block) return `${label} is required`;
-  if (block.db_type !== 'postgres' && block.db_type !== 'sybase') return `${label}.db_type must be postgres or sybase`;
+  if (!isDbType(block.db_type)) return `${label}.db_type must be one of ${DB_TYPE_CHOICES}`;
   for (const k of ['host', 'database', 'username', 'password'] as const) {
     if (!block[k]) return `${label}.${k} is required`;
   }
@@ -55,7 +56,7 @@ function dbBlockError(label: string, block: DbBlock | undefined): string | null 
 
 function toConfig(block: DbBlock) {
   return {
-    dbType: block.db_type as 'postgres' | 'sybase',
+    dbType: block.db_type as DbType,
     host: block.host as string,
     port: block.port as number,
     database: block.database as string,
@@ -122,6 +123,8 @@ export function buildProcParityRunRouter(deps: ProcParityRunDeps = {}): Router {
       upstream_divergent_tables?: string[];
       limits?: { max_rows_per_result_set?: number; max_result_sets?: number; timeout_seconds?: number };
       session_set?: string[];
+      /** SOURCE engine key of the estate (selects the pair ruleset); optional for legacy callers. */
+      source_engine?: string;
     };
     const projectId = body.project_id;
     const architectureId = body.architecture_id;
@@ -164,6 +167,7 @@ export function buildProcParityRunRouter(deps: ProcParityRunDeps = {}): Router {
           routine,
           items: routineItems,
           baselineId: baseline.id,
+          sourceEngine: typeof body.source_engine === 'string' ? body.source_engine : null,
           descriptor,
           targetAdapter,
           compensation,

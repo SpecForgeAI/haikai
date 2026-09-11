@@ -186,6 +186,11 @@ export interface SourceSchemaIr {
   scopeReceipt?: import('./inputs').PackScopeReceipt | null;
   sourceEngine: string;
   targetEngine: string;
+  /** Pair-per-project (2026-09-11): the ruleset the pack was generated against. */
+  pairId?: string | null;
+  rulesetVersion?: number | null;
+  sourceEngineDisplay?: string | null;
+  targetEngineDisplay?: string | null;
   /** Detected source-server charset facts from the DB scan (item 3). */
   sourceCharset?: {
     charset: string | null;
@@ -422,6 +427,11 @@ export interface PackManifest {
   manifest_version: 1;
   source_engine: string;
   target_engine: string;
+  /** Pair-per-project (2026-09-11). */
+  pair_id?: string | null;
+  ruleset_version?: number | null;
+  source_engine_display?: string | null;
+  target_engine_display?: string | null;
   type_mapping_version: string;
   seed_margin: number;
   seed_margin_note: string;
@@ -628,15 +638,17 @@ export interface ExpectedSchema {
 // Errors
 // ---------------------------------------------------------------------------
 
-/** Thrown when the source/target pair is anything but Sybase ASE -> PostgreSQL. */
+/**
+ * Thrown when no migration-pair ruleset covers the source/target pair, or
+ * the pack generator has no support for the source engine yet.
+ */
 export class UnsupportedEnginePairError extends Error {
   public readonly sourceEngine: string;
   public readonly targetEngine: string;
   constructor(sourceEngine: string, targetEngine: string, detail?: string) {
     super(
-      `Unsupported engine pair: ${sourceEngine} -> ${targetEngine}. ` +
-        `Sybase ASE -> PostgreSQL is the only supported combination in v1.` +
-        (detail ? ` ${detail}` : '')
+      `Unsupported engine pair: ${sourceEngine} -> ${targetEngine}.` +
+        (detail ? ` ${detail}` : ' No migration-pair ruleset / generator support covers this combination.')
     );
     this.name = 'UnsupportedEnginePairError';
     this.sourceEngine = sourceEngine;

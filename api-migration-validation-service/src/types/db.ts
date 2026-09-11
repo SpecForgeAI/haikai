@@ -7,7 +7,20 @@
  * Spec: 2026-05-15 API Behaviour Baseline Capture Service -- Task Group 4.
  */
 
-export type DbType = 'postgres' | 'sybase';
+/**
+ * Supported source/target engines. `mssql` = Microsoft SQL Server (SQL Server
+ * 16 -> PostgreSQL 18 pair programme, 2026-09-11). The engine key is the
+ * ONLY engine discriminator on every wire shape (`db_type` / `dbType`).
+ */
+export const DB_TYPES = ['postgres', 'sybase', 'mssql'] as const;
+export type DbType = (typeof DB_TYPES)[number];
+
+export function isDbType(value: unknown): value is DbType {
+  return typeof value === 'string' && (DB_TYPES as readonly string[]).includes(value);
+}
+
+/** The 4xx message fragment routes use for an unsupported engine value. */
+export const DB_TYPE_CHOICES = DB_TYPES.map((t) => `'${t}'`).join(' | ');
 
 export interface DbConnectionConfig {
   dbType: DbType;

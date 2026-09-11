@@ -56,6 +56,7 @@ import { createTracer } from '../../trace';
 import { fetchProcCallEffects } from '../endpointDataEffectsClient';
 import { deriveDescriptorsByRoutine, type RoutineCatalogRow, type RoutineDescriptor } from './routineInvocationDescriptor';
 import { computeCallSiteCompatibility, type CallSiteEffect } from './callSiteCompatibility';
+import { rulesetForManifest } from './pairRuleset';
 
 const trace = createTracer('gateway');
 
@@ -561,7 +562,7 @@ export async function runTranslationEmission(
   const [routines, procCallEffects] = architectureId
     ? await Promise.all([fetchRoutineCatalog(projectId, architectureId), fetchEffects(projectId, architectureId)])
     : [[], []];
-  const ruleset = loadRuleset();
+  const ruleset = rulesetForManifest((pack.manifest_json ?? null) as Record<string, unknown> | null, loadRuleset);
 
   const result = applyTranslationEmission({
     files: files.map((f) => ({

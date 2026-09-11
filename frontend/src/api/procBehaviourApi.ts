@@ -26,6 +26,7 @@
  * Request bodies are written snake_case exactly as the spec's wire contract
  * states.
  */
+import type { DbEngineKey } from './dbEngines';
 
 const GATEWAY_BASE = import.meta.env.VITE_GATEWAY_BASE_URL ?? '';
 
@@ -318,7 +319,7 @@ export interface ProcCaptureTuning {
 }
 
 export interface ProcDbConfigRedacted {
-  dbType: 'sybase' | 'postgres';
+  dbType: DbEngineKey;
   host: string;
   port: number | null;
   database: string;

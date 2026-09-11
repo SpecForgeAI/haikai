@@ -7,6 +7,7 @@
  * reshapes). Restore carries DB credentials in the request body only:
  * function-scope, never persisted, never logged.
  */
+import type { DbEngineKey } from './dbEngines';
 
 const GATEWAY_BASE = import.meta.env.VITE_GATEWAY_BASE_URL ?? '';
 
@@ -29,7 +30,7 @@ export interface S0Manifest {
 }
 
 export interface S0SourceDb {
-  db_type: 'postgres' | 'sybase';
+  db_type: DbEngineKey;
   host: string;
   port: number;
   database: string;

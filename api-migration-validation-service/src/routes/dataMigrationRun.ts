@@ -28,7 +28,7 @@
 import { Router, Request, Response } from 'express';
 import { DbAdapter } from '../services/db/DbAdapter';
 import { createDbAdapter as defaultCreateDbAdapter } from '../services/db/dbAdapterFactory';
-import { DbConnectionConfig } from '../types/db';
+import { DbConnectionConfig, DbType, isDbType, DB_TYPE_CHOICES } from '../types/db';
 import {
   PostgresSyncTargetLoader,
   PostgresTargetLoader,
@@ -45,7 +45,7 @@ import {
   runIncrementalSync,
 } from '../services/dataMigration/incrementalSyncRunner';
 import { emitDataMigrationPredicates } from '../services/dataMigration/dataMigrationPredicates';
-import { loadPairRuleset } from '../migrationPairRules';
+import { pairRulesetForSource } from '../migrationPairRules';
 import { createTracer } from '../trace';
 
 const trace = createTracer('data-migrate');
@@ -96,8 +96,8 @@ interface RunBody {
 
 function dbBlockError(label: string, block: DbBlock | undefined): string | null {
   if (!block) return `${label} is required`;
-  if (block.db_type !== 'postgres' && block.db_type !== 'sybase') {
-    return `${label}.db_type must be 'postgres' or 'sybase'`;
+  if (!isDbType(block.db_type)) {
+    return `${label}.db_type must be one of ${DB_TYPE_CHOICES}`;
   }
   for (const field of ['host', 'database', 'username', 'password'] as const) {
     if (!block[field] || typeof block[field] !== 'string') {
@@ -112,7 +112,7 @@ function dbBlockError(label: string, block: DbBlock | undefined): string | null 
 
 function toConfig(block: DbBlock): DbConnectionConfig {
   return {
-    dbType: block.db_type as 'postgres' | 'sybase',
+    dbType: block.db_type as DbType,
     host: block.host as string,
     port: block.port as number,
     database: block.database as string,
@@ -205,7 +205,7 @@ export function buildDataMigrationRunRouter(deps: DataMigrationRunDeps = {}): Ro
     });
 
     try {
-      const ruleset = loadPairRuleset();
+      const ruleset = pairRulesetForSource(body.source_db!.db_type);
       const report = await runDataMigration({ source, target, targetLoader, plan, ruleset, knobs });
       emitDataMigrationPredicates(report, trace, corr);
 
@@ -370,7 +370,7 @@ export function buildDataMigrationRunRouter(deps: DataMigrationRunDeps = {}): Ro
     });
 
     try {
-      const ruleset = loadPairRuleset();
+      const ruleset = pairRulesetForSource(body.source_db!.db_type);
       trace.stageStart('SYNC', corr);
       const report: IncrementalSyncReport = await runIncrementalSync({
         source,

@@ -24,7 +24,22 @@
  * Engine identifier. Mirrors `DbType` in `../db/DbAdapter.ts` and the AMS
  * `discovery_kind` column's child-level engine discriminator.
  */
-export type DatabaseEngine = 'postgres' | 'sybase';
+export const DATABASE_ENGINES = ['postgres', 'sybase', 'mssql'] as const;
+export type DatabaseEngine = (typeof DATABASE_ENGINES)[number];
+
+export function isDatabaseEngine(value: unknown): value is DatabaseEngine {
+  return typeof value === 'string' && (DATABASE_ENGINES as readonly string[]).includes(value);
+}
+
+/** Conventional default port per engine (UI + route defaults). */
+export const DEFAULT_PORT_BY_ENGINE: Record<DatabaseEngine, number> = {
+  postgres: 5432,
+  sybase: 5000,
+  mssql: 1433,
+};
+
+/** The 400 message fragment listing the accepted engine values. */
+export const DATABASE_ENGINE_CHOICES = DATABASE_ENGINES.map((e) => `"${e}"`).join(', ');
 
 /**
  * Profiling ladder per D8 of the shaping notes.
