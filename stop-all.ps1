@@ -50,7 +50,7 @@ $repoRoot = (Resolve-Path $repoRoot).Path
 & { $WhatIfPreference = $false; Import-Module CimCmdlets -ErrorAction SilentlyContinue }
 
 # Ports used by the 10 services (see install-run-all.ps1 / config files):
-#   maven : 8080 ams, 8079 ars, 8078 jira, 8093 sybase-sidecar
+#   maven : 8080 ams, 8079 ars, 8078 jira, 8093 db-sidecar
 #   npm   : 8081 gateway, 8091 discovery, 8092 api-migration-validation, 8090 mcp
 #   vite  : 5173 frontend
 #   python (IVS): 8000 uvicorn

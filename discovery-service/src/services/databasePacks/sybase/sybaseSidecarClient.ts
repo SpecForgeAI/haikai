@@ -33,12 +33,18 @@ import { assertReadonlySelect } from '../../db/sqlGuard';
 const DEFAULT_SIDECAR_URL = 'http://localhost:8093';
 
 /**
- * Resolve the sidecar base URL. Reads the env var lazily so tests can
- * mutate {@code process.env.SYBASE_SIDECAR_URL} per-test.
+ * Resolve the sidecar base URL. Reads the env vars lazily (per call, not at
+ * module load) so tests can mutate them per-test.
+ *
+ * Resolution order (SQL Server pair programme, SPEC-1 / wire contract §6):
+ * `DB_SIDECAR_URL` -> `SYBASE_SIDECAR_URL` (the pre-rename alias, still
+ * honoured so an existing deployment keeps working) -> `http://localhost:8093`.
  */
 export function resolveSidecarBaseUrl(): string {
-  const v = process.env.SYBASE_SIDECAR_URL;
-  if (v && v.trim().length > 0) return v.trim();
+  const preferred = process.env.DB_SIDECAR_URL;
+  if (preferred && preferred.trim().length > 0) return preferred.trim();
+  const alias = process.env.SYBASE_SIDECAR_URL;
+  if (alias && alias.trim().length > 0) return alias.trim();
   return DEFAULT_SIDECAR_URL;
 }
 

@@ -47,7 +47,7 @@ $services = @(
   [pscustomobject]@{ Name='architecture-model-service';        Type='maven' },
   [pscustomobject]@{ Name='architecture-read-service';         Type='maven' },
   [pscustomobject]@{ Name='jira-service';                      Type='maven' },
-  [pscustomobject]@{ Name='sybase-discovery-sidecar';          Type='maven' },
+  [pscustomobject]@{ Name='db-discovery-sidecar';              Type='maven' },
   [pscustomobject]@{ Name='gateway';                           Type='npm'   },
   [pscustomobject]@{ Name='discovery-service';                 Type='npm'   },
   [pscustomobject]@{ Name='api-migration-validation-service';  Type='npm'   },

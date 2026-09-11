@@ -61,17 +61,27 @@ export const OAS_SPECS_DIR: string =
   process.env.OAS_SPECS_DIR || './oas-specs';
 
 /**
- * Base URL of the `sybase-discovery-sidecar` JVM service. The
- * `SybaseAdapter` posts to this URL for `/test-connection`, `/introspect`,
- * and `/query`; the sidecar handles the JDBC layer (jTDS + jConnect
- * auto-fallback).
+ * Base URL of the `db-discovery-sidecar` JVM service. The engine adapters
+ * post to this URL for `/test-connection`, `/introspect`, `/query`,
+ * `/mutate` and `/call`; the sidecar handles the JDBC layer (Sybase ASE via
+ * jTDS + jConnect, SQL Server via mssql-jdbc + jTDS) and every request names
+ * its `engine`.
  *
- * Default: `http://localhost:8093` (the sidecar's own default port).
- * Mirrors the discovery-service env var of the same name so a single
- * sidecar instance serves both Node services.
+ * Resolution order (SQL Server pair programme, SPEC-1 / wire contract §6):
+ * `DB_SIDECAR_URL` -> `SYBASE_SIDECAR_URL` (the pre-rename alias, still
+ * honoured so an existing deployment keeps working) -> `http://localhost:8093`
+ * (the sidecar's own default port). Mirrors the discovery-service resolution
+ * exactly, so a single sidecar instance serves both Node services.
  */
-export const SYBASE_SIDECAR_URL: string =
-  process.env.SYBASE_SIDECAR_URL || 'http://localhost:8093';
+export const DB_SIDECAR_URL: string =
+  process.env.DB_SIDECAR_URL || process.env.SYBASE_SIDECAR_URL || 'http://localhost:8093';
+
+/**
+ * Pre-rename name for {@link DB_SIDECAR_URL}. Kept as an ALIAS of the same
+ * value (not a second resolution) so existing importers need no change and
+ * the two constants can never drift apart.
+ */
+export const SYBASE_SIDECAR_URL: string = DB_SIDECAR_URL;
 
 /**
  * Maximum number of BUDGET-CONSUMING LLM/tool-call rounds per scenario
