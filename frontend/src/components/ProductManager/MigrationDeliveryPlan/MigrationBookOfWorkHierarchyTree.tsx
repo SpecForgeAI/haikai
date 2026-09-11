@@ -260,6 +260,25 @@ export interface MigrationBookOfWorkHierarchyTreeProps {
       kind: 'generating' | 'ok' | 'warn' | 'blocked' | 'manual';
     }
   >;
+  /**
+   * Durable execution outcome per item id (2026-09-11, start-from-work-item):
+   * a story implemented / deployed / failed / in flight, a parent's rollup
+   * ("Implemented 3/7"). When present it REPLACES the review-time save-state
+   * chip — an implemented story reads "Implemented", never "saved".
+   */
+  executionById?: Record<
+    string,
+    {
+      label: string;
+      kind: 'implemented' | 'partial' | 'in_flight' | 'failed';
+    }
+  >;
+  /**
+   * Right-click on a row (2026-09-11): the parent opens the per-item context
+   * menu (start / start-and-deploy / resume, Stage-card semantics). Omitted =
+   * the browser's default menu.
+   */
+  onContextMenuItem?: (itemId: string, x: number, y: number) => void;
 }
 
 export const MigrationBookOfWorkHierarchyTree: React.FC<
@@ -268,6 +287,8 @@ export const MigrationBookOfWorkHierarchyTree: React.FC<
   items,
   selectedItemId,
   saveStateById,
+  executionById,
+  onContextMenuItem,
   onSelectItem,
   onToggleSelect,
   expansionStateById,
@@ -385,6 +406,16 @@ export const MigrationBookOfWorkHierarchyTree: React.FC<
           className={rowClass}
           data-testid={`hierarchy-node-row-${item.id}`}
           onClick={() => onSelectItem(item.id)}
+          onContextMenu={
+            onContextMenuItem
+              ? (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onSelectItem(item.id);
+                  onContextMenuItem(item.id, e.clientX, e.clientY);
+                }
+              : undefined
+          }
           role="button"
           tabIndex={0}
           onKeyDown={(e) => {
@@ -544,14 +575,38 @@ export const MigrationBookOfWorkHierarchyTree: React.FC<
                 {gaps} gap{gaps === 1 ? '' : 's'}
               </span>
             )}
-            {stateBadge && (
-              <span
-                className={`${styles.badge} ${stateBadge.className}`}
-                data-testid={`badge-savestate-${item.id}`}
-              >
-                {stateBadge.label}
-              </span>
-            )}
+            {(() => {
+              // Execution outcome (2026-09-11) replaces the save-state chip.
+              const exec = executionById?.[item.id];
+              if (exec) {
+                const cls =
+                  exec.kind === 'implemented'
+                    ? styles.badgeImplemented
+                    : exec.kind === 'partial'
+                      ? styles.badgePartial
+                      : exec.kind === 'in_flight'
+                        ? styles.badgeInFlight
+                        : styles.badgeFailed;
+                return (
+                  <span
+                    className={`${styles.badge} ${cls}`}
+                    data-testid={`badge-execution-${item.id}`}
+                    data-execution-kind={exec.kind}
+                    title="Execution outcome (implement + verify + commit + push + MR), durable across runs"
+                  >
+                    {exec.label}
+                  </span>
+                );
+              }
+              return stateBadge ? (
+                <span
+                  className={`${styles.badge} ${stateBadge.className}`}
+                  data-testid={`badge-savestate-${item.id}`}
+                >
+                  {stateBadge.label}
+                </span>
+              ) : null;
+            })()}
             {expBadge && (
               <span
                 className={`${styles.badge} ${expBadge.className}`}

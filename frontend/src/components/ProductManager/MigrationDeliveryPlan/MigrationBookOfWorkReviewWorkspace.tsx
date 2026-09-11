@@ -64,6 +64,7 @@ import {
   type Architecture,
 } from '../../../api/architecturesApi';
 import MigrationBookOfWorkHierarchyTree from './MigrationBookOfWorkHierarchyTree';
+import MigrationPlanItemContextMenu from './MigrationPlanItemContextMenu';
 import MigrationBookOfWorkFilters, {
   EMPTY_FILTERS,
   itemPassesFilters,
@@ -100,6 +101,9 @@ import {
 import {
   triggerMigrate,
   getLatestMigrationExecutionRun,
+  getPlanOrderFrontier,
+  triggerMigrateWorkItem,
+  type PlanOrderFrontierDto,
   resumeMigrationRun,
   haltMigrationRun,
   MigrationExecutionRunDto,
@@ -882,6 +886,12 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
     Record<string, unknown>
   > | null>(null);
 
+  // Plan-order frontier (2026-09-11, start-from-work-item): every item's
+  // DURABLE execution outcome (across all runs) + which item is next.
+  const [frontier, setFrontier] = useState<PlanOrderFrontierDto | null>(null);
+  // Right-click menu on a tree row.
+  const [itemMenu, setItemMenu] = useState<{ itemId: string; x: number; y: number } | null>(null);
+
   const refreshRun = useCallback(async () => {
     try {
       setRun(await getLatestMigrationExecutionRun(projectId, bookId));
@@ -889,7 +899,41 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
       // No run yet / read hiccup — the rail simply shows the pre-run state.
       setRun(null);
     }
+    try {
+      setFrontier(await getPlanOrderFrontier(projectId, bookId));
+    } catch {
+      // Frontier unreadable: chips fall back to the save state, the menu greys.
+      setFrontier(null);
+    }
   }, [projectId, bookId]);
+
+  /** Execution chips per tree row, derived from the frontier. */
+  const executionById = useMemo(() => {
+    const out: Record<string, { label: string; kind: 'implemented' | 'partial' | 'in_flight' | 'failed' }> = {};
+    if (!frontier) return out;
+    const leafById = new Map(frontier.leaves.map((l) => [l.bookItemId, l] as const));
+    for (const [id, node] of Object.entries(frontier.nodes)) {
+      if (node.leafCount === 0) continue;
+      const leaf = leafById.get(id);
+      if (leaf) {
+        if (leaf.status === 'deployed') out[id] = { label: 'Deployed', kind: 'implemented' };
+        else if (leaf.status === 'implemented') out[id] = { label: 'Implemented', kind: 'implemented' };
+        else if (leaf.status === 'in_flight') out[id] = { label: 'Implementing…', kind: 'in_flight' };
+        else if (leaf.status === 'failed') out[id] = { label: 'Failed', kind: 'failed' };
+        continue;
+      }
+      if (node.doneCount === node.leafCount) {
+        out[id] = { label: 'Implemented', kind: 'implemented' };
+      } else if (node.inFlightCount > 0) {
+        out[id] = { label: `Implementing ${node.doneCount}/${node.leafCount}`, kind: 'in_flight' };
+      } else if (node.doneCount > 0) {
+        out[id] = { label: `Implemented ${node.doneCount}/${node.leafCount}`, kind: 'partial' };
+      } else if (node.failedCount > 0) {
+        out[id] = { label: `Failed ${node.failedCount}/${node.leafCount}`, kind: 'failed' };
+      }
+    }
+    return out;
+  }, [frontier]);
 
   useEffect(() => {
     if (draft) void refreshRun();
@@ -1022,7 +1066,15 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
      * modal with "Retry DB build" as the confirm action — re-runs the DB
      * execution chain on a halted run WITHOUT re-running the specs.
      */
-    mode: 'start' | 'register' | 'retry-db';
+    mode: 'start' | 'register' | 'retry-db' | 'start-item';
+    /**
+     * 'start-item' (2026-09-11): start ONE work item's remaining specs from
+     * the tree's context menu. `completion` 'implement_mr' stops at the MR
+     * (no credentials needed); 'deploy' mirrors the stage card.
+     */
+    itemId?: string;
+    itemTitle?: string;
+    completion?: 'implement_mr' | 'deploy';
     /** The plane this start targets (per-plane runs, 2026-07-26). */
     plane?: RailPlaneId;
     /** Stage number for the dialog title (derived from the rail card). */
@@ -1114,9 +1166,10 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
 
   const openStartDialog = useCallback(
     async (
-      mode: 'start' | 'register' | 'retry-db',
+      mode: 'start' | 'register' | 'retry-db' | 'start-item',
       plane?: RailPlaneId,
       stageNo?: number,
+      item?: { id: string; title: string; completion: 'implement_mr' | 'deploy' },
     ) => {
       setDialogError(null);
       setDialogBlockReasons(null);
@@ -1169,10 +1222,27 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
       // Default the base to the MR when a stage >1 START (the DB plane's MR is
       // normally open until end-to-end evidence exists); harmless otherwise —
       // the selector only renders for stage >1 starts.
-      setRunBase(mode === 'start' && (stageNo ?? 1) > 1 ? 'mr' : 'auto');
-      setStartDialog({ open: true, mode, plane, stageNo });
+      // A work-item start after earlier implement-only runs defaults to the
+      // INTEGRATION base (main + every pushed feature/* and db-migration/*
+      // branch): the prior items' code is pushed but its MRs are open, so
+      // neither main nor a single MR carries it all.
+      const anyImplemented = Object.keys(frontier?.outcomesByWorkItem ?? {}).length > 0;
+      setRunBase(
+        mode === 'start' && (stageNo ?? 1) > 1
+          ? 'mr'
+          : mode === 'start-item' && anyImplemented
+            ? 'integration'
+            : 'auto',
+      );
+      setStartDialog({
+        open: true,
+        mode,
+        plane,
+        stageNo,
+        ...(item ? { itemId: item.id, itemTitle: item.title, completion: item.completion } : {}),
+      });
     },
-    [refreshCredsStatus],
+    [refreshCredsStatus, frontier],
   );
 
   /** Parse the env textarea (KEY=VALUE per line). Returns null on a bad line. */
@@ -1198,7 +1268,28 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
     setRailBlockers(null);
     try {
       let runId: string | null = null;
-      if (startDialog.mode === 'start') {
+      if (startDialog.mode === 'start-item') {
+        if (!startDialog.itemId) return;
+        const result = await triggerMigrateWorkItem(projectId, bookId, {
+          company: companyName,
+          project: projectName,
+          bookItemId: startDialog.itemId,
+          completion: startDialog.completion ?? 'implement_mr',
+          ...(runBase === 'auto' ? {} : { baseMode: runBase }),
+        });
+        if (result.status === 'blocked') {
+          setDialogError(
+            `Start refused by the server — ${result.reasons.length} blocking reason(s):`,
+          );
+          setDialogBlockReasons(result.reasons);
+          return;
+        }
+        if (result.status === 'error') {
+          setDialogError(result.message);
+          return;
+        }
+        runId = result.runId;
+      } else if (startDialog.mode === 'start') {
         const result = await triggerMigrate(projectId, bookId, {
           company: companyName,
           project: projectName,
@@ -1232,7 +1323,10 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
       // "not now" — the affected step fail-softs and its gate blocks until
       // provided, exactly as Spec W designed).
       const dialogPlane: RailPlaneId = startDialog.plane ?? 'db';
-      if (runId) {
+      // Implement-only item starts need no credentials (nothing deploys).
+      const wantsCredentials =
+        startDialog.mode !== 'start-item' || startDialog.completion === 'deploy';
+      if (runId && wantsCredentials) {
         const opts: Parameters<typeof registerRunStageCredentials>[2] = {};
         if (dialogPlane !== 'service') {
           if (targetDbPassword.trim().length > 0) {
@@ -1322,6 +1416,8 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
     bookId,
     startDialog.mode,
     startDialog.plane,
+    startDialog.itemId,
+    startDialog.completion,
     runBase,
     run?.id,
     targetDbFields,
@@ -2237,6 +2333,10 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
             }
             preflightById={preflightById}
             specStateById={specStateById}
+            executionById={executionById}
+            onContextMenuItem={
+              archived ? undefined : (id, x, y) => setItemMenu({ itemId: id, x, y })
+            }
           />
         </div>
         <div
@@ -2335,6 +2435,41 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
         />
       )}
 
+      {/* Per-item context menu (2026-09-11): Stage-card actions for ONE item. */}
+      {itemMenu &&
+        (() => {
+          const node = frontier?.nodes[itemMenu.itemId] ?? null;
+          const menuItem = (draft?.bookOfWork?.items ?? []).find(
+            (i) => i.id === itemMenu.itemId,
+          );
+          return (
+            <MigrationPlanItemContextMenu
+              x={itemMenu.x}
+              y={itemMenu.y}
+              title={menuItem?.title ?? itemMenu.itemId}
+              node={node}
+              frontierLoaded={frontier !== null}
+              runStatus={run?.status ?? null}
+              busy={railBusy || dialogBusy}
+              onClose={() => setItemMenu(null)}
+              onStart={(completion) => {
+                const id = itemMenu.itemId;
+                setItemMenu(null);
+                void openStartDialog(
+                  'start-item',
+                  (node?.remainingPlanes[0] ?? 'service') as RailPlaneId,
+                  undefined,
+                  { id, title: menuItem?.title ?? id, completion },
+                );
+              }}
+              onResumeFailed={(salvage) => {
+                setItemMenu(null);
+                void handleRailResumeFailed(undefined, salvage);
+              }}
+            />
+          );
+        })()}
+
       <MigrationBookOfWorkSaveToBacklogDialog
         open={dialogOpen}
         saveMode={dialogMode}
@@ -2426,7 +2561,9 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
             role="dialog"
             aria-modal="true"
             aria-label={
-              startDialog.mode === 'start'
+              startDialog.mode === 'start-item'
+                ? 'Start work item'
+                : startDialog.mode === 'start'
                 ? 'Start stage'
                 : startDialog.mode === 'retry-db'
                   ? 'Retry DB build'
@@ -2435,7 +2572,9 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
           >
             <div className={styles.modalHeader}>
               <h2 className={styles.modalTitle}>
-                {startDialog.mode === 'start'
+                {startDialog.mode === 'start-item'
+                  ? `Start: ${startDialog.itemTitle ?? 'work item'}`
+                  : startDialog.mode === 'start'
                   ? `Start stage ${startDialog.stageNo ?? 1}`
                   : startDialog.mode === 'retry-db'
                     ? 'Retry DB build'
@@ -2449,7 +2588,15 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
                   reconcile). The next stage unlocks when it completes.
                 </p>
               )}
-              {startDialog.mode === 'start' && (startDialog.stageNo ?? 1) > 1 && (
+              {startDialog.mode === 'start-item' && (
+                <p className={styles.coveragePanelNote} data-testid="start-item-note">
+                  {startDialog.completion === 'deploy'
+                    ? 'Implements this item\u2019s remaining specs in plan order as ONE batch (one branch, one merge request), then deploys the final spec and reconciles — the Stage-card semantics.'
+                    : 'Implements this item\u2019s remaining specs in plan order as ONE batch (one branch, one merge request): build \u2192 verify \u2192 commit \u2192 push \u2192 MR, then stops. Nothing deploys; the next stage stays locked until something does.'}
+                </p>
+              )}
+              {((startDialog.mode === 'start' && (startDialog.stageNo ?? 1) > 1) ||
+                startDialog.mode === 'start-item') && (
                 <div
                   style={{ display: 'block', margin: '8px 0' }}
                   data-testid="start-stage-base-mode"
@@ -2516,7 +2663,8 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
                   reads the source and writes the target.
                 </p>
               )}
-              {(startDialog.plane ?? 'db') !== 'service' && (
+              {(startDialog.mode !== 'start-item' || startDialog.completion === 'deploy') &&
+                (startDialog.plane ?? 'db') !== 'service' && (
                 <>
                   <p data-testid="start-stage-source-db-note">
                     <strong>Source database (the current system):</strong> the
@@ -2667,7 +2815,8 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
                   </div>
                 </>
               )}
-              {(startDialog.plane ?? 'db') === 'service' && (
+              {(startDialog.mode !== 'start-item' || startDialog.completion === 'deploy') &&
+                (startDialog.plane ?? 'db') === 'service' && (
                 <>
                   <p data-testid="start-stage-source-api-note">
                     <strong>Source service (the current system API):</strong>{' '}
@@ -2860,7 +3009,11 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
               >
                 {dialogBusy
                   ? 'Working…'
-                  : startDialog.mode === 'start'
+                  : startDialog.mode === 'start-item'
+                    ? startDialog.completion === 'deploy'
+                      ? '▶ Start and deploy'
+                      : '▶ Start (implement + MR)'
+                    : startDialog.mode === 'start'
                     ? '▶ Start'
                     : startDialog.mode === 'retry-db'
                       ? '↻ Retry DB build'
