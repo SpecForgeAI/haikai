@@ -76,12 +76,13 @@ export async function ensureS0Pinned(
     };
   }
   if (!metadata || metadata.byTable.size === 0) {
-    return {
-      status: 'failed',
-      snapshotId: null,
-      detail:
-        'no committed table metadata for this architecture — save the DB scan (approve + commit its candidates) or re-run it',
-    };
+    const detail =
+      'no committed table metadata for this architecture — save the DB scan (approve + commit its candidates) or re-run it';
+    console.warn(
+      `[diag-amvs] op=s0_repin result=failed reason=${args.reason} project=${args.projectId.slice(0, 8)} ` +
+        `arch=${args.architectureId.slice(0, 8)} detail=${detail} model_read=${metadata ? 'ok_empty' : 'null'}`,
+    );
+    return { status: 'failed', snapshotId: null, detail };
   }
   let adapter;
   try {
@@ -114,11 +115,12 @@ export async function ensureS0Pinned(
         `directory) — re-pinned now from the committed model: ${result.manifest.tables.length} tables.`,
     };
   } catch (err) {
-    return {
-      status: 'failed',
-      snapshotId: null,
-      detail: `S0 re-pin failed: ${err instanceof Error ? err.message : String(err)}`,
-    };
+    const detail = `S0 re-pin failed: ${err instanceof Error ? err.message : String(err)}`;
+    console.warn(
+      `[diag-amvs] op=s0_repin result=failed reason=${args.reason} project=${args.projectId.slice(0, 8)} ` +
+        `arch=${args.architectureId.slice(0, 8)} detail=${detail}`,
+    );
+    return { status: 'failed', snapshotId: null, detail };
   } finally {
     try {
       await adapter.dispose();

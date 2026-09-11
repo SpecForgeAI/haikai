@@ -1230,7 +1230,13 @@ export function describeProcError(err: unknown): string {
   if (err instanceof ProcBehaviourApiError) {
     switch (err.code) {
       case 'S0_NOT_PINNED':
-        return 'Run the DB scan first — it pins S0 automatically.';
+        // Since 2026-09-11 the service re-pins S0 from the saved model itself
+        // and refuses ONLY when that fails — its sentence then carries the
+        // actual reason (nothing committed, DB login failed, ...). Show it;
+        // the generic next step is only for a server that gave no reason.
+        return err.message.includes('re-pinned')
+          ? err.message
+          : 'Run the DB scan first — it pins S0 automatically.';
       case 'SECRETS_NOT_LOADED':
         return 'Database credentials are not loaded for this session. Re-enter them and start again.';
       case 'NO_ROUTINES':
