@@ -389,3 +389,62 @@ describe('latestSnapshotId vs rec-* snapshots (Item #7, 2026-08-27)', () => {
     expect(latestSnapshotId('p1', 'a1')).toContain('s0-');
   });
 });
+
+describe('runS0Restore on SQL Server (second-pair programme, Spec 4)', () => {
+  it('bracket-qualifies, wraps identity inserts, falls back to DELETE when TRUNCATE is refused, reseeds with DBCC', async () => {
+    const store = seededStore();
+    const pristine = store.snapshotJson();
+    const { manifest, dir } = await takeSnapshot(store, 's0-test-040');
+    store.tables.get('orders')!.push({ id: 9, name: 'junk' });
+    store.tables.get('order_lines')!.shift();
+
+    const inner = fakeWriteAdapter(store);
+    const seen: string[][] = [];
+    const fkGuarded = {
+      ...inner,
+      async executeRestoreBatch(statements: string[], options?: unknown) {
+        seen.push(statements);
+        if (statements.some((s: string) => /^TRUNCATE TABLE \[orders\]$/i.test(s))) {
+          throw new Error("Cannot truncate table 'orders' because it is being referenced by a FOREIGN KEY constraint.");
+        }
+        return inner.executeRestoreBatch(statements, options as never);
+      },
+    };
+
+    const report = await runS0Restore({
+      readAdapter: fakeReadAdapter(store),
+      writeAdapter: fkGuarded,
+      metadata: METADATA,
+      manifest,
+      dir,
+      engine: 'mssql',
+    });
+
+    expect(report.status).toBe('restored');
+    expect(store.snapshotJson()).toBe(pristine);
+    expect(store.deletes).toContain('orders');
+    expect(store.truncates).toContain('order_lines');
+    const flat = seen.flat();
+    expect(flat).toContain('SET IDENTITY_INSERT [orders] ON');
+    expect(flat.some((s: string) => /^INSERT INTO \[orders\] \(/.test(s))).toBe(true);
+    expect(store.reseeds.some((r: string) => /^DBCC CHECKIDENT \('orders', RESEED, \d+\)$/.test(r))).toBe(true);
+    expect(report.verification?.matches).toBe(true);
+  });
+
+  it('does not mask a refused TRUNCATE on Sybase (the DELETE fallback is SQL-Server-specific)', async () => {
+    const store = seededStore();
+    const { manifest, dir } = await takeSnapshot(store, 's0-test-041');
+    store.tables.get('orders')!.push({ id: 9, name: 'junk' });
+    const inner = fakeWriteAdapter(store);
+    const refusing = {
+      ...inner,
+      async executeRestoreBatch(statements: string[], options?: unknown) {
+        if (statements.some((s: string) => /^TRUNCATE TABLE orders$/i.test(s))) throw new Error('refused');
+        return inner.executeRestoreBatch(statements, options as never);
+      },
+    };
+    const report = await runS0Restore({ readAdapter: fakeReadAdapter(store), writeAdapter: refusing, metadata: METADATA, manifest, dir, engine: 'sybase' });
+    expect(report.status).toBe('failed');
+    expect(store.deletes).toEqual([]);
+  });
+});

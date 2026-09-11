@@ -14,7 +14,7 @@
 
 import { Pool, PoolConfig } from 'pg';
 
-import { COMPENSATION_STATEMENT_TIMEOUT_SECONDS, SYBASE_SIDECAR_URL } from '../../config';
+import { COMPENSATION_STATEMENT_TIMEOUT_SECONDS, DB_SIDECAR_URL } from '../../config';
 import type { DbConnectionConfig } from '../../types/db';
 import { assertCompensationBatch, assertRestoreBatch } from './compensationSqlGuard';
 
@@ -131,13 +131,18 @@ interface SidecarMutateResponse {
   rowCounts?: number[] | null;
 }
 
-export class SybaseCompensationWriteAdapter implements CompensationWriteAdapter {
+/**
+ * Sidecar-backed write adapter for every JDBC engine (Sybase ASE, SQL Server):
+ * posts the guarded batch to the db-discovery-sidecar `/mutate` with the
+ * engine + connection extras from the config (second-pair programme, Spec 4).
+ */
+export class SidecarCompensationWriteAdapter implements CompensationWriteAdapter {
   private readonly config: DbConnectionConfig;
   private readonly sidecarBaseUrl: string;
 
   constructor(config: DbConnectionConfig, opts?: { sidecarBaseUrl?: string }) {
     this.config = config;
-    this.sidecarBaseUrl = (opts?.sidecarBaseUrl ?? SYBASE_SIDECAR_URL).replace(/\/+$/, '');
+    this.sidecarBaseUrl = (opts?.sidecarBaseUrl ?? DB_SIDECAR_URL).replace(/\/+$/, '');
   }
 
   async executeCompensationBatch(
@@ -162,11 +167,22 @@ export class SybaseCompensationWriteAdapter implements CompensationWriteAdapter 
     options?: CompensationBatchOptions,
   ): Promise<CompensationBatchResult> {
     const body = {
+      engine: this.config.dbType,
       host: this.config.host,
       port: this.config.port,
       database: this.config.database,
       username: this.config.username,
       password: this.config.password,
+      charset: this.config.charset ?? null,
+      ...(this.config.dbType === 'mssql'
+        ? {
+            authScheme: this.config.mssqlAuth?.authScheme ?? 'sql',
+            domain: this.config.mssqlAuth?.domain ?? null,
+            encrypt: this.config.mssqlAuth?.encrypt ?? true,
+            trustServerCertificate: this.config.mssqlAuth?.trustServerCertificate ?? false,
+            instanceName: this.config.mssqlAuth?.instanceName ?? null,
+          }
+        : {}),
       statements,
       mode,
       transactional: options?.transactional !== false,
@@ -185,11 +201,11 @@ export class SybaseCompensationWriteAdapter implements CompensationWriteAdapter 
       } catch {
         /* status alone */
       }
-      throw new Error(`Sybase sidecar at ${url} returned HTTP ${resp.status}: ${detail}`);
+      throw new Error(`DB sidecar at ${url} returned HTTP ${resp.status}: ${detail}`);
     }
     const parsed = (await resp.json()) as SidecarMutateResponse;
     if (parsed.ok !== true) {
-      throw new Error(`Sybase sidecar mutate failed: ${parsed.error ?? 'unknown error'}`);
+      throw new Error(`DB sidecar mutate failed: ${parsed.error ?? 'unknown error'}`);
     }
     return { rowCounts: parsed.rowCounts ?? [] };
   }
@@ -198,3 +214,6 @@ export class SybaseCompensationWriteAdapter implements CompensationWriteAdapter 
     // Sidecar resolves connections per-request — nothing pooled here.
   }
 }
+
+/** Original single-engine name, kept as an alias for existing call sites and tests. */
+export class SybaseCompensationWriteAdapter extends SidecarCompensationWriteAdapter {}

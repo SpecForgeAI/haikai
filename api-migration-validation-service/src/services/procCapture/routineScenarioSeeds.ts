@@ -123,6 +123,10 @@ export function defaultValueForType(sourceType: string): unknown {
     case 'smalldatetime':
     case 'bigdatetime':
       return '2026-01-15 09:30:00.000';
+    case 'datetime2':
+      return '2026-01-15 09:30:00.0000000';
+    case 'datetimeoffset':
+      return '2026-01-15 09:30:00.0000000 +00:00';
     case 'date':
       return '2026-01-15';
     case 'time':
@@ -132,6 +136,13 @@ export function defaultValueForType(sourceType: string): unknown {
     case 'varbinary':
     case 'image':
       return '\\x00';
+    case 'rowversion':
+    case 'timestamp':
+      return '\\x0000000000000001';
+    case 'uniqueidentifier':
+      return '00000000-0000-0000-0000-000000000001';
+    case 'xml':
+      return '<r/>';
     default:
       return 'x';
   }
@@ -158,8 +169,16 @@ export function enumerateExitOutcomes(routine: RoutineCatalogRow): string[] {
 export function seededFamilies(routine: RoutineCatalogRow): Array<{ type: ProcScenarioType; reason: string }> {
   const families: Array<{ type: ProcScenarioType; reason: string }> = [];
   if (bodyHas(routine, /@@rowcount/i)) families.push({ type: 'zero_rows', reason: 'branches on @@rowcount' });
-  if (bodyHas(routine, /@@error/i) || (routine.profile_json?.constructs ?? []).includes('transaction_control')) {
+  const constructs = routine.profile_json?.constructs ?? [];
+  if (bodyHas(routine, /@@error/i) || constructs.includes('transaction_control')) {
     families.push({ type: 'error_path', reason: 'branches on @@error / transaction control' });
+  }
+  // Error-mid-routine family (second-pair programme, item 3): TRY/CATCH,
+  // THROW, XACT_ABORT and statement-level continuation each make the
+  // behaviour AFTER an error part of the observed contract.
+  const errorConstructs = ['try_catch', 'throw', 'xact_abort', 'error_continuation'].filter((c) => constructs.includes(c));
+  if (errorConstructs.length > 0 && !families.some((f) => f.type === 'error_path')) {
+    families.push({ type: 'error_path', reason: `error handling constructs: ${errorConstructs.join(', ')}` });
   }
   return families;
 }

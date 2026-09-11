@@ -65,8 +65,33 @@ function qualifyForEngine(
   schema: string | null | undefined,
   engine: CompensationEngine,
 ): string {
+  if (engine === 'mssql') {
+    const q = (s: string): string => `[${s.replace(/]/g, ']]')}]`;
+    return schema ? `${q(schema)}.${q(table)}` : q(table);
+  }
   if (!schema) return engine === 'postgres' ? `"${table}"` : table;
   return engine === 'postgres' ? `"${schema}"."${table}"` : `${schema}.${table}`;
+}
+
+/**
+ * Empty the table before re-inserting the S0 rows. TRUNCATE is the fast,
+ * identity-resetting path; SQL Server refuses it on ANY FK-referenced table
+ * (even with empty children), so on that engine a refused TRUNCATE falls
+ * back to a bare DELETE — same end state, identity reseeded afterwards.
+ */
+async function emptyTable(
+  writeAdapter: CompensationWriteAdapter,
+  target: string,
+  engine: CompensationEngine,
+): Promise<'truncated' | 'deleted'> {
+  try {
+    await writeAdapter.executeRestoreBatch([`TRUNCATE TABLE ${target}`], { transactional: true });
+    return 'truncated';
+  } catch (err) {
+    if (engine !== 'mssql') throw err;
+    await writeAdapter.executeRestoreBatch([`DELETE FROM ${target}`], { transactional: true });
+    return 'deleted';
+  }
 }
 
 function insertFor(
@@ -201,16 +226,14 @@ async function restoreManifestEntry(
   try {
     const rows = await readRows(path.join(args.dir, entry.file as string));
 
-    // Truncate first — its own restore batch so a later insert failure
+    // Empty first — its own restore batch so a later insert failure
     // leaves an OBVIOUSLY empty table, not a half-merged one.
-    await args.writeAdapter.executeRestoreBatch([`TRUNCATE TABLE ${target}`], {
-      transactional: true,
-    });
+    await emptyTable(args.writeAdapter, target, args.engine);
 
     for (let i = 0; i < rows.length; i += S0_RESTORE_INSERTS_PER_BATCH) {
       const chunk = rows.slice(i, i + S0_RESTORE_INSERTS_PER_BATCH);
       const statements: string[] = [];
-      const wrap = args.engine === 'sybase' && identity !== undefined;
+      const wrap = (args.engine === 'sybase' || args.engine === 'mssql') && identity !== undefined;
       if (wrap) statements.push(`SET IDENTITY_INSERT ${target} ON`);
       for (const row of chunk) {
         const statement = insertFor(row, meta, target, args.engine);

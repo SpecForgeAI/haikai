@@ -176,3 +176,22 @@ describe('renderLiteral', () => {
     expect(renderLiteral('12345', 'sybase', 'varchar')).toBe("'12345'");
   });
 });
+
+describe('SQL Server engine (second-pair programme, Spec 4)', () => {
+  it('renders the DBCC CHECKIDENT reseed form over bracket-qualified names', () => {
+    expect(buildReseedStatements(ORDERS_META, 'id', 'mssql', 'dbo', 41)).toEqual([
+      "DBCC CHECKIDENT ('[dbo].[orders]', RESEED, 41)",
+    ]);
+    expect(buildReseedStatements(ORDERS_META, 'id', 'mssql', null, 0)).toEqual([
+      "DBCC CHECKIDENT ('[orders]', RESEED, 0)",
+    ]);
+  });
+
+  it('renderLiteral: bit as 1/0, N-literals for national types, 0x for binary wire values', () => {
+    expect(renderLiteral(true, 'mssql')).toBe('1');
+    expect(renderLiteral("O'Hara", 'mssql', 'nvarchar(50)')).toBe("N'O''Hara'");
+    expect(renderLiteral('plain', 'mssql', 'varchar(50)')).toBe("'plain'");
+    expect(renderLiteral('\\xDEADbeef', 'mssql', 'varbinary(max)')).toBe('0xdeadbeef');
+    expect(renderLiteral('42', 'mssql', 'bigint')).toBe('42');
+  });
+});

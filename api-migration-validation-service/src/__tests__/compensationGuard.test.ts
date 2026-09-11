@@ -107,3 +107,13 @@ describe('stripQuotedLiterals', () => {
     expect(stripQuotedLiterals("UPDATE t SET a = 'open").terminated).toBe(false);
   });
 });
+
+describe('SQL Server reseed grammar (second-pair programme, Spec 4)', () => {
+  it('admits DBCC CHECKIDENT RESEED (with or without NO_INFOMSGS) and refuses other DBCC forms', () => {
+    expect(checkCompensationStatement("DBCC CHECKIDENT ('[dbo].[orders]', RESEED, 41)").allowed).toBe(true);
+    expect(checkCompensationStatement("DBCC CHECKIDENT ('dbo.orders', RESEED, 0) WITH NO_INFOMSGS").allowed).toBe(true);
+    expect(checkCompensationStatement("DBCC CHECKIDENT ('dbo.orders')").allowed).toBe(false);
+    expect(checkCompensationStatement("DBCC CHECKIDENT ('dbo.orders', NORESEED)").allowed).toBe(false);
+    expect(checkCompensationStatement('DBCC SHRINKDATABASE (demo)').allowed).toBe(false);
+  });
+});

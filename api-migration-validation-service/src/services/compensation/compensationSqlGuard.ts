@@ -21,6 +21,8 @@ const ALLOWED_PREFIXES = [
   /^INSERT\s+INTO\s+/i,
   /^SET\s+IDENTITY_INSERT\s+\S+\s+(ON|OFF)$/i,
   /^EXEC\s+sp_chgattribute\s+'[^']+',\s*'identity_burn_max',\s*0,\s*'\d+'$/i,
+  // SQL Server identity reseed (second-pair programme, Spec 4).
+  /^DBCC\s+CHECKIDENT\s*\(\s*'[^']+'\s*,\s*RESEED\s*,\s*\d+\s*\)(\s+WITH\s+NO_INFOMSGS)?$/i,
   /^SELECT\s+setval\(pg_get_serial_sequence\('[^']+',\s*'[^']+'\),\s*\d+,\s*(true|false)\)$/i,
 ];
 

@@ -11,7 +11,7 @@ doctrine, the owner rulings, hard-item designs, the user prerequisite).
 | 1 | Sidecar multi-engine (`db-discovery-sidecar`) | L | 0 | | pending |
 | 2 | Discovery `mssql` pack + scan UI | L | 1 | | pending |
 | 3 | Ruleset + `MssqlAdapter` + data plane | L | 1 (contract) | `feat/mssql-pair-s3-ruleset-data-plane` | built 2026-09-11 |
-| 4 | State discipline on SQL Server | M | 3 | | pending |
+| 4 | State discipline on SQL Server | M | 3 | `feat/mssql-pair-s4-state-discipline` | built 2026-09-11 |
 | 5 | Pack generation for SQL Server | L | 2 | | pending |
 | 6 | Translation dialect (items 3, 7) + code tier | L | 4, 5 | | pending |
 | 7 | Frontend + ops + shakedown | M | 6 | | pending |
@@ -84,3 +84,26 @@ strategies all known, session profile named form), `migrationPairStrategiesV3.te
 rulesets present `loadPairRuleset()` is null unless pinned — every runtime
 caller resolves per source engine (S0); legacy callers with no engine degrade
 to no rule citations (visible in reports as empty `rules_available`).
+
+### S4 — State discipline on SQL Server (2026-09-11)
+As-built (AMVS): `compensation/inverseDiff.ts` bracket-qualified targets for
+mssql, `SET IDENTITY_INSERT` wrap for sybase AND mssql, reseed
+`DBCC CHECKIDENT ('[schema].[table]', RESEED, <max>)`; `compensationSqlGuard`
+admits the DBCC form (bare `DELETE FROM <t>` was already admitted by the DML
+grammar); `sqlLiterals.renderLiteral` mssql: N'…' for national types, 0x… for
+backslash-x hex wire values; `WriteAdapter` → `SidecarCompensationWriteAdapter`
+(engine + charset + mssql auth extras on every /mutate body, `DB_SIDECAR_URL`),
+`SybaseCompensationWriteAdapter` kept as an alias class; `s0/restoreRunner`:
+bracket targets, identity wrap for mssql, `emptyTable()` = TRUNCATE with a
+DELETE fallback ONLY on mssql (FK-referenced parents), Sybase refusal still
+surfaces; `procCapture/routineScenarioSeeds`: SQL Server type placeholders
+(datetime2 7-digit, datetimeoffset, uniqueidentifier, rowversion, xml) + the
+error-mid-routine family keyed on try_catch/throw/xact_abort/error_continuation;
+`mssqlAuth` threaded through ProcDbConfig, capture-session routes, the capture
+orchestrator's read + write configs. Tests: compensationInverseDiff (+2),
+compensationGuard (+1), s0Snapshot (+2 incl. the DELETE fallback and the
+Sybase non-masking pin), procCaptureSeedsMssql (4), compensationWriteAdapterSidecar
+(3); fake store learned DBCC / bare DELETE / brackets / N'' / 0x.
+DEVIATION from the spec: the Sybase adapter keeps sending `sybaseType` on
+`/call` (the sidecar accepts it as a permanent alias of `sourceType`); the
+SQL Server adapter sends `sourceType`. No Sybase wire change = no Sybase risk.

@@ -63,6 +63,8 @@ export type ProcSessionStatus =
 
 export interface ProcDbConfig {
   dbType: import('../../types/db').DbType;
+  /** SQL Server connection extras (ignored by other engines). */
+  mssqlAuth?: import('../../types/db').MssqlAuth | null;
   host: string;
   port: number;
   database: string;
