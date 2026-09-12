@@ -17,6 +17,7 @@ import { secretsStore } from '../secretsStore';
 import type { SecretsBundle } from '../../types/secrets';
 import { createDbAdapter } from '../db/dbAdapterFactory';
 import { ensureS0Pinned } from '../s0/ensurePinned';
+import type { BracketCallHooks } from '../compensation/types';
 import type { DbAdapter } from '../db/DbAdapter';
 import type { RoutineInvocationEnvelope, RoutineInvocationRequest } from '../db/routineEnvelope';
 import { buildCaptureCompensationContext, runEndOfJobFingerprint, runQuietWindowCheck, type CaptureCompensationContext } from '../captureCompensation';
@@ -532,10 +533,19 @@ export async function orchestrateProcCaptureSession(
             limits: invocationLimits,
           };
         });
-        const doFire = async (): Promise<{ envelopes: RoutineInvocationEnvelope[]; delta: Record<string, unknown> | null }> => {
+        const doFire = async (hooks?: BracketCallHooks): Promise<{ envelopes: RoutineInvocationEnvelope[]; delta: Record<string, unknown> | null }> => {
           const pre = writes.length > 0 ? await snapshotTables(readAdapter, writes) : null;
           const envelopes: RoutineInvocationEnvelope[] = [];
           for (const req of requests) {
+            // Scoped-tier hook (2026-09-12): the routine's bound parameters
+            // are the key predicates the bracket images before the call. The
+            // proc path never called this hook, so over-cap tables had no
+            // per-call slices at all (only the max(PK) sweep).
+            if (hooks) {
+              const params: Record<string, unknown> = {};
+              for (const p of req.params) params[p.name] = p.value;
+              await hooks.beforeMutatingCall({ params });
+            }
             envelopes.push(await (fireAdapter.callRoutine as NonNullable<DbAdapter['callRoutine']>)(req));
           }
           const post = pre ? await snapshotTables(readAdapter, writes) : null;

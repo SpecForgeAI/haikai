@@ -138,8 +138,17 @@ export async function runCompensationBracket<T>(
     const count = await countOf(meta.table);
     if (count !== null && count > COMPENSATION_FULL_IMAGE_MAX_ROWS) {
       const sweepPk = sweepablePkColumn(meta);
-      if (sweepPk) {
-        // Scoped tier: no full image; per-call scoped rows + new-row sweep.
+      // Scoped tier (2026-09-12: extended to COMPOSITE and non-numeric keys).
+      // Any keyed table is scoped: every call parameter whose name matches
+      // one of the key columns images that key slice before the call
+      // (first touch wins) and re-reads it after, so updates and inserts
+      // inside the touched slices get an exact undo. A single numeric key
+      // additionally sweeps new rows above max(PK)-before; without one, the
+      // count guard at verify turns any insert/delete outside the touched
+      // slices into honest residue. Bitemporal tables (ValidFrom/ValidTo +
+      // an id) used to refuse `table_too_large` and every routine touching
+      // the hierarchy core was uncapturable.
+      if (sweepPk || meta.pkColumns.length > 0) {
         partialPlans.push({
           meta,
           role: 'write',
@@ -156,7 +165,7 @@ export async function runCompensationBracket<T>(
         reason: 'table_too_large',
         detail:
           `${count} rows exceeds COMPENSATION_FULL_IMAGE_MAX_ROWS=${COMPENSATION_FULL_IMAGE_MAX_ROWS} ` +
-          'and the table has no single numeric PK for scoped imaging — raise the cap (CONFIG) ' +
+          'and the table has no primary key for scoped imaging — raise the cap (CONFIG) ' +
           'or accept exclusion of this endpoint from compensated capture',
       });
       continue;
@@ -240,7 +249,7 @@ export async function runCompensationBracket<T>(
   }
 
   // ---- 2b) per-call scoped-imaging hooks ---------------------------------
-  const scopedTargets = partialPlans.filter((p) => p.meta.pkColumns.length === 1);
+  const scopedTargets = partialPlans.filter((p) => p.meta.pkColumns.length >= 1);
   const hooks: BracketCallHooks = {
     beforeMutatingCall: async ({ params }) => {
       if (scopedTargets.length === 0) return;
@@ -249,24 +258,27 @@ export async function runCompensationBracket<T>(
         if (value !== undefined && value !== null) folded.set(foldParamName(name), value);
       }
       for (const plan of scopedTargets) {
-        const pk = plan.meta.pkColumns[0];
-        const value = folded.get(foldParamName(pk));
-        if (value === undefined) continue;
-        const already = plan.predicates.some(
-          (p) => String(p.value) === String(value) && p.column === pk,
-        );
-        if (already) continue;
-        plan.predicates.push({ column: pk, value });
-        const { rowsByPk } = await captureScopedRows(
-          args.readAdapter,
-          plan.meta,
-          args.schema,
-          pk,
-          value,
-        );
-        for (const [key, row] of rowsByPk ?? []) {
-          // First-touch-wins: the earliest image of a key is the true before.
-          if (!plan.scopedBefore.has(key)) plan.scopedBefore.set(key, row);
+        // Every key column that a call parameter names bounds a slice
+        // (composite keys: one predicate per matched column; rows are keyed
+        // by the FULL key tuple so slices overlap safely).
+        for (const pk of plan.meta.pkColumns) {
+          const value = folded.get(foldParamName(pk));
+          if (value === undefined) continue;
+          const already = plan.predicates.some(
+            (p) => String(p.value) === String(value) && p.column === pk,
+          );
+          if (already) continue;
+          plan.predicates.push({ column: pk, value });
+          const { rowsByPk } = await captureScopedRows(
+            args.readAdapter,
+            plan.meta,
+            args.schema,
+            pk,
+            value,
+          );
+          for (const [key, row] of rowsByPk ?? []) {
+            if (!plan.scopedBefore.has(key)) plan.scopedBefore.set(key, row);
+          }
         }
       }
     },
