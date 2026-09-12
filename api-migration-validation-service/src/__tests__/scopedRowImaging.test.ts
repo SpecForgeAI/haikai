@@ -48,6 +48,12 @@ const MODEL = {
           migration_scope: 'volatile',
           constraints_metadata: { primary_key: { name: 'pk', columns: ['Id'] } },
         },
+        {
+          id: 'e-scratch',
+          name: 'scratch_tbl',
+          migration_scope: 'volatile',
+          constraints_metadata: {},
+        },
       ],
       physical_data_attributes: [
         { physical_entity_id: 'e-reg', name: 'ViewId', is_identity: true, is_primary_key: true, source_type: 'int', ordinal: 1 },
@@ -56,6 +62,7 @@ const MODEL = {
         { physical_entity_id: 'e-comp', name: 'B', is_primary_key: true, source_type: 'int', ordinal: 2 },
         { physical_entity_id: 'e-comp', name: 'V', source_type: 'varchar', ordinal: 3 },
         { physical_entity_id: 'e-queue', name: 'Id', is_primary_key: true, source_type: 'int', ordinal: 1 },
+        { physical_entity_id: 'e-scratch', name: 'X', source_type: 'int', ordinal: 1 },
       ],
     },
   },
@@ -135,6 +142,68 @@ describe('scoped-row imaging (Item #1)', () => {
     expect(store.snapshotJson()).toBe(pristine);
     expect(run.outcome.statementsApplied.some((s: string) => s.startsWith('UPDATE composite_ref'))).toBe(true);
     expect(run.outcome.statementsApplied.some((s: string) => s.startsWith('DELETE FROM composite_ref'))).toBe(true);
+  });
+
+  it('an over-cap composite-key write table whose known parameters name NO key column is REFUSED unscoped_write (recoverable), never run unbounded (2026-09-12)', async () => {
+    const store = new FakeStore();
+    store.tables.set(
+      'composite_ref',
+      [1, 2, 3, 4, 5, 6].map((i) => ({ A: i, B: i, V: `v${i}` })),
+    );
+    const pristine = store.snapshotJson();
+    const run = await runCompensationBracket({
+      readAdapter: fakeReadAdapter(store),
+      writeAdapter: fakeWriteAdapter(store),
+      engine: 'sybase',
+      schema: null,
+      tables: ['composite_ref'],
+      metadata: METADATA,
+      preboundParams: { cobdate: '2026-09-12' },
+      fire: async () => 'never',
+    });
+    expect(run.fired).toBe(false);
+    expect(run.outcome.kind).toBe('refused');
+    expect(run.outcome.refusals[0]).toMatchObject({ table: 'composite_ref', reason: 'unscoped_write' });
+    expect(run.outcome.refusals[0].detail).toContain('A, B');
+    expect(run.outcome.refusals[0].detail).toContain('cobdate');
+    expect(store.snapshotJson()).toBe(pristine);
+
+    // With a parameter naming a key column the same table is scoped as before.
+    const scoped = await runCompensationBracket({
+      readAdapter: fakeReadAdapter(store),
+      writeAdapter: fakeWriteAdapter(store),
+      engine: 'sybase',
+      schema: null,
+      tables: ['composite_ref'],
+      metadata: METADATA,
+      preboundParams: { a: 2 },
+      fire: async (hooks?: BracketCallHooks) => {
+        await hooks?.beforeMutatingCall({ params: { a: 2 } });
+        return 'fired';
+      },
+    });
+    expect(scoped.fired).toBe(true);
+    expect(scoped.outcome.kind).toBe('clean');
+  });
+
+  it('a VOLATILE write table with no key takes the detect-only bracket instead of refusing missing_pk (2026-09-12)', async () => {
+    const store = new FakeStore();
+    store.tables.set('scratch_tbl', [{ X: 1 }]);
+    const run = await runCompensationBracket({
+      readAdapter: fakeReadAdapter(store),
+      writeAdapter: fakeWriteAdapter(store),
+      engine: 'sybase',
+      schema: null,
+      tables: ['scratch_tbl'],
+      metadata: METADATA,
+      fire: async () => {
+        store.tables.get('scratch_tbl')!.push({ X: 2 });
+        return 'fired';
+      },
+    });
+    expect(run.fired).toBe(true);
+    expect(run.outcome.kind).not.toBe('refused');
+    expect((run.outcome.keylessObservations ?? []).some((k: { table: string; countBefore: number | null; countAfter: number | null }) => k.table === 'scratch_tbl' && k.countBefore === 1 && k.countAfter === 2)).toBe(true);
   });
 
   it('a composite-key write OUTSIDE every touched slice is honest residue (count guard), never silently accepted', async () => {

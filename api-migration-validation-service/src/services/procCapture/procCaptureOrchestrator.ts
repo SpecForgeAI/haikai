@@ -551,12 +551,15 @@ export async function orchestrateProcCaptureSession(
           const post = pre ? await snapshotTables(readAdapter, writes) : null;
           return { envelopes, delta: pre && post ? (computeStateDelta(pre, post) as unknown as Record<string, unknown>) : null };
         };
-        const fireOnce = async (): Promise<{ envelopes: RoutineInvocationEnvelope[]; delta: Record<string, unknown> | null; bracket: string; refusals: Array<{ table: string; reason: string; detail: string }>; fired: boolean; error: unknown }> => {
+        const fireOnce = async (): Promise<{ envelopes: RoutineInvocationEnvelope[]; delta: Record<string, unknown> | null; bracket: string; refusals: Array<{ table: string; reason: string; detail: string }>; residue: Array<{ table: string; kind: string; pkKey: string | null; detail: string }>; fired: boolean; error: unknown }> => {
           if (!compensation || (writes.length === 0 && reads.length === 0)) {
             const r = await doFire();
-            return { ...r, bracket: 'unbracketed', refusals: [], fired: true, error: null };
+            return { ...r, bracket: 'unbracketed', refusals: [], residue: [], fired: true, error: null };
           }
+          const prebound: Record<string, unknown> = {};
+          for (const req of requests) for (const p of req.params) prebound[p.name] = p.value;
           const b = await runBracket({
+            preboundParams: prebound,
             readAdapter,
             writeAdapter: compensation.writeAdapter,
             engine: compensation.engine,
@@ -571,6 +574,7 @@ export async function orchestrateProcCaptureSession(
             delta: b.fireResult?.delta ?? null,
             bracket: (b.outcome as { kind?: string }).kind ?? 'unknown',
             refusals: ((b.outcome as { refusals?: Array<{ table: string; reason: string; detail: string }> }).refusals ?? []),
+            residue: ((b.outcome as { residue?: Array<{ table: string; kind: string; pkKey: string | null; detail: string }> }).residue ?? []),
             fired: b.fired,
             error: b.fireError,
           };
@@ -600,8 +604,21 @@ export async function orchestrateProcCaptureSession(
           if (first.refusals.length === 0) note(routine.id, `bracket refused (${first.bracket})`);
         }
         if (first.bracket === 'residue') {
-          await diag({ routine_id: routine.id, diagnostic_type: 'bracket_residue', message: `Compensation left residue after '${scenario.scenario_name}' on ${routine.routine_name}; the capture is NOT accepted. Remedy: S0 restore.`, detail_json: { scenario: scenario.scenario_name } });
-          note(routine.id, 'bracket residue (capture rejected)');
+          // The residue array (table, kind, pkKey, detail) used to be dropped
+          // (2026-09-12): "mismatch" reached the operator with no idea that
+          // thousands of rows were outstanding. Persist it, name the tables.
+          const tables = [...new Set(first.residue.map((r) => r.table))];
+          await diag({
+            routine_id: routine.id,
+            diagnostic_type: 'bracket_residue',
+            message:
+              `Compensation left residue after '${scenario.scenario_name}' on ${routine.routine_name}` +
+              (tables.length > 0 ? ` — ${tables.join(', ')} (${first.residue.length} detail(s): ${first.residue.slice(0, 3).map((r) => `${r.kind}: ${r.detail}`).join(' | ')})` : '') +
+              '; the capture is NOT accepted. Remedy: S0 restore.',
+            detail_json: { scenario: scenario.scenario_name, residue: first.residue.slice(0, 200) },
+          });
+          for (const r of first.residue.slice(0, 5)) note(routine.id, `bracket residue: ${r.table} ${r.kind}`);
+          if (first.residue.length === 0) note(routine.id, 'bracket residue (capture rejected)');
         }
         // NOT INVOKED (2026-09-12): the engine never entered the routine.
         const notInvoked = first.envelopes.find((e) => e.outcome === 'error' && isNotInvokedError(e.error)) ?? null;
@@ -714,7 +731,27 @@ export async function orchestrateProcCaptureSession(
       }
       const scenarios = (await client.listScenarios(projectId, architectureId, sessionId)).filter((s) => s.routine_id === routine.id);
       const captures = (await client.listCaptures(projectId, architectureId, sessionId)).filter((c) => c.routine_id === routine.id);
-      const cov = scoreRoutineCoverage(routine, scenarios, captures, { notes: notesFor(routine.id) });
+      // Contract-coupled child routines (2026-09-12): every attempt failed
+      // with ASE 208 on a `#temp` table the CALLER creates. Standalone
+      // invocation can never work; that is an honest unverifiable reason,
+      // not a coverage gap to keep retrying.
+      const tempTable = (() => {
+        const errs = captures.filter((c) => c.error_type === 'not_invoked');
+        if (errs.length === 0 || errs.length !== captures.length) return null;
+        const names = errs.map((c) => /#[A-Za-z0-9_]+/.exec(c.error_message ?? '')?.[0] ?? null);
+        return names.every((n) => n !== null) ? [...new Set(names as string[])] : null;
+      })();
+      const cov = tempTable
+        ? scoreRoutineCoverage(routine, scenarios, captures, { unverifiableReason: `caller_provided_temp_table:${tempTable.join('+')}`, notes: notesFor(routine.id) })
+        : scoreRoutineCoverage(routine, scenarios, captures, { notes: notesFor(routine.id) });
+      if (tempTable) {
+        await diag({
+          routine_id: routine.id,
+          diagnostic_type: 'routine_skipped',
+          message: `${routine.routine_name} reads ${tempTable.join(', ')}, a session temp table its caller creates — it cannot be invoked standalone. Capture it through its caller (the parent routine's sequence), or mark it not possible.`,
+          detail_json: { temp_tables: tempTable },
+        });
+      }
       if (!cov.floor_met) {
         await diag({
           routine_id: routine.id,
@@ -731,9 +768,16 @@ export async function orchestrateProcCaptureSession(
     let s0: Record<string, unknown> | null = null;
     if (compensation && endOfJob) {
       const fp = await endOfJob({ projectId, architectureId, readAdapter, metadata: compensation.metadata, schema: compensation.schema, effectScope: compensation.effectScope });
-      s0 = { status: fp.status, snapshot_id: fp.snapshotId, verified_at: now().toISOString() };
+      // The fingerprint's detail (every diverged table + counts) used to be
+      // thrown away here (2026-09-12); it now rides the session and the diagnostic.
+      s0 = { status: fp.status, snapshot_id: fp.snapshotId, verified_at: now().toISOString(), detail: fp.detail, mismatches: fp.report?.mismatches?.length ?? null };
       if (fp.status !== 'verified' && fp.status !== 'no_snapshot') {
-        await diag({ routine_id: null, diagnostic_type: 'bracket_residue', message: `End-of-job S0 fingerprint: ${fp.status}. Restore S0 before any further capture.`, detail_json: { status: fp.status } });
+        await diag({
+          routine_id: null,
+          diagnostic_type: 'bracket_residue',
+          message: `End-of-job S0 fingerprint: ${fp.status}${fp.detail ? ` — ${fp.detail}` : ''}. Restore S0 before any further capture.`,
+          detail_json: { status: fp.status, detail: fp.detail, mismatches: (fp.report?.mismatches ?? []).slice(0, 200) },
+        });
       }
     } else if ((deps.latestSnapshot ?? latestSnapshotId)(projectId, architectureId)) {
       s0 = { status: 'not_verified', snapshot_id: (deps.latestSnapshot ?? latestSnapshotId)(projectId, architectureId) };

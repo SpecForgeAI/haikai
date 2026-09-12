@@ -155,9 +155,17 @@ function bodyHas(routine: RoutineCatalogRow, re: RegExp): boolean {
 /** Exit-outcome keys enumerated STATICALLY from the profile (the floor denominator). */
 export function enumerateExitOutcomes(routine: RoutineCatalogRow): string[] {
   const profile = routine.profile_json ?? {};
-  const out = new Set<string>(['success']);
-  for (const r of profile.return_sites ?? []) {
-    if (r.value !== null && r.value !== 0) out.add(`return:${r.value}`);
+  // RETURN as a data channel (2026-09-12): a routine whose every RETURN site
+  // is an expression (RETURN @next) never returns 0, so `success` was an
+  // unreachable requirement and `return:4600` could never be in it. Such a
+  // routine requires `return:?` (any non-error return, 0 included) instead;
+  // a mixed routine requires both.
+  const sites = profile.return_sites ?? [];
+  const allExpressions = sites.length > 0 && sites.every((r) => r.expr !== null);
+  const out = new Set<string>(allExpressions ? ['return:?'] : ['success']);
+  for (const r of sites) {
+    if (r.expr !== null) out.add('return:?');
+    else if (r.value !== null && r.value !== 0) out.add(`return:${r.value}`);
   }
   for (const r of profile.raiserror_sites ?? []) {
     out.add(r.number !== null ? `error:${r.number}` : 'error:?');

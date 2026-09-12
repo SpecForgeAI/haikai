@@ -54,7 +54,11 @@ export type CompensationRefusalReason =
   | 'missing_pk'
   | 'table_too_large'
   | 'unsafe_identifier'
-  | 'image_read_failed';
+  | 'image_read_failed'
+  /** Over-cap keyed table and no call parameter names a key column: the
+   *  scoped tier cannot bound the write, so it refuses (recoverable) rather
+   *  than run and leave residue (an S0 restore). 2026-09-12. */
+  | 'unscoped_write';
 
 export interface CompensationRefusal {
   table: string;
