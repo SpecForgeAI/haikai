@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # Thin wrapper that forwards args to install-run-all.ps1 via PowerShell.
-# All service handling (incl. implement-verify-service, which builds/runs via
-# Docker compose -f docker-compose.dev.yml) lives in install-run-all.ps1; this
-# wrapper just forwards every arg, so no per-service logic is duplicated here.
+# All service handling (incl. implement-verify-service, which runs locally via
+# its run-local.ps1, and ivs-haibox, the IVS haibox control plane started from
+# the same checkout with `run-local.ps1 haibox`) lives in install-run-all.ps1;
+# this wrapper just forwards every arg, so no per-service logic is duplicated
+# here.
 # Usage examples:
 #   ./install-run-all.sh
 #   ./install-run-all.sh -a run
 #   ./install-run-all.sh -a run -e architecture-read-service,jira-service
-#   ./install-run-all.sh -a run -e implement-verify-service   # skip the Docker service
+#   ./install-run-all.sh -a run -e implement-verify-service,ivs-haibox   # skip the IVS pair
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

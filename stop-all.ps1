@@ -53,8 +53,8 @@ $repoRoot = (Resolve-Path $repoRoot).Path
 #   maven : 8080 ams, 8079 ars, 8078 jira, 8093 db-sidecar
 #   npm   : 8081 gateway, 8091 discovery, 8092 api-migration-validation, 8090 mcp
 #   vite  : 5173 frontend
-#   python (IVS): 8000 uvicorn
-$ports = 8078, 8079, 8080, 8081, 8090, 8091, 8092, 8093, 5173, 8000
+#   python (IVS): 8000 uvicorn, 8780 ivs-haibox control plane (loopback)
+$ports = 8078, 8079, 8080, 8081, 8090, 8091, 8092, 8093, 5173, 8000, 8780
 
 Write-Host ""
 Write-Host "Repo root : $repoRoot"
