@@ -17,6 +17,7 @@ jest.mock('../services/logger', () => ({ logger: { info: jest.fn(), warn: jest.f
 import { createDbMigrationPackWorkbenchRouter } from '../routes/dbMigrationPackWorkbench';
 import { workbenchRegistry } from '../services/dbMigrationPack/procWorkbench';
 import { targetBuildRegistry } from '../services/dbMigrationPack/targetBuild';
+import { targetReconcileRegistry, lastTargetReconcile } from '../services/dbMigrationPack/targetReconcile';
 import type { TranslationRow } from '../services/dbMigrationPack/translations';
 
 const target = { dbType: 'postgres', host: 'h', port: 5432, database: 'd', username: 'u', password: 'p' };
@@ -37,6 +38,44 @@ describe('workbench routes', () => {
   beforeEach(() => {
     workbenchRegistry.clear();
     targetBuildRegistry.clear();
+    targetReconcileRegistry.clear();
+    lastTargetReconcile.clear();
+  });
+
+  it('target reconcile (2026-09-12): needs target + source, refuses while a reconcile or build is in flight, kicks once; status carries the latest parity report', async () => {
+    const runReconcile = jest.fn().mockResolvedValue({ status: 'succeeded', reportId: 'rep-1', parityStatus: 'clean', tables: 3, error: null });
+    const fetchPack = jest.fn().mockResolvedValue({ id: 'k1', architecture_id: 'a1', manifest_json: null });
+    const a = app({ runReconcile, fetchPack });
+    const bad = await request(a).post(`${P}/target/reconcile`).send({ target_db: { host: 'h' } });
+    expect(bad.status).toBe(400);
+    const noSource = await request(a).post(`${P}/target/reconcile`).send({ target_db: target });
+    expect(noSource.status).toBe(409);
+    expect(noSource.body.code).toBe('SOURCE_DB_MISSING');
+    const source = { ...target, dbType: 'sybase', port: 5000 };
+    const ok = await request(a).post(`${P}/target/reconcile`).send({ target_db: target, source_db: source });
+    expect(ok.status).toBe(202);
+    expect(runReconcile).toHaveBeenCalledTimes(1);
+    expect(runReconcile.mock.calls[0][0]).toMatchObject({ projectId: 'p1', architectureId: 'a1', packId: 'k1', sourceDb: { dbType: 'sybase' }, targetDb: { dbType: 'postgres' } });
+
+    targetReconcileRegistry.set('k1', { startedAt: Date.now(), phase: 'comparing 3 table(s)', tables: 3 });
+    const busy = await request(a).post(`${P}/target/reconcile`).send({ target_db: target, source_db: source });
+    expect(busy.status).toBe(409);
+    expect(busy.body.code).toBe('RECONCILE_IN_FLIGHT');
+    targetReconcileRegistry.clear();
+    targetBuildRegistry.set('k1', { buildId: 'b1', startedAt: Date.now(), phase: 'data' });
+    const building = await request(a).post(`${P}/target/reconcile`).send({ target_db: target, source_db: source });
+    expect(building.status).toBe(409);
+    expect(building.body.code).toBe('BUILD_IN_FLIGHT');
+    targetBuildRegistry.clear();
+
+    lastTargetReconcile.set('k1', { status: 'succeeded', reportId: 'rep-1', parityStatus: 'clean', tables: 3, error: null, startedAt: 's', endedAt: 'e' });
+    const latestParityReport = jest.fn().mockResolvedValue({ id: 'rep-1', status: 'clean', created_at: '2026-09-12T10:00:00Z', report_json: { summary: { status: 'clean', tables: 3, divergent: 0, unverifiable: 0 }, tables: [] } });
+    const status = await request(app({ fetchPack, latestParityReport })).get(`${P}/target/reconcile/status`);
+    expect(status.status).toBe(200);
+    expect(status.body.in_flight).toBeNull();
+    expect(status.body.last).toMatchObject({ status: 'succeeded', reportId: 'rep-1', parityStatus: 'clean' });
+    expect(status.body.latest_report).toMatchObject({ id: 'rep-1', status: 'clean' });
+    expect(latestParityReport).toHaveBeenCalledWith('p1', 'a1');
   });
 
   it('target build: parses credentials whole-or-null, refuses without a source, kicks the build once', async () => {

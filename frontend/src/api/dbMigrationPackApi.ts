@@ -2316,3 +2316,158 @@ export async function getDbMigrationPackTranslationParityReport(
   );
   return mapParityReport(wire);
 }
+
+// ---------------------------------------------------------------------------
+// Workbench target reconcile (2026-09-12): full data parity after Build target.
+// ---------------------------------------------------------------------------
+
+export interface DbMigrationPackParityTableRow {
+  schema: string | null;
+  table: string;
+  verdict: string | null;
+  depth: string | null;
+  divergenceClass: string | null;
+  reason: string | null;
+  sourceCount: number | null;
+  targetCount: number | null;
+  rowsCompared: number | null;
+  cellDivergences: number | null;
+}
+
+export interface DbMigrationPackDataParityReport {
+  id: string | null;
+  status: string | null;
+  createdAt: string | null;
+  summary: {
+    tables: number | null;
+    matchFull: number | null;
+    matchSampled: number | null;
+    divergent: number | null;
+    unverifiable: number | null;
+    status: string | null;
+  };
+  tables: DbMigrationPackParityTableRow[];
+}
+
+export interface DbMigrationPackTargetReconcileStatus {
+  inFlight: { phase: string | null; startedAt: string | null; tables: number | null } | null;
+  last: {
+    status: string | null;
+    reportId: string | null;
+    parityStatus: string | null;
+    tables: number | null;
+    error: string | null;
+    startedAt: string | null;
+    endedAt: string | null;
+  } | null;
+  latestReport: DbMigrationPackDataParityReport | null;
+  latestReportError: string | null;
+}
+
+function trRec(v: unknown): Record<string, unknown> | null {
+  return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+}
+function trStr(r: Record<string, unknown> | null, k: string): string | null {
+  const v = r?.[k];
+  return typeof v === 'string' ? v : null;
+}
+function trNum(r: Record<string, unknown> | null, k: string): number | null {
+  const v = r?.[k];
+  return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
+
+function mapDataParityReport(wire: unknown): DbMigrationPackDataParityReport | null {
+  const r = trRec(wire);
+  if (!r) return null;
+  const body = trRec(r.report_json ?? r.reportJson);
+  const summary = trRec(body?.summary);
+  const tables = Array.isArray(body?.tables) ? (body!.tables as unknown[]) : [];
+  return {
+    id: trStr(r, 'id'),
+    status: trStr(r, 'status') ?? trStr(summary, 'status'),
+    createdAt: trStr(r, 'created_at') ?? trStr(r, 'createdAt'),
+    summary: {
+      tables: trNum(summary, 'tables'),
+      matchFull: trNum(summary, 'match_full'),
+      matchSampled: trNum(summary, 'match_sampled'),
+      divergent: trNum(summary, 'divergent'),
+      unverifiable: trNum(summary, 'unverifiable'),
+      status: trStr(summary, 'status'),
+    },
+    tables: tables.map((t) => {
+      const row = trRec(t);
+      return {
+        schema: trStr(row, 'schema'),
+        table: trStr(row, 'table') ?? '',
+        verdict: trStr(row, 'verdict'),
+        depth: trStr(row, 'depth'),
+        divergenceClass: trStr(row, 'divergence_class'),
+        reason: trStr(row, 'reason'),
+        sourceCount: trNum(row, 'source_count'),
+        targetCount: trNum(row, 'target_count'),
+        rowsCompared: trNum(row, 'rows_compared'),
+        cellDivergences: trNum(row, 'cell_divergences'),
+      };
+    }),
+  };
+}
+
+export function mapTargetReconcileStatus(wire: unknown): DbMigrationPackTargetReconcileStatus {
+  const r = trRec(wire);
+  const inFlight = trRec(r?.in_flight ?? r?.inFlight);
+  const last = trRec(r?.last);
+  return {
+    inFlight: inFlight
+      ? { phase: trStr(inFlight, 'phase'), startedAt: trStr(inFlight, 'started_at') ?? trStr(inFlight, 'startedAt'), tables: trNum(inFlight, 'tables') }
+      : null,
+    last: last
+      ? {
+          status: trStr(last, 'status'),
+          reportId: trStr(last, 'reportId') ?? trStr(last, 'report_id'),
+          parityStatus: trStr(last, 'parityStatus') ?? trStr(last, 'parity_status'),
+          tables: trNum(last, 'tables'),
+          error: trStr(last, 'error'),
+          startedAt: trStr(last, 'startedAt') ?? trStr(last, 'started_at'),
+          endedAt: trStr(last, 'endedAt') ?? trStr(last, 'ended_at'),
+        }
+      : null,
+    latestReport: mapDataParityReport(r?.latest_report ?? r?.latestReport),
+    latestReportError: trStr(r, 'latest_report_error') ?? trStr(r, 'latestReportError'),
+  };
+}
+
+/**
+ * GET .../target/reconcile/status -- in-flight reconcile, the last outcome,
+ * and the architecture's latest persisted data-parity report.
+ */
+export async function getDbMigrationPackTargetReconcileStatus(
+  projectId: string,
+  packId: string,
+): Promise<DbMigrationPackTargetReconcileStatus> {
+  const wire = await getJson<unknown>(
+    `${packBase(projectId, packId)}/target/reconcile/status`,
+    'Failed to load the target reconcile status',
+  );
+  return mapTargetReconcileStatus(wire);
+}
+
+/**
+ * POST .../target/reconcile -- run the full data-parity reconcile of the
+ * built target against the source (per-invocation credentials, never stored).
+ */
+export async function startDbMigrationPackTargetReconcile(
+  projectId: string,
+  packId: string,
+  request: { targetDb: DbMigrationPackDbCredentials; sourceDb?: DbMigrationPackDbCredentials | null },
+): Promise<{ accepted: boolean }> {
+  await sendJson<unknown>(
+    `${packBase(projectId, packId)}/target/reconcile`,
+    'POST',
+    {
+      target_db: credentialsToWire(request.targetDb),
+      ...(request.sourceDb ? { source_db: credentialsToWire(request.sourceDb) } : {}),
+    },
+    'Failed to start the target reconcile',
+  );
+  return { accepted: true };
+}

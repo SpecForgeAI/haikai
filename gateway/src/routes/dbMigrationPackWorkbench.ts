@@ -21,6 +21,8 @@ import { logger } from '../services/logger';
 import { parseDbCredentialBlock } from '../services/dbMigrationPack/dbCredentialBlock';
 import { currentSystemCredentialsStore } from '../services/baselineDriftScheduler';
 import { runTargetBuild, targetBuildRegistry } from '../services/dbMigrationPack/targetBuild';
+import { runTargetReconcile, targetReconcileRegistry, lastTargetReconcile } from '../services/dbMigrationPack/targetReconcile';
+import { defaultDataParityGateReads, type LatestDataParityReport } from '../services/migrationDataParityGate';
 import { fetchLatestTargetBuild, createProcParityWaiver, listProcParityWaivers, runProcParityViaAmvs, toRunnerWaivers } from '../services/dbMigrationPack/procWorkbenchClients';
 import { runWorkbenchLoop, workbenchRegistry, fetchPinnedProcBaselineItems } from '../services/dbMigrationPack/procWorkbench';
 import { defaultFetchPackRow, defaultFetchRoutineCatalog, defaultFetchTranslations, defaultPatchTranslation } from '../services/dbMigrationPack/translations';
@@ -50,6 +52,9 @@ export interface WorkbenchRouteDeps {
   fetchBaselineItems?: typeof fetchPinnedProcBaselineItems;
   runEmission?: typeof runTranslationEmission;
   latestBuild?: typeof fetchLatestTargetBuild;
+  /** Workbench reconcile (2026-09-12). */
+  runReconcile?: typeof runTargetReconcile;
+  latestParityReport?: (projectId: string, architectureId: string) => Promise<LatestDataParityReport | null>;
 }
 
 export function createDbMigrationPackWorkbenchRouter(deps: WorkbenchRouteDeps = {}): Router {
@@ -66,6 +71,9 @@ export function createDbMigrationPackWorkbenchRouter(deps: WorkbenchRouteDeps = 
   const fetchBaselineItems = deps.fetchBaselineItems ?? fetchPinnedProcBaselineItems;
   const runEmission = deps.runEmission ?? runTranslationEmission;
   const latestBuild = deps.latestBuild ?? fetchLatestTargetBuild;
+  const runReconcile = deps.runReconcile ?? runTargetReconcile;
+  const latestParityReport =
+    deps.latestParityReport ?? ((p: string, a: string) => defaultDataParityGateReads().fetchLatestDataParityReport(p, a));
 
   const targetFromBody = (req: Request, res: Response) => {
     const body = (req.body ?? {}) as { target_db?: unknown; targetDb?: unknown };
@@ -108,6 +116,53 @@ export function createDbMigrationPackWorkbenchRouter(deps: WorkbenchRouteDeps = 
     const inFlight = targetBuildRegistry.get(packId) ?? null;
     const latest = await latestBuild(projectId, packId);
     res.status(200).json({ in_flight: inFlight ? { phase: inFlight.phase, started_at: new Date(inFlight.startedAt).toISOString(), build_id: inFlight.buildId } : null, latest });
+  });
+
+  // Reconcile the built target against the source (2026-09-12): the DB
+  // plane's full data-parity engine on demand, before any Stage 1 run. The
+  // report is persisted in AMS as a data-parity report -- the same row the
+  // migrate gate and the progress report read.
+  router.post(`${BASE}/target/reconcile`, async (req: Request, res: Response) => {
+    const { projectId, packId } = req.params;
+    const target = targetFromBody(req, res);
+    if (!target) return;
+    const body = (req.body ?? {}) as { source_db?: unknown; sourceDb?: unknown };
+    const source = parseDbCredentialBlock(body.source_db ?? body.sourceDb) ?? currentSystemCredentialsStore.get(projectId)?.db ?? null;
+    if (!source) return fail(res, 409, 'No source database credentials: supply source_db or register the current-system credentials first.', { code: 'SOURCE_DB_MISSING' });
+    if (targetReconcileRegistry.has(packId)) return fail(res, 409, 'A reconcile is already in flight for this pack.', { code: 'RECONCILE_IN_FLIGHT' });
+    if (targetBuildRegistry.has(packId)) return fail(res, 409, 'A target build is in flight for this pack — reconcile once it completes.', { code: 'BUILD_IN_FLIGHT' });
+    try {
+      const pack = await fetchPack(projectId, packId);
+      const architectureId = typeof pack.architecture_id === 'string' ? pack.architecture_id : null;
+      if (!architectureId) return fail(res, 409, 'The pack carries no architecture id.');
+      void runReconcile({ projectId, architectureId, packId, sourceDb: source, targetDb: target }).catch((err) => {
+        logger.error('[diag-gateway] proc_workbench reconcile_unhandled', { packId, error: err instanceof Error ? err.message : String(err) });
+      });
+      res.status(202).json({ accepted: true, pack_id: packId });
+    } catch (err) {
+      fail(res, 502, err instanceof Error ? err.message : String(err));
+    }
+  });
+
+  router.get(`${BASE}/target/reconcile/status`, async (req: Request, res: Response) => {
+    const { projectId, packId } = req.params;
+    const inFlight = targetReconcileRegistry.get(packId) ?? null;
+    const last = lastTargetReconcile.get(packId) ?? null;
+    let latest: LatestDataParityReport | null = null;
+    let latestError: string | null = null;
+    try {
+      const pack = await fetchPack(projectId, packId);
+      const architectureId = typeof pack.architecture_id === 'string' ? pack.architecture_id : null;
+      latest = architectureId ? await latestParityReport(projectId, architectureId) : null;
+    } catch (err) {
+      latestError = err instanceof Error ? err.message : String(err);
+    }
+    res.status(200).json({
+      in_flight: inFlight ? { phase: inFlight.phase, started_at: new Date(inFlight.startedAt).toISOString(), tables: inFlight.tables } : null,
+      last,
+      latest_report: latest,
+      latest_report_error: latestError,
+    });
   });
 
   const kick = async (req: Request, res: Response, scope: string[] | null, guidance: Record<string, string>) => {
