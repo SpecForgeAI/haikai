@@ -178,9 +178,35 @@ export function createProcCaptureSessionActionsRouter(deps: ProcCaptureRouteDeps
     }
   });
 
-  router.post('/api/proc-capture-sessions/:id/cancel', (req: Request, res: Response) => {
-    const cancelled = cancelProcRun(req.params.id);
-    res.status(cancelled ? 202 : 409).json({ cancelled });
+  router.post('/api/proc-capture-sessions/:id/cancel', async (req: Request, res: Response) => {
+    const sessionId = req.params.id;
+    if (cancelProcRun(sessionId)) {
+      return res.status(202).json({ cancelled: true });
+    }
+    // STRANDED run (2026-09-12): the session row says `running` but no run is
+    // in flight in THIS process -- the service was restarted mid-run (live
+    // shape: a restart to pick up a fix while a capture was starting). The
+    // in-memory run registry is gone, so nothing will ever finish the row;
+    // Stop refused with 409, Delete refused because it was "running", and
+    // the operator was stuck. Cancel now resolves the row honestly.
+    const { projectId, architectureId } = ids(req);
+    if (!projectId || !architectureId) {
+      return res.status(409).json({ cancelled: false, code: 'NOT_RUNNING' });
+    }
+    try {
+      const session = await client.getSession(projectId, architectureId, sessionId);
+      if (session.status !== 'running') {
+        return res.status(409).json({ cancelled: false, code: 'NOT_RUNNING', currentStatus: session.status });
+      }
+      await client.patchSession(projectId, architectureId, sessionId, {
+        status: 'cancelled',
+        completed_at: new Date().toISOString(),
+      });
+      console.warn(`[diag-amvs] op=proc_capture stranded_run_cancelled session=${sessionId.slice(0, 8)} (no run in flight in this process; the service restarted mid-run)`);
+      return res.status(202).json({ cancelled: true, stranded: true });
+    } catch (err) {
+      return fail(res, 502, err instanceof Error ? err.message : String(err));
+    }
   });
 
   const disposition = (type: 'excluded_by_user' | 'not_possible') => async (req: Request, res: Response): Promise<void> => {

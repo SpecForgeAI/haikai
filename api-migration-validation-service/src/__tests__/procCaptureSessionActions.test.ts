@@ -78,6 +78,22 @@ describe('proc capture session routes', () => {
     expect((await client.getSession('p', 'a', 's1')).status).toBe('configured');
   });
 
+  it('cancel: a STRANDED running session (no run in flight after a restart) is marked cancelled; a non-running one is refused (2026-09-12)', async () => {
+    const stranded = fakeClient({ status: 'running' });
+    const res = await request(app(stranded)).post(`/api/proc-capture-sessions/s1/cancel${Q}`).send({});
+    expect(res.status).toBe(202);
+    expect(res.body).toEqual({ cancelled: true, stranded: true });
+    const after = await stranded.getSession('p', 'a', 's1');
+    expect(after.status).toBe('cancelled');
+    expect(after.completed_at).toBeTruthy();
+
+    const idle = fakeClient({ status: 'configured' });
+    const refused = await request(app(idle)).post(`/api/proc-capture-sessions/s1/cancel${Q}`).send({});
+    expect(refused.status).toBe(409);
+    expect(refused.body).toEqual({ cancelled: false, code: 'NOT_RUNNING', currentStatus: 'configured' });
+    expect((await idle.getSession('p', 'a', 's1')).status).toBe('configured');
+  });
+
   it('start: guards status, secrets, S0 and the catalog, then answers 202 and fires the orchestrator once', async () => {
     const client = fakeClient({ status: 'configured' });
     const orchestrate = jest.fn().mockResolvedValue({ status: 'completed' });
