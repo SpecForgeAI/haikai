@@ -380,7 +380,7 @@ export const ProcCaptureSessionDetailPage: React.FC = () => {
             disabled={busy}
             data-testid="proc-session-cancel"
           >
-            {run.inFlight ? 'Cancel run' : 'Stop stranded run'}
+            {run.inFlight ? 'Cancel run' : 'Stop run'}
           </button>
         )}
       </div>
