@@ -6,6 +6,8 @@
   install | run | all   (default: all)
     install -> mvn -DskipTests clean package  (maven)  /  npm ci  (npm)  /  venv + pip install -r requirements.txt (python)
     run     -> mvn spring-boot:run            (maven)  /  npm run dev (npm)  /  .\run-local.ps1                     (python)
+               .\run-local.ps1 haibox (ivs-haibox: the IVS haibox control plane on 127.0.0.1:8780, same checkout + venv as
+               implement-verify-service, so it installs nothing of its own)
     all     -> install then run
 
 .PARAMETER Exclude
@@ -58,8 +60,22 @@ $services = @(
   # (.venv-local + pip install -r requirements.txt + Claude CLI); run = its
   # own run-local.ps1 (loads .env.local, starts the worker window + uvicorn
   # on port 8000 with hot reload).
-  [pscustomobject]@{ Name='implement-verify-service';          Type='python' }
+  [pscustomobject]@{ Name='implement-verify-service';          Type='python' },
+  # ivs-haibox (2026-09-12): the IVS haibox control plane (target-service
+  # boxes for the deploy + API reconcile step) on 127.0.0.1:8780. Without it
+  # a service-plane deploy fails AFTER the implement succeeded and the MR is
+  # open. It runs from the implement-verify-service checkout with the SAME
+  # venv + .env.local (`.\run-local.ps1 haibox`), so it has no install step
+  # of its own; `Dir` points the tab at that checkout. Listed AFTER the IVS
+  # entry so the IVS install lands first.
+  [pscustomobject]@{ Name='ivs-haibox';                        Type='haibox'; Dir='implement-verify-service' }
 )
+
+# A service runs from its own folder unless it declares `Dir` (shared checkout).
+function Service-Path([object]$svc) {
+  $dir = if ($svc.PSObject.Properties['Dir'] -and $svc.Dir) { $svc.Dir } else { $svc.Name }
+  return (Join-Path $repoRoot $dir)
+}
 
 $knownNames = $services | ForEach-Object { $_.Name }
 
@@ -106,7 +122,7 @@ function Require-Command([string]$Name) {
 $needMaven  = ($selected | Where-Object { $_.Type -eq 'maven'  }).Count -gt 0
 $needNpm    = ($selected | Where-Object { $_.Type -eq 'npm'    }).Count -gt 0
 $needDocker = ($selected | Where-Object { $_.Type -eq 'docker' }).Count -gt 0
-$needPython = ($selected | Where-Object { $_.Type -eq 'python' }).Count -gt 0
+$needPython = ($selected | Where-Object { $_.Type -eq 'python' -or $_.Type -eq 'haibox' }).Count -gt 0
 if ($needMaven)  { Require-Command 'java'; Require-Command 'mvn' }
 if ($needNpm)    { Require-Command 'npm' }
 if ($needDocker) { Require-Command 'docker' }
@@ -118,14 +134,19 @@ if ($needPython) { Require-Command 'python'; Require-Command 'npm' }
 if ($doInstall) {
   Write-Host "=== INSTALL phase ===" -ForegroundColor Cyan
   foreach ($svc in $selected) {
-    $path = Join-Path $repoRoot $svc.Name
+    $path = Service-Path $svc
     if (-not (Test-Path $path)) { throw "Service path not found: $path" }
 
     Write-Host ""
     Write-Host "--- Installing $($svc.Name) [$($svc.Type)] ---" -ForegroundColor Yellow
     Push-Location $path
     try {
-      if ($svc.Type -eq 'maven') {
+      if ($svc.Type -eq 'haibox') {
+        # Shares implement-verify-service's venv, Claude CLI and .env.local:
+        # that entry's install covers it. Only the box work root is ensured.
+        New-Item -ItemType Directory -Force -Path 'api_workspace\haibox' | Out-Null
+        Write-Host "ivs-haibox shares the implement-verify-service install (nothing to do)."
+      } elseif ($svc.Type -eq 'maven') {
         & mvn -DskipTests clean package
       } elseif ($svc.Type -eq 'docker') {
         # Build the dev image (source is volume-mounted at run time for hot reload).
@@ -189,12 +210,16 @@ if ($doRun) {
 
   $first = $true
   foreach ($svc in $selected) {
-    $path = Join-Path $repoRoot $svc.Name
+    $path = Service-Path $svc
     if (-not (Test-Path $path)) { throw "Service path not found: $path" }
 
     $runCmd =
       if     ($svc.Type -eq 'maven')  { 'mvn spring-boot:run' }
       elseif ($svc.Type -eq 'docker') { "docker compose -f $($svc.Compose) up" }
+      elseif ($svc.Type -eq 'haibox') {
+        # The IVS haibox control plane (loopback 8780) from the same checkout.
+        '.\run-local.ps1 haibox'
+      }
       elseif ($svc.Type -eq 'python') {
         # The service's own local runner: activates .venv-local, loads
         # .env.local, spawns the background worker window, then runs
