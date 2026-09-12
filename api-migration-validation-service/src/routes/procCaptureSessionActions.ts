@@ -19,8 +19,6 @@ import { Router, type Request, type Response } from 'express';
 import { secretsStore } from '../services/secretsStore';
 import type { SecretsBundle } from '../types/secrets';
 import { latestSnapshotId } from '../services/s0/manifest';
-import { ensureS0Pinned } from '../services/s0/ensurePinned';
-import type { DbConnectionConfig } from '../types/db';
 import { procBehaviourClient, type ProcBehaviourClientSurface } from '../services/procBehaviourClient';
 import {
   cancelProcRun,
@@ -51,8 +49,6 @@ export interface ProcCaptureRouteDeps {
   orchestrate?: typeof orchestrateProcCaptureSession;
   orchestratorDeps?: ProcCaptureDeps;
   latestSnapshot?: typeof latestSnapshotId;
-  /** S0 self-heal (2026-09-11): re-pin from the committed model when no pin exists. */
-  ensurePinned?: typeof ensureS0Pinned;
 }
 
 export function createProcCaptureSessionActionsRouter(deps: ProcCaptureRouteDeps = {}): Router {
@@ -60,7 +56,6 @@ export function createProcCaptureSessionActionsRouter(deps: ProcCaptureRouteDeps
   const client = deps.client ?? procBehaviourClient;
   const orchestrate = deps.orchestrate ?? orchestrateProcCaptureSession;
   const latestSnapshot = deps.latestSnapshot ?? latestSnapshotId;
-  const ensurePinned = deps.ensurePinned ?? ensureS0Pinned;
 
   router.post('/api/proc-capture-sessions/:id/secrets', async (req: Request, res: Response) => {
     const sessionId = req.params.id;
@@ -116,36 +111,19 @@ export function createProcCaptureSessionActionsRouter(deps: ProcCaptureRouteDeps
     }
     if (!secretsStore.has(sessionId)) return fail(res, 409, 'Secrets not loaded for this session. Submit /secrets before /start.', { code: 'SECRETS_NOT_LOADED' });
     if (!session.db_config_redacted_json) return fail(res, 409, 'The session has no database configuration.', { code: 'DB_NOT_CONFIGURED' });
-    if (!latestSnapshot(projectId, architectureId)) {
-      // S0 self-heal (2026-09-11). The DB scan pinned S0 and the scan record
-      // says so, but the pin lives on THIS service's disk and a fresh clone /
-      // moved data directory loses it. The session already holds the source
-      // DB details and credentials, and the scan's candidates are committed:
-      // re-pin from the committed model now instead of sending the operator
-      // back to a scan whose work is already saved. Refuse only when the
-      // re-pin itself fails, with the reason.
-      const cfg = session.db_config_redacted_json;
-      const secrets = secretsStore.get(sessionId);
-      const config: DbConnectionConfig = {
-        dbType: cfg.dbType,
-        host: cfg.host,
-        port: cfg.port,
-        database: cfg.database,
-        schema: cfg.schema ?? null,
-        username: cfg.username,
-        password: secrets?.db?.password ?? '',
-        ...(cfg.mssqlAuth ? { mssqlAuth: cfg.mssqlAuth } : {}),
-      };
-      const pinned = await ensurePinned({ projectId, architectureId, config, reason: 'proc_capture_start' });
-      if (pinned.status === 'failed') {
-        return fail(
-          res,
-          409,
-          `S0 is not pinned for this architecture and could not be re-pinned from the committed model (${pinned.detail}). ` +
-            'Save the DB scan (approve + commit its candidates) or re-run it, then start again.',
-          { code: 'S0_NOT_PINNED', detail: pinned.detail },
-        );
-      }
+    // S0 self-heal (2026-09-11; moved OFF the request path 2026-09-12). The DB
+    // scan pinned S0 and the scan record says so, but the pin lives on THIS
+    // service's disk and a fresh clone / moved data directory loses it. The
+    // session holds the source DB details and credentials and the scan's
+    // candidates are committed, so the RUN re-pins from the committed model
+    // as its first phase ('pinning_s0') instead of refusing. It is not done
+    // here: a snapshot of a real estate takes minutes, and doing it inside
+    // the start request made the gateway's proxy give up ("Validation
+    // service unreachable") while the pin was in fact being taken. The run
+    // fails honestly (diagnostic + failed status) if the re-pin fails.
+    const repinS0 = !latestSnapshot(projectId, architectureId);
+    if (repinS0) {
+      console.warn(`[diag-amvs] op=proc_capture s0_missing session=${sessionId.slice(0, 8)} action=repin_in_run`);
     }
     const routines = await client.listRoutines(projectId, architectureId);
     if (routines.filter((r) => r.routine_kind !== 'trigger').length === 0) {
@@ -155,7 +133,7 @@ export function createProcCaptureSessionActionsRouter(deps: ProcCaptureRouteDeps
       // Scoped re-run: the session goes back through running from a terminal state.
       await client.patchSession(projectId, architectureId, sessionId, { status: 'configured' }).catch(() => undefined);
     }
-    void orchestrate({ projectId, architectureId, sessionId, routineIds }, deps.orchestratorDeps).catch((err) => {
+    void orchestrate({ projectId, architectureId, sessionId, routineIds, ...(repinS0 ? { repinS0: true } : {}) }, deps.orchestratorDeps).catch((err) => {
       console.error(`[diag-amvs] op=proc_capture unhandled session=${sessionId.slice(0, 8)} reason=${err instanceof Error ? err.message : String(err)}`);
     });
     res.status(202).json({ accepted: true, session_id: sessionId, routines: routineIds ? routineIds.length : routines.length });

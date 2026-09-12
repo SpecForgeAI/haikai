@@ -48,7 +48,7 @@ public class ProcBehaviourDiagnosticEntity {
         "not_possible",
         "captured_as_error",
         "result_set_truncated",
-        "login_dependent");
+        "login_dependent", "s0_not_pinned", "s0_repinned");
 
     @Id
     @Column(name = "id")
