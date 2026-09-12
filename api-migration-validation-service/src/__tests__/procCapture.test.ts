@@ -279,6 +279,38 @@ describe('proc tool loop + tools', () => {
 
 describe('orchestrator', () => {
   const secrets = () => ({ sessionId: 'sess', api: { type: 'none' as const }, db: { password: 'pw' }, loadedAt: 0 });
+
+  it('S0 re-pin is the run\u2019s first phase (2026-09-12): a failed re-pin fails the run with an s0_not_pinned diagnostic; a successful one records s0_repinned and continues', async () => {
+    const client = new FakeClient();
+    const failing = jest.fn().mockResolvedValue({ status: 'failed', snapshotId: null, detail: 'no committed table metadata' });
+    const failed = await orchestrateProcCaptureSession(
+      { projectId: 'p', architectureId: 'a', sessionId: 'sess', repinS0: true },
+      { client, secrets, ensurePinned: failing as never, createAdapter: (() => { throw new Error('must not connect'); }) as never },
+    );
+    expect(failed.status).toBe('failed');
+    expect(failed.error).toContain('S0 not pinned: no committed table metadata');
+    expect(failing.mock.calls[0][0]).toEqual(expect.objectContaining({ reason: 'proc_capture_start', config: expect.objectContaining({ password: 'pw' }) }));
+    expect(client.diagnostics.some((d) => d.diagnostic_type === 's0_not_pinned' && d.message.includes('no committed table metadata'))).toBe(true);
+    expect(client.session.status).toBe('failed');
+
+    const client2 = new FakeClient();
+    const pinning = jest.fn().mockResolvedValue({ status: 'pinned', snapshotId: 's0-new', detail: 're-pinned now from the committed model: 65 tables.' });
+    const continued = await orchestrateProcCaptureSession(
+      { projectId: 'p', architectureId: 'a', sessionId: 'sess', repinS0: true },
+      { client: client2, secrets, ensurePinned: pinning as never, createAdapter: (() => { throw new Error('stop-here'); }) as never },
+    );
+    // The run got PAST the pin (it failed later, at our sentinel adapter).
+    expect(continued.error).toContain('stop-here');
+    expect(client2.diagnostics.some((d) => d.diagnostic_type === 's0_repinned' && d.detail_json?.snapshot_id === 's0-new')).toBe(true);
+
+    // Without the flag nothing is pinned.
+    const untouched = jest.fn();
+    await orchestrateProcCaptureSession(
+      { projectId: 'p', architectureId: 'a', sessionId: 'sess' },
+      { client: new FakeClient(), secrets, ensurePinned: untouched as never, createAdapter: (() => { throw new Error('stop-here'); }) as never },
+    );
+    expect(untouched).not.toHaveBeenCalled();
+  });
   const compensation = (writeAdapter = {}) => async () => ({
     context: { engine: 'sybase' as const, schema: null, effectScope: {} as never, metadata: { byTable: new Map() } as never, readAdapter: {} as never, writeAdapter: writeAdapter as never },
     inactiveReason: null,

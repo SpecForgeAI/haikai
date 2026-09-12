@@ -16,6 +16,7 @@
 import { secretsStore } from '../secretsStore';
 import type { SecretsBundle } from '../../types/secrets';
 import { createDbAdapter } from '../db/dbAdapterFactory';
+import { ensureS0Pinned } from '../s0/ensurePinned';
 import type { DbAdapter } from '../db/DbAdapter';
 import type { RoutineInvocationEnvelope, RoutineInvocationRequest } from '../db/routineEnvelope';
 import { buildCaptureCompensationContext, runEndOfJobFingerprint, runQuietWindowCheck, type CaptureCompensationContext } from '../captureCompensation';
@@ -90,6 +91,8 @@ export function cancelProcRun(sessionId: string): boolean {
 export interface ProcCaptureDeps {
   client?: ProcBehaviourClientSurface;
   createAdapter?: typeof createDbAdapter;
+  /** S0 re-pin seam (2026-09-12). */
+  ensurePinned?: typeof ensureS0Pinned;
   buildCompensation?: typeof buildCaptureCompensationContext;
   runBracket?: typeof runCompensationBracket;
   snapshotTables?: typeof snapshotEffectTables;
@@ -111,6 +114,12 @@ export interface ProcCaptureRunArgs {
   sessionId: string;
   /** Scoped re-run (retry-uncovered): only these routines. */
   routineIds?: string[] | null;
+  /**
+   * No S0 pin existed at start (2026-09-12): re-pin from the committed model
+   * as the run's first phase, with the session's own DB details + secrets.
+   * The run fails (diagnostic `s0_not_pinned`) when the re-pin fails.
+   */
+  repinS0?: boolean;
 }
 
 export interface ProcCaptureOutcome {
@@ -297,6 +306,48 @@ export async function orchestrateProcCaptureSession(
       throw new Error('Proc capture requires the session DB configuration and loaded DB secrets.');
     }
     await client.patchSession(projectId, architectureId, sessionId, { status: 'running', started_at: now().toISOString() });
+
+    // ---- S0 re-pin (2026-09-12): the run's first phase when no pin exists --
+    if (args.repinS0) {
+      run.phase = 'pinning_s0';
+      const ensurePinned = deps.ensurePinned ?? ensureS0Pinned;
+      const pinned = await ensurePinned(
+        {
+          projectId,
+          architectureId,
+          config: {
+            dbType: cfg.dbType,
+            host: cfg.host,
+            port: cfg.port,
+            database: cfg.database,
+            schema: cfg.schema ?? null,
+            username: cfg.username,
+            password: secrets.db.password,
+            ...(cfg.mssqlAuth ? { mssqlAuth: cfg.mssqlAuth } : {}),
+          },
+          reason: 'proc_capture_start',
+        },
+      );
+      if (pinned.status === 'failed') {
+        await diag({
+          routine_id: null,
+          diagnostic_type: 's0_not_pinned',
+          message:
+            `S0 is not pinned for this architecture and could not be re-pinned from the committed model: ${pinned.detail}. ` +
+            'Save the DB scan (approve + commit its candidates) or re-run it, then start again.',
+          detail_json: { detail: pinned.detail },
+        });
+        throw new Error(`S0 not pinned: ${pinned.detail}`);
+      }
+      if (pinned.status === 'pinned') {
+        await diag({
+          routine_id: null,
+          diagnostic_type: 's0_repinned',
+          message: pinned.detail,
+          detail_json: { snapshot_id: pinned.snapshotId },
+        });
+      }
+    }
     const tuning = session.capture_tuning_json ?? {};
     const limits = {
       maxRows: cfg.maxRowsPerQuery ?? 200,

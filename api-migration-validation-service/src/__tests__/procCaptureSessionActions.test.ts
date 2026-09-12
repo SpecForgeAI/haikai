@@ -47,7 +47,7 @@ function fakeClient(session: Partial<ProcCaptureSessionDto> = {}): ProcBehaviour
 
 function app(
   client: ProcBehaviourClientSurface,
-  opts: { orchestrate?: jest.Mock; snapshot?: string | null; ensurePinned?: jest.Mock } = {},
+  opts: { orchestrate?: jest.Mock; snapshot?: string | null } = {},
 ) {
   const a = express();
   a.use(express.json());
@@ -55,9 +55,6 @@ function app(
     client,
     orchestrate: (opts.orchestrate ?? jest.fn().mockResolvedValue({ status: 'completed' })) as never,
     latestSnapshot: () => (opts.snapshot === undefined ? 's0-1' : opts.snapshot),
-    // Default: a missing pin cannot be re-pinned (the legacy refusal shape).
-    ensurePinned: (opts.ensurePinned ??
-      jest.fn().mockResolvedValue({ status: 'failed', snapshotId: null, detail: 'no committed table metadata' })) as never,
   }));
   return a;
 }
@@ -89,26 +86,14 @@ describe('proc capture session routes', () => {
     expect(noSecrets.body.code).toBe('SECRETS_NOT_LOADED');
 
     secretsStore.set({ sessionId: 's1', api: { type: 'none' }, db: { password: 'pw' }, loadedAt: 0 });
-    const noS0 = await request(app(client, { orchestrate, snapshot: null })).post(`/api/proc-capture-sessions/s1/start${Q}`).send({});
-    expect(noS0.status).toBe(409);
-    expect(noS0.body.code).toBe('S0_NOT_PINNED');
-    expect(noS0.body.message ?? noS0.body.error).toContain('could not be re-pinned from the committed model (no committed table metadata)');
-
-    // S0 self-heal (2026-09-11): a lost pin is re-pinned from the committed
-    // model with the session's own DB details + secrets, then the start
-    // proceeds — no "run the DB scan again" for work that is already saved.
-    const repin = jest.fn().mockResolvedValue({ status: 'pinned', snapshotId: 's0-new', detail: 're-pinned' });
-    const healed = await request(app(client, { orchestrate: jest.fn().mockResolvedValue({ status: 'completed' }), snapshot: null, ensurePinned: repin })).post(`/api/proc-capture-sessions/s1/start${Q}`).send({});
-    expect(healed.status).toBe(202);
-    expect(repin).toHaveBeenCalledTimes(1);
-    expect(repin.mock.calls[0][0]).toEqual(
-      expect.objectContaining({
-        projectId: 'p',
-        architectureId: 'a',
-        reason: 'proc_capture_start',
-        config: expect.objectContaining({ password: 'pw' }),
-      }),
-    );
+    // S0 self-heal (2026-09-12): a lost pin no longer refuses the start and
+    // is NOT re-pinned inside the request (a real snapshot takes minutes and
+    // the gateway proxy gave up) — the run re-pins as its first phase.
+    const repinRun = jest.fn().mockResolvedValue({ status: 'completed' });
+    const noS0 = await request(app(client, { orchestrate: repinRun, snapshot: null })).post(`/api/proc-capture-sessions/s1/start${Q}`).send({});
+    expect(noS0.status).toBe(202);
+    expect(repinRun).toHaveBeenCalledTimes(1);
+    expect(repinRun.mock.calls[0][0]).toEqual(expect.objectContaining({ sessionId: 's1', repinS0: true }));
 
     const started = await request(app(client, { orchestrate })).post(`/api/proc-capture-sessions/s1/start${Q}`).send({});
     expect(started.status).toBe(202);
