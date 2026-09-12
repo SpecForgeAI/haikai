@@ -105,6 +105,40 @@ class ProcBehaviourServiceTest {
             null, status, null, null, null, null, null, null, null, null);
     }
 
+    // ------------------------------------------------------------------
+    // delete (2026-09-12)
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("delete: removes a finished session, detaches (never deletes) its baselines, refuses a running one, false when absent")
+    void deleteSessionDetachesBaselinesAndRefusesRunning() {
+        ProcBehaviourCaptureSessionEntity done = session("completed_with_findings");
+        ProcBehaviourBaselineEntity fromIt = ProcBehaviourBaselineEntity.builder()
+            .id(UUID.randomUUID()).projectId(projectId).architectureId(architectureId)
+            .sessionId(done.getId()).name("v1").kind("current").status("saved").build();
+        ProcBehaviourBaselineEntity other = ProcBehaviourBaselineEntity.builder()
+            .id(UUID.randomUUID()).projectId(projectId).architectureId(architectureId)
+            .sessionId(UUID.randomUUID()).name("v0").kind("current").status("saved").build();
+        when(baselineRepository.findByArchitectureIdOrderByCreatedAtDesc(architectureId))
+            .thenReturn(List.of(fromIt, other));
+
+        assertThat(service.deleteSession(architectureId, done.getId())).isTrue();
+        org.mockito.Mockito.verify(sessionRepository).delete(done);
+        assertThat(fromIt.getSessionId()).isNull();
+        assertThat(other.getSessionId()).isNotNull();
+        org.mockito.Mockito.verify(baselineRepository, never()).delete(any(ProcBehaviourBaselineEntity.class));
+
+        ProcBehaviourCaptureSessionEntity running = session("running");
+        assertThatThrownBy(() -> service.deleteSession(architectureId, running.getId()))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("still running");
+        org.mockito.Mockito.verify(sessionRepository, never()).delete(running);
+
+        // Wrong architecture / unknown id: false, nothing touched.
+        assertThat(service.deleteSession(UUID.randomUUID(), done.getId())).isFalse();
+        assertThat(service.deleteSession(architectureId, UUID.randomUUID())).isFalse();
+    }
+
     @Test
     @DisplayName("the legal chain draft -> configured -> running -> completed_with_findings walks through")
     void legalChainSucceeds() {

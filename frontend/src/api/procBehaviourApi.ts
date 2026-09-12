@@ -958,6 +958,26 @@ export async function updateProcCaptureSession(
   return mapSession(raw);
 }
 
+/**
+ * DELETE a proc capture session (2026-09-12). Scenarios, captures and
+ * diagnostics go with it; baselines saved from it are kept (detached). A
+ * running session answers 409 -- cancel it first.
+ */
+export async function deleteProcCaptureSession(
+  projectId: string,
+  architectureId: string,
+  sessionId: string,
+): Promise<void> {
+  await jsonRequest<void>(
+    procUrl(
+      projectId,
+      architectureId,
+      `capture-sessions/${encodeURIComponent(sessionId)}`,
+    ),
+    { method: 'DELETE' },
+  );
+}
+
 export async function listProcScenarios(
   projectId: string,
   architectureId: string,

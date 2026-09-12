@@ -167,6 +167,41 @@ public class ProcBehaviourService {
     }
 
     /**
+     * Delete a capture session (2026-09-12; the API-behaviour tab could, the
+     * stored-proc tab could not). Scenarios, captures and diagnostics go with
+     * it (ON DELETE CASCADE, changeset 230). Baselines saved FROM the session
+     * are KEPT: their {@code session_id} is nullable and carries no FK, so it
+     * is detached here rather than left dangling. A RUNNING session is a
+     * conflict (cancel it first) -- deleting under a live run would strand
+     * the validation service's in-flight state.
+     *
+     * @return true when deleted, false when no such session in the architecture
+     */
+    @Transactional
+    public boolean deleteSession(UUID architectureId, UUID sessionId) {
+        Optional<ProcBehaviourCaptureSessionEntity> found = getSession(architectureId, sessionId);
+        if (found.isEmpty()) {
+            return false;
+        }
+        ProcBehaviourCaptureSessionEntity session = found.get();
+        if (ProcBehaviourCaptureSessionEntity.STATUS_RUNNING.equals(session.getStatus())) {
+            throw new IllegalStateException(
+                "Proc capture session " + sessionId + " is still running -- cancel it before deleting.");
+        }
+        for (ProcBehaviourBaselineEntity baseline
+                : baselineRepository.findByArchitectureIdOrderByCreatedAtDesc(session.getArchitectureId())) {
+            if (sessionId.equals(baseline.getSessionId())) {
+                baseline.setSessionId(null);
+                baselineRepository.save(baseline);
+            }
+        }
+        sessionRepository.delete(session);
+        log.info("[diag-ams] op=proc_capture_session_delete session={} architecture={}",
+            sessionId, session.getArchitectureId());
+        return true;
+    }
+
+    /**
      * Sparse PATCH. Supplied jsonb fields REPLACE their column; a null field is
      * "not supplied" and is left alone. A supplied {@code status} must be a
      * legal transition from the current one.

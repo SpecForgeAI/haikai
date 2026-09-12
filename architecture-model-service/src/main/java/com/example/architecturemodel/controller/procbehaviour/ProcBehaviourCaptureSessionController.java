@@ -15,6 +15,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -94,6 +95,21 @@ public class ProcBehaviourCaptureSessionController {
         return service.getSession(architectureId, sessionId)
             .map(ResponseEntity::ok)
             .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    /**
+     * DELETE a capture session (2026-09-12). 204 when deleted, 404 when it is
+     * not in this architecture, 409 (via the controller-local handler) when
+     * it is still running. Saved baselines survive (detached, not deleted).
+     */
+    @DeleteMapping("/capture-sessions/{sessionId}")
+    public ResponseEntity<Void> deleteSession(
+            @PathVariable UUID projectId,
+            @PathVariable UUID architectureId,
+            @PathVariable UUID sessionId) {
+        return service.deleteSession(architectureId, sessionId)
+            ? ResponseEntity.noContent().build()
+            : ResponseEntity.notFound().build();
     }
 
     @PatchMapping("/capture-sessions/{sessionId}")
