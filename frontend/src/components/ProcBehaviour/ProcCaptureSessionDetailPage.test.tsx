@@ -206,7 +206,7 @@ describe('ProcCaptureSessionDetailPage — coverage panel', () => {
     const note = await screen.findByTestId('proc-session-stranded');
     expect(note.textContent).toContain('no capture run is in flight');
     const stop = screen.getByTestId('proc-session-cancel');
-    expect(stop.textContent).toBe('Stop stranded run');
+    expect(stop.textContent).toBe('Stop run');
 
     const cancelledWire = { ...SESSION_WIRE, status: 'cancelled' };
     mockGetStatus.mockResolvedValue(mapStatus({ session: cancelledWire, run: { in_flight: false } }));
