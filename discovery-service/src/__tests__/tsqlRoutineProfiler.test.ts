@@ -3,7 +3,7 @@
  * routine profiler + catalog builder. Offline, invented vocabulary.
  */
 
-import { profileTsqlRoutine } from '../services/databasePacks/sybase/tsqlRoutineProfiler';
+import { profileTsqlRoutine, blankSqlStringLiterals, blankSqlLiteralsAndComments, blankSqlCommentsKeepLiterals } from '../services/databasePacks/sybase/tsqlRoutineProfiler';
 import { buildRoutineCatalog, orderCalleesFirst } from '../services/databasePacks/routineCatalog';
 import type { RoutineRecord } from '../services/databasePacks/routineTypes';
 
@@ -78,6 +78,59 @@ create proc run_dyn @sql varchar(255) as
   exec remote_srv.otherdb.dbo.remote_proc
   insert otherdb.dbo.cross_tbl values (1)
 `;
+
+describe('profileTsqlRoutine — identifier case + literal-blind mining (2026-09-12)', () => {
+  const MIXED = `
+create proc dbo.UpdBook_Roll @book_id int as
+begin
+  print 'delete from GRD (set to invalid) -- exec dbo.PhantomProc'
+  -- update ghost_tbl set x = 1
+  update dbo.Book_Tbl set state = 'x' where book_id = @book_id
+  exec dbo.Audit_Roll @book_id
+  select * from dbo.Book_Tbl where book_id = @book_id
+end
+`;
+  it('keeps the routine name\u2019s case (the EXEC target) while every join key stays lowercase', () => {
+    const r = profileTsqlRoutine({ name: 'UpdBook_Roll', objType: 'P', text: MIXED });
+    expect(r.signature_parsed).toBe(true);
+    expect(r.routine_name).toBe('UpdBook_Roll');
+    expect(r.schema_name).toBe('dbo');
+    expect(r.proc_calls).toEqual(['audit_roll']);
+    expect(r.writes).toEqual(['book_tbl']);
+    expect(r.reads).toContain('book_tbl');
+  });
+
+  it('never mines a table or a call out of a string literal or a comment', () => {
+    const r = profileTsqlRoutine({ name: 'UpdBook_Roll', objType: 'P', text: MIXED });
+    expect(r.writes).not.toContain('grd');
+    expect(r.writes).not.toContain('ghost_tbl');
+    expect(r.proc_calls).not.toContain('phantomproc');
+  });
+
+  it('blankSqlStringLiterals preserves length and handles doubled quotes and N-prefixed literals', () => {
+    const src = "print N'it''s done' select 1 from t where c = 'x'";
+    const out = blankSqlStringLiterals(src);
+    expect(out.length).toBe(src.length);
+    expect(out).not.toContain("it''s");
+    expect(out).toContain('select 1 from t where c =');
+  });
+
+  it('blankSqlLiteralsAndComments: a -- inside a literal does not swallow the next statement, a quote inside a comment opens nothing', () => {
+    const src = "print 'x -- not a comment'\nupdate t set c = 'y'\n-- it's a comment\nselect 1 /* block 'q' */ from u";
+    const out = blankSqlLiteralsAndComments(src);
+    expect(out.length).toBe(src.length);
+    expect(out).toContain('update t set c =');
+    expect(out).toContain('select 1');
+    expect(out).toContain('from u');
+    expect(out).not.toContain('comment');
+    expect(out).not.toContain('block');
+    // Literal-keeping variant: the message text survives, the comments do not.
+    const kept = blankSqlCommentsKeepLiterals(src);
+    expect(kept).toContain("'x -- not a comment'");
+    expect(kept).not.toContain("it's a comment");
+    expect(kept).not.toContain('block');
+  });
+});
 
 describe('profileTsqlRoutine — signature', () => {
   it('parses params with defaults, OUTPUT, numeric scale, recompile trailer and dotted name', () => {

@@ -84,8 +84,11 @@ class DbRoutineServiceTest {
         List<DbRoutineEntity> saved = captor.getValue();
         assertThat(saved).hasSize(2);
         DbRoutineEntity updated = saved.stream()
-            .filter(e -> "upd_ledger_roll".equals(e.getRoutineName())).findFirst().orElseThrow();
+            .filter(e -> "upd_ledger_roll".equalsIgnoreCase(e.getRoutineName())).findFirst().orElseThrow();
         assertThat(updated.getId()).isEqualTo(existingId);
+        // The natural key matched case-insensitively; the stored name now carries
+        // the scanner's case (2026-09-12: the EXEC target on a case-sensitive server).
+        assertThat(updated.getRoutineName()).isEqualTo("UPD_LEDGER_ROLL");
         assertThat(updated.getBodyHash()).isEqualTo("new-hash");
         assertThat(updated.getWritesClosureJson()).containsExactly("ledger_ctrl");
         DbRoutineEntity inserted = saved.stream()
