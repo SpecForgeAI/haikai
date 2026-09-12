@@ -133,9 +133,30 @@ function wiring(overrides: Record<string, unknown> = {}): Wiring {
     getSourceDb: jest.fn().mockReturnValue(secret),
     pollIntervalMs: 1,
     pollTimeoutMs: 500,
+    // Stage 1 reuse (2026-09-12): default = nothing to reuse (full build).
+    reuseReads: {
+      fetchLatestTargetBuild: jest.fn().mockResolvedValue(null),
+      fetchLatestDataParityReport: jest.fn().mockResolvedValue(null),
+    },
     ...overrides,
   };
   return { order, subDeps };
+}
+
+/** A workbench build + clean report that PROVE reuse for the fixture pack/target. */
+function reusableWorkbench(packVersion = 'v7') {
+  return {
+    fetchLatestTargetBuild: jest.fn().mockResolvedValue({
+      id: 'wb-1',
+      pack_id: 'pack-1',
+      status: 'succeeded',
+      pack_version: packVersion,
+      target_binding_json: { db_type: 'postgres', host: 'db.example.com', port: 5432, database: 'target', schema: null },
+      started_at: '2026-09-12T09:00:00Z',
+      ended_at: '2026-09-12T09:20:00Z',
+    }),
+    fetchLatestDataParityReport: jest.fn().mockResolvedValue({ id: 'rep-1', status: 'clean', created_at: '2026-09-12T10:00:00Z', report_json: null }),
+  };
 }
 
 function itemPatches(deps: MigrationDriverDeps): Array<[string, Record<string, unknown>]> {
@@ -181,6 +202,55 @@ describe('createDbPlaneCompletionRunner', () => {
       '2026-07-31-schema-aaaa1111', '2026-07-31-parity-bbbb2222',
     ]);
     expect(assembleArgs.branchName).toBe('db-migration/runabc12');
+  });
+
+  it('REUSES a succeeded workbench build (same pack version + target, clean reconcile after it): structural apply + load skipped, post-load apply + reconcile still run (2026-09-12)', async () => {
+    const { order, subDeps } = wiring({
+      reuseReads: reusableWorkbench('v7'),
+      fetchPackView: jest.fn().mockResolvedValue({
+        packId: 'pack-1', status: 'complete', inputSnapshotHash: 'v7',
+        manifest: { bulk_load: { table_order: ['dbo.t'], expected_row_counts: { 'dbo.t': 1 } } },
+        decisions: [], translations: [],
+      }),
+    });
+    const run = makeRun();
+    const deps = driverDeps(run);
+    await createDbPlaneCompletionRunner(subDeps)(scope, run, run.items![1], deps);
+    expect(order).not.toContain('apply:structural');
+    expect(order).not.toContain('load');
+    expect(order).toContain('apply:post-load');
+    expect(deps.triggerDataParityReconcile).toHaveBeenCalledTimes(1);
+    expect(runPatches(deps).some((p) => p.status === RUN_STATUS.DEPLOYED)).toBe(true);
+  });
+
+  it('does NOT reuse when the pack was regenerated since the workbench build, or the latest report is divergent — full build', async () => {
+    const regenerated = wiring({
+      reuseReads: reusableWorkbench('v6'),
+      fetchPackView: jest.fn().mockResolvedValue({
+        packId: 'pack-1', status: 'complete', inputSnapshotHash: 'v7',
+        manifest: { bulk_load: { table_order: ['dbo.t'], expected_row_counts: { 'dbo.t': 1 } } },
+        decisions: [], translations: [],
+      }),
+    });
+    let run = makeRun();
+    await createDbPlaneCompletionRunner(regenerated.subDeps)(scope, run, run.items![1], driverDeps(run));
+    expect(regenerated.order).toContain('apply:structural');
+    expect(regenerated.order).toContain('load');
+
+    const divergentReads = reusableWorkbench('v7');
+    divergentReads.fetchLatestDataParityReport = jest.fn().mockResolvedValue({ id: 'rep-2', status: 'divergent', created_at: '2026-09-12T11:00:00Z', report_json: null });
+    const divergent = wiring({
+      reuseReads: divergentReads,
+      fetchPackView: jest.fn().mockResolvedValue({
+        packId: 'pack-1', status: 'complete', inputSnapshotHash: 'v7',
+        manifest: { bulk_load: { table_order: ['dbo.t'], expected_row_counts: { 'dbo.t': 1 } } },
+        decisions: [], translations: [],
+      }),
+    });
+    run = makeRun();
+    await createDbPlaneCompletionRunner(divergent.subDeps)(scope, run, run.items![1], driverDeps(run));
+    expect(divergent.order).toContain('apply:structural');
+    expect(divergent.order).toContain('load');
   });
 
   it('pauses AWAITING_APPROVAL when later planes remain pending', async () => {

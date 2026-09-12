@@ -59,6 +59,11 @@ import type { MigrateScope, MigrationDriverDeps } from './migrationExecutionDriv
 // per-request timeouts disabled — a bare fetch dies at 300s (headersTimeout).
 import { longRunningPostJson } from './longRunningFetch';
 import { evaluateProcParityReadiness } from './migrationProcParityGate';
+import {
+  decideWorkbenchBuildReuse,
+  defaultWorkbenchBuildReuseReads,
+  type WorkbenchBuildReuseReads,
+} from './migrationWorkbenchBuildReuse';
 
 const trace = createTracer('gateway');
 
@@ -264,6 +269,13 @@ export interface DbPlaneCompletionSubDeps {
   getSourceDb?: (projectId: string) => TargetDbSecret | undefined;
   pollIntervalMs?: number;
   pollTimeoutMs?: number;
+  /**
+   * Stage 1 reuse of a workbench build (2026-09-12): the reads that prove a
+   * succeeded workbench build of THIS pack version against THIS target with a
+   * clean reconcile after it. When they prove it, the structural apply and
+   * the data load are skipped; post-load apply and reconcile still run.
+   */
+  reuseReads?: WorkbenchBuildReuseReads;
 }
 
 /** A phase-labelled chain failure (the label lands on the run-item). */
@@ -322,6 +334,7 @@ export function createDbPlaneCompletionRunner(subDeps: DbPlaneCompletionSubDeps 
   const runDataMigration = subDeps.runDataMigration ?? runDataMigrationViaAmvs;
   const getTargetDb =
     subDeps.getTargetDb ?? ((runId: string) => migrationTargetCredentialsStore.getDb(runId));
+  const reuseReads = subDeps.reuseReads ?? defaultWorkbenchBuildReuseReads();
   const getSourceDb =
     subDeps.getSourceDb ??
     ((projectId: string) => currentSystemCredentialsStore.get(projectId)?.db);
@@ -437,6 +450,39 @@ export function createDbPlaneCompletionRunner(subDeps: DbPlaneCompletionSubDeps 
       if (liquibaseFiles.length === 0) {
         throw new ChainError(phase, 'the pack contains no liquibase/ files to apply');
       }
+      // Stage 1 reuse (2026-09-12): a succeeded workbench build of THIS pack
+      // version against THIS target, with a clean data-parity report newer
+      // than the build, IS the structural apply + data load already done.
+      // Everything is proven from durable rows; anything unprovable rebuilds.
+      phase = 'workbench-build reuse';
+      const reuse = await decideWorkbenchBuildReuse(
+        {
+          projectId,
+          architectureId,
+          packId: packView.packId,
+          packVersion: packView.inputSnapshotHash,
+          targetDb,
+        },
+        reuseReads
+      );
+      if (reuse.reuse) {
+        trace.ok(`reusing ${reuse.reason} — structural schema apply + data load SKIPPED`, corr);
+        logger.info('[diag-gateway] db_plane_completion workbench_build_reused', {
+          projectId,
+          runId,
+          buildId: reuse.buildId,
+          reportId: reuse.reportId,
+        });
+      } else {
+        trace.step(`no workbench build to reuse (${reuse.reason}) — full build`, corr);
+        logger.info('[diag-gateway] db_plane_completion workbench_build_not_reused', {
+          projectId,
+          runId,
+          reason: reuse.reason,
+        });
+      }
+      if (!reuse.reuse) {
+      phase = 'schema-apply structural';
       const structural = await applySchema({
         projectId,
         architectureId,
@@ -477,6 +523,7 @@ export function createDbPlaneCompletionRunner(subDeps: DbPlaneCompletionSubDeps 
         throw new ChainError(phase, load.error ?? 'data migration failed');
       }
       trace.ok(`data loaded — status=${load.status ?? '?'} rows=${load.rowsLoaded ?? '?'}`, corr);
+      } // end: full build (no workbench build to reuse)
 
       // ---- 4. schema apply (post-load) ----------------------------------
       phase = 'schema-apply post-load';

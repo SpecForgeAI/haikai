@@ -229,6 +229,8 @@ export interface TargetBuildRow {
   phases_json?: Record<string, unknown> | null;
   s0_fingerprint_json?: Record<string, unknown> | null;
   pack_version?: string | null;
+  /** { db_type, host, port, database, schema } the build targeted (2026-09-12: Stage 1 reuse checks it). */
+  target_binding_json?: Record<string, unknown> | null;
   rebuild?: boolean;
   error?: string | null;
   started_at?: string;
