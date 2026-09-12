@@ -72,6 +72,8 @@ import {
   reviewDbMigrationPackTranslation,
   setDbMigrationPackTranslationDisposition,
   startDbMigrationPackTargetBuild,
+  getDbMigrationPackTargetReconcileStatus,
+  startDbMigrationPackTargetReconcile,
   supplyDbMigrationPackTranslationBody,
   translateAllDbMigrationPackTranslations,
   translateAndReconcileDbMigrationPack,
@@ -82,6 +84,7 @@ import {
   type DbMigrationPackParityReport,
   type DbMigrationPackProcBaselineStatus,
   type DbMigrationPackTargetBuildStatus,
+  type DbMigrationPackTargetReconcileStatus,
   type DbMigrationPackTranslationAttempt,
   type DbMigrationPackTranslationCoverageSummary,
   type DbMigrationPackTranslationDisposition,
@@ -249,6 +252,9 @@ export const DbMigrationPackTranslationsTab: React.FC<
   );
   const [buildStatus, setBuildStatus] =
     useState<DbMigrationPackTargetBuildStatus | null>(null);
+  // Workbench reconcile (2026-09-12): full data parity after Build target.
+  const [reconcileStatus, setReconcileStatus] =
+    useState<DbMigrationPackTargetReconcileStatus | null>(null);
   const [baseline, setBaseline] =
     useState<DbMigrationPackProcBaselineStatus | null>(null);
   const [loop, setLoop] = useState<DbMigrationPackLoopStatus | null>(null);
@@ -320,6 +326,26 @@ export const DbMigrationPackTranslationsTab: React.FC<
     return status;
   }, [projectId, packId]);
 
+  const refreshReconcileStatus = useCallback(async () => {
+    const status = await getDbMigrationPackTargetReconcileStatus(projectId, packId);
+    setReconcileStatus(status);
+    return status;
+  }, [projectId, packId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getDbMigrationPackTargetReconcileStatus(projectId, packId)
+      .then((status) => {
+        if (!cancelled) setReconcileStatus(status);
+      })
+      .catch(() => {
+        /* the header simply shows "not reconciled" until a read succeeds */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, packId]);
+
   const refreshLoopStatus = useCallback(async () => {
     const status = await getDbMigrationPackLoopStatus(projectId, packId);
     setLoop(status);
@@ -376,7 +402,18 @@ export const DbMigrationPackTranslationsTab: React.FC<
   }, [projectId, packId]);
 
   const buildInFlight = buildStatus?.inFlight != null;
+  const reconcileInFlight = reconcileStatus?.inFlight != null;
   const loopInFlight = loop?.inFlight === true;
+
+  useEffect(() => {
+    if (!reconcileInFlight) return undefined;
+    const handle = setInterval(() => {
+      void refreshReconcileStatus().catch(() => {
+        /* transient poll failure — the next tick retries */
+      });
+    }, POLL_MS);
+    return () => clearInterval(handle);
+  }, [reconcileInFlight, refreshReconcileStatus]);
 
   useEffect(() => {
     if (!buildInFlight) return undefined;
@@ -896,6 +933,30 @@ export const DbMigrationPackTranslationsTab: React.FC<
         }
         return;
       }
+      if (current.variant === 'reconcile') {
+        setBusyId('target-reconcile');
+        setModalError(null);
+        try {
+          await startDbMigrationPackTargetReconcile(projectId, packId, {
+            targetDb: payload.targetDb,
+            sourceDb: payload.sourceDb,
+          });
+          setModal(null);
+          setNotice(
+            'Reconcile started — every table in the pack manifest is compared ' +
+              'between the source and the target. The header tracks it and ' +
+              'shows the report when it lands.',
+          );
+          await refreshReconcileStatus().catch(() => {
+            /* the poller picks it up on the next tick */
+          });
+        } catch (err) {
+          setModalError(messageOf(err, 'Failed to start the reconcile'));
+        } finally {
+          setBusyId(null);
+        }
+        return;
+      }
       setBusyId('target-build');
       setModalError(null);
       try {
@@ -918,7 +979,7 @@ export const DbMigrationPackTranslationsTab: React.FC<
         setBusyId(null);
       }
     },
-    [modal, projectId, packId, runCredentialedAction, refreshBuildStatus],
+    [modal, projectId, packId, runCredentialedAction, refreshBuildStatus, refreshReconcileStatus],
   );
 
   const handleApproveAllReconciled = useCallback(async () => {
@@ -990,6 +1051,39 @@ export const DbMigrationPackTranslationsTab: React.FC<
   );
 
   // --- header copy --------------------------------------------------------------
+
+  const reconcileStatusText = useMemo(() => {
+    if (reconcileStatus?.inFlight) {
+      return `reconciling: ${reconcileStatus.inFlight.phase ?? 'starting'}`;
+    }
+    const last = reconcileStatus?.last;
+    if (last?.status === 'failed') {
+      return `last reconcile FAILED${last.error ? ` — ${last.error}` : ''}`;
+    }
+    const report = reconcileStatus?.latestReport;
+    if (report) {
+      const s = report.summary;
+      const counts =
+        s.tables !== null
+          ? ` — ${s.divergent ?? 0} divergent / ${s.unverifiable ?? 0} unverifiable of ${s.tables} table(s)`
+          : '';
+      return `${report.status ?? 'unknown'}${counts} (report ${formatClock(report.createdAt)})${
+        last?.error ? ` — ${last.error}` : ''
+      }`;
+    }
+    if (reconcileStatus?.latestReportError) {
+      return `unknown — ${reconcileStatus.latestReportError}`;
+    }
+    return 'not reconciled';
+  }, [reconcileStatus]);
+
+  const reconcileProblemRows = useMemo(
+    () =>
+      (reconcileStatus?.latestReport?.tables ?? [])
+        .filter((row) => row.verdict === 'divergent' || row.verdict === 'unverifiable')
+        .slice(0, 25),
+    [reconcileStatus],
+  );
 
   const targetStatusText = useMemo(() => {
     if (buildStatus?.inFlight) {
@@ -1114,6 +1208,19 @@ export const DbMigrationPackTranslationsTab: React.FC<
           >
             {buildInFlight ? 'Building…' : 'Build target…'}
           </button>
+          <button
+            type="button"
+            className={styles.actionButton}
+            onClick={() => {
+              setModalError(null);
+              setModal({ variant: 'reconcile', purpose: null, pending: null });
+            }}
+            disabled={busyId !== null || buildInFlight || reconcileInFlight}
+            title="Compares every table in the pack manifest between the source and the built target (the DB plane's data-parity reconcile), before any plan run"
+            data-testid="db-pack-wb-reconcile-target"
+          >
+            {reconcileInFlight ? 'Reconciling…' : 'Reconcile target…'}
+          </button>
         </div>
         {buildStatus?.latest && (
           <p className={styles.manifestNote} data-testid="db-pack-wb-build-phases">
@@ -1127,6 +1234,25 @@ export const DbMigrationPackTranslationsTab: React.FC<
               })
               .join(' · ')}
           </p>
+        )}
+        <p className={styles.manifestNote} data-testid="db-pack-wb-reconcile-status">
+          Target parity: {reconcileStatusText}
+        </p>
+        {reconcileProblemRows.length > 0 && (
+          <ul className={styles.manifestNote} data-testid="db-pack-wb-reconcile-tables">
+            {reconcileProblemRows.map((row) => (
+              <li key={`${row.schema ?? ''}.${row.table}`} data-testid={`db-pack-wb-reconcile-table-${row.table}`}>
+                {row.schema ? `${row.schema}.` : ''}
+                {row.table} — {row.verdict ?? 'unknown'}
+                {row.divergenceClass ? ` (${row.divergenceClass})` : ''}
+                {row.sourceCount !== null || row.targetCount !== null
+                  ? ` · source ${row.sourceCount ?? '?'} / target ${row.targetCount ?? '?'} rows`
+                  : ''}
+                {row.cellDivergences ? ` · ${row.cellDivergences} cell divergence(s)` : ''}
+                {row.reason ? ` — ${row.reason}` : ''}
+              </li>
+            ))}
+          </ul>
         )}
         <p
           className={styles.manifestNote}
@@ -1637,7 +1763,7 @@ export const DbMigrationPackTranslationsTab: React.FC<
           variant={modal.variant}
           sourceEngine={sourceEngine ?? null}
           sourceEngineDisplay={sourceEngineDisplay ?? null}
-          busy={busyId === 'target-build'}
+          busy={busyId === 'target-build' || busyId === 'target-reconcile'}
           error={modalError}
           purpose={modal.purpose}
           onSubmit={(payload) => void handleModalSubmit(payload)}

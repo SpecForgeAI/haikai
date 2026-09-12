@@ -32,7 +32,7 @@ import styles from './DbMigrationPack.module.css';
 import type { DbEngineKey } from '../../../api/dbEngines';
 import { DB_ENGINE_DEFAULT_PORT, dbEngineLabel, isDbEngineKey } from '../../../api/dbEngines';
 
-export type DbMigrationPackTargetBuildVariant = 'build' | 'connect';
+export type DbMigrationPackTargetBuildVariant = 'build' | 'connect' | 'reconcile';
 
 export interface DbMigrationPackTargetBuildSubmit {
   targetDb: DbMigrationPackDbCredentials;
@@ -216,6 +216,10 @@ export const DbMigrationPackTargetBuildModal: React.FC<
   const [rebuild, setRebuild] = useState(false);
 
   const isBuild = variant === 'build';
+  // Reconcile (2026-09-12) needs the source too: it compares the built target
+  // against the source row by row. No rebuild option.
+  const isReconcile = variant === 'reconcile';
+  const wantsSource = isBuild || isReconcile;
   const sourceTouched = !untouched(source, emptySource);
 
   const canSubmit = useMemo(
@@ -223,8 +227,8 @@ export const DbMigrationPackTargetBuildModal: React.FC<
       !busy &&
       complete(target) &&
       // A partially filled source block is a mistake, not an omission.
-      (!isBuild || !sourceTouched || complete(source)),
-    [busy, target, source, isBuild, sourceTouched],
+      (!wantsSource || !sourceTouched || complete(source)),
+    [busy, target, source, wantsSource, sourceTouched],
   );
 
   const handleSubmit = () => {
@@ -232,14 +236,16 @@ export const DbMigrationPackTargetBuildModal: React.FC<
     onSubmit({
       targetDb: toCredentials(target, 'postgres'),
       sourceDb:
-        isBuild && sourceTouched ? toCredentials(source, sourceEngineKey) : null,
+        wantsSource && sourceTouched ? toCredentials(source, sourceEngineKey) : null,
       rebuild: isBuild && rebuild,
     });
   };
 
   const title = isBuild
     ? 'Build target database from the pack'
-    : 'Target PostgreSQL connection';
+    : isReconcile
+      ? 'Reconcile the target database against the source'
+      : 'Target PostgreSQL connection';
 
   return (
     <div
@@ -256,6 +262,12 @@ export const DbMigrationPackTargetBuildModal: React.FC<
                 'database: schema apply, data load, then the approved ' +
                 'translations. Credentials are used for this action only — ' +
                 'they are sent per invocation and never stored.'
+              : isReconcile
+                ? 'Compares every table in the pack manifest between the source ' +
+                  'and the built target through the pair ruleset — the same ' +
+                  'data-parity reconcile the DB plane runs after its load. The ' +
+                  'report is persisted, so a clean result is evidence the plan ' +
+                  'can cite. Credentials are sent per invocation and never stored.'
               : `Target credentials are needed for ${
                   purpose ?? 'this action'
                 }. They are held in memory for this tab session only and are ` +
@@ -273,15 +285,19 @@ export const DbMigrationPackTargetBuildModal: React.FC<
             busy={busy}
           />
 
-          {isBuild && (
+          {wantsSource && (
             <>
               <h4 className={styles.manifestSectionTitle}>
                 Source — {sourceEngineDisplay ?? dbEngineLabel(sourceEngineKey)} (optional)
               </h4>
               <p className={styles.manifestNote}>
-                Needed by the data phase. Leave the block empty to build the
-                schema and translations only — the gateway answers
-                SOURCE_DB_MISSING if the data phase needs it.
+                {isReconcile
+                  ? 'The reconcile reads the source. Leave the block empty to use ' +
+                    'the registered current-system credentials — the gateway ' +
+                    'answers SOURCE_DB_MISSING if none are registered.'
+                  : 'Needed by the data phase. Leave the block empty to build the ' +
+                    'schema and translations only — the gateway answers ' +
+                    'SOURCE_DB_MISSING if the data phase needs it.'}
               </p>
               <ConnectionBlock
                 testIdPrefix="db-pack-wb-source"
@@ -338,7 +354,7 @@ export const DbMigrationPackTargetBuildModal: React.FC<
             disabled={!canSubmit}
             data-testid="db-pack-wb-target-modal-submit"
           >
-            {busy ? 'Working…' : isBuild ? 'Build target' : 'Continue'}
+            {busy ? 'Working…' : isBuild ? 'Build target' : isReconcile ? 'Reconcile target' : 'Continue'}
           </button>
         </div>
       </div>

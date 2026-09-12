@@ -71,6 +71,8 @@ const mockApproveAll = vi.fn();
 // fixtures carry no `routine_id` / `loop_status`, so no routine row exists and
 // the attempt / parity-report reads never fire.
 const mockBuildStatus = vi.fn();
+const mockReconcileStatus = vi.fn();
+const mockStartReconcile = vi.fn();
 const mockBaselineStatus = vi.fn();
 const mockLoopStatus = vi.fn();
 const mockAttempts = vi.fn();
@@ -101,6 +103,10 @@ vi.mock('../../../../api/dbMigrationPackApi', async () => {
       mockApproveAll(...args),
     getDbMigrationPackTargetBuildStatus: (...args: unknown[]) =>
       mockBuildStatus(...args),
+    getDbMigrationPackTargetReconcileStatus: (...args: unknown[]) =>
+      mockReconcileStatus(...args),
+    startDbMigrationPackTargetReconcile: (...args: unknown[]) =>
+      mockStartReconcile(...args),
     getDbMigrationPackProcBaselineStatus: (...args: unknown[]) =>
       mockBaselineStatus(...args),
     getDbMigrationPackLoopStatus: (...args: unknown[]) => mockLoopStatus(...args),
@@ -271,6 +277,9 @@ beforeEach(() => {
   mockAttempts.mockReset();
   mockParityReport.mockReset();
   mockBuildStatus.mockResolvedValue({ inFlight: null, latest: null });
+  mockReconcileStatus.mockReset();
+  mockStartReconcile.mockReset();
+  mockReconcileStatus.mockResolvedValue({ inFlight: null, last: null, latestReport: null, latestReportError: null });
   mockBaselineStatus.mockResolvedValue({
     pinned: false,
     baselineId: null,
@@ -629,3 +638,67 @@ describe('DbMigrationPackTranslationsTab (Task 5.1)', () => {
   });
 });
 
+describe('DbMigrationPackTranslationsTab — Reconcile target (2026-09-12)', () => {
+  it('shows "not reconciled", opens the reconcile modal, and starts the reconcile with the entered credentials', async () => {
+    mockStartReconcile.mockResolvedValue({ accepted: true });
+    renderTab();
+    const status = await screen.findByTestId('db-pack-wb-reconcile-status');
+    expect(status.textContent).toContain('Target parity: not reconciled');
+
+    fireEvent.click(screen.getByTestId('db-pack-wb-reconcile-target'));
+    const modal = await screen.findByTestId('db-pack-wb-target-modal');
+    expect(modal.getAttribute('data-variant')).toBe('reconcile');
+    fireEvent.change(screen.getByTestId('db-pack-wb-target-host'), { target: { value: 'pg' } });
+    fireEvent.change(screen.getByTestId('db-pack-wb-target-port'), { target: { value: '5432' } });
+    fireEvent.change(screen.getByTestId('db-pack-wb-target-database'), { target: { value: 'target' } });
+    fireEvent.change(screen.getByTestId('db-pack-wb-target-username'), { target: { value: 'u' } });
+    fireEvent.change(screen.getByTestId('db-pack-wb-target-password'), { target: { value: 'p' } });
+    fireEvent.click(screen.getByTestId('db-pack-wb-target-modal-submit'));
+
+    await waitFor(() => expect(mockStartReconcile).toHaveBeenCalledTimes(1));
+    expect(mockStartReconcile.mock.calls[0][0]).toBe('proj-pack-1');
+    expect(mockStartReconcile.mock.calls[0][2]).toMatchObject({ targetDb: { host: 'pg', database: 'target', username: 'u' }, sourceDb: null });
+    await waitFor(() => expect(screen.queryByTestId('db-pack-wb-target-modal')).toBeNull());
+  });
+
+  it('renders the latest parity report: status, counts, and the divergent / unverifiable tables', async () => {
+    mockReconcileStatus.mockResolvedValue({
+      inFlight: null,
+      last: { status: 'succeeded', reportId: 'rep-1', parityStatus: 'divergent', tables: 3, error: null, startedAt: null, endedAt: null },
+      latestReport: {
+        id: 'rep-1',
+        status: 'divergent',
+        createdAt: '2026-09-12T10:00:00Z',
+        summary: { tables: 3, matchFull: 1, matchSampled: 0, divergent: 1, unverifiable: 1, status: 'divergent' },
+        tables: [
+          { schema: 'dbo', table: 'orders', verdict: 'match', depth: 'full', divergenceClass: null, reason: null, sourceCount: 10, targetCount: 10, rowsCompared: 10, cellDivergences: 0 },
+          { schema: 'dbo', table: 'books', verdict: 'divergent', depth: 'full', divergenceClass: 'count_mismatch', reason: null, sourceCount: 12, targetCount: 11, rowsCompared: 11, cellDivergences: 0 },
+          { schema: 'dbo', table: 'audit', verdict: 'unverifiable', depth: 'none', divergenceClass: null, reason: 'no key', sourceCount: null, targetCount: null, rowsCompared: 0, cellDivergences: 0 },
+        ],
+      },
+      latestReportError: null,
+    });
+    renderTab();
+    const status = await screen.findByTestId('db-pack-wb-reconcile-status');
+    expect(status.textContent).toContain('divergent — 1 divergent / 1 unverifiable of 3 table(s)');
+    const rows = screen.getByTestId('db-pack-wb-reconcile-tables');
+    expect(rows.textContent).toContain('dbo.books — divergent (count_mismatch) · source 12 / target 11 rows');
+    expect(rows.textContent).toContain('dbo.audit — unverifiable');
+    expect(rows.textContent).toContain('no key');
+    expect(screen.queryByTestId('db-pack-wb-reconcile-table-orders')).toBeNull();
+  });
+
+  it('while a reconcile is in flight the button is disabled and the header shows the phase', async () => {
+    mockReconcileStatus.mockResolvedValue({
+      inFlight: { phase: 'comparing 65 table(s)', startedAt: '2026-09-12T10:00:00Z', tables: 65 },
+      last: null,
+      latestReport: null,
+      latestReportError: null,
+    });
+    renderTab();
+    const status = await screen.findByTestId('db-pack-wb-reconcile-status');
+    expect(status.textContent).toContain('reconciling: comparing 65 table(s)');
+    expect((screen.getByTestId('db-pack-wb-reconcile-target') as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByTestId('db-pack-wb-reconcile-target').textContent).toBe('Reconciling…');
+  });
+});
