@@ -23,6 +23,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   ProcBaseline,
   ProcCaptureSession,
+  deleteProcCaptureSession,
   describeProcError,
   listProcBaselines,
   listProcCaptureSessions,
@@ -98,6 +99,7 @@ export const ProcBaselinesTab: React.FC<ProcBaselinesTabProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!architectureId) {
@@ -128,6 +130,33 @@ export const ProcBaselinesTab: React.FC<ProcBaselinesTabProps> = ({
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Per-row delete (2026-09-12) -- the API-behaviour list had it, this one
+  // did not. Mirrors that list: confirm, delete, reload; a running session
+  // is refused by the server (409) and the button is disabled for it here.
+  const handleDelete = useCallback(
+    async (e: React.MouseEvent, session: ProcCaptureSession) => {
+      e.stopPropagation();
+      if (!architectureId) return;
+      const name = session.name || '(unnamed)';
+      const message =
+        `Delete proc capture session "${name}"?\n\n` +
+        'This removes the session and all its scenarios, captured invocations and diagnostics. ' +
+        'Baselines saved from it are kept.';
+      if (!window.confirm(message)) return;
+      setDeletingId(session.id);
+      setError(null);
+      try {
+        await deleteProcCaptureSession(projectId, architectureId, session.id);
+        await load();
+      } catch (err) {
+        setError(describeProcError(err));
+      } finally {
+        setDeletingId(null);
+      }
+    },
+    [projectId, architectureId, load],
+  );
 
   const goSession = useCallback(
     (sessionId: string) => {
@@ -235,6 +264,20 @@ export const ProcBaselinesTab: React.FC<ProcBaselinesTabProps> = ({
                       {cov}
                     </span>
                   )}
+                  <button
+                    type="button"
+                    className={styles.deleteButton}
+                    disabled={deletingId === s.id || s.status === 'running'}
+                    onClick={(e) => void handleDelete(e, s)}
+                    data-testid={`proc-capture-session-delete-${s.id}`}
+                    title={
+                      s.status === 'running'
+                        ? 'Cancel the running capture before deleting this session'
+                        : 'Delete this capture session, its scenarios, captures and diagnostics (saved baselines are kept)'
+                    }
+                  >
+                    {deletingId === s.id ? 'Deleting…' : 'Delete'}
+                  </button>
                 </li>
               );
             })}

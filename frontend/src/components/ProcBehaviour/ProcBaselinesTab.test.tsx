@@ -14,6 +14,7 @@ import { MemoryRouter } from 'react-router-dom';
 
 const mockListSessions = vi.fn();
 const mockListBaselines = vi.fn();
+const mockDeleteSession = vi.fn();
 
 vi.mock('../../api/procBehaviourApi', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../api/procBehaviourApi')>();
@@ -21,6 +22,7 @@ vi.mock('../../api/procBehaviourApi', async (importOriginal) => {
     ...actual,
     listProcCaptureSessions: (...a: unknown[]) => mockListSessions(...a),
     listProcBaselines: (...a: unknown[]) => mockListBaselines(...a),
+    deleteProcCaptureSession: (...a: unknown[]) => mockDeleteSession(...a),
   };
 });
 
@@ -103,6 +105,37 @@ describe('ProcBaselinesTab', () => {
 
     expect(mockListSessions).toHaveBeenCalledWith('proj-1', 'arch-1');
     expect(mockListBaselines).toHaveBeenCalledWith('proj-1', 'arch-1');
+  });
+
+  it('each session row has a Delete button: confirm -> delete -> reload; cancelling the confirm deletes nothing (2026-09-12)', async () => {
+    const user = userEvent.setup();
+    mockDeleteSession.mockResolvedValue(undefined);
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    renderTab();
+    const button = await screen.findByTestId('proc-capture-session-delete-ps-1');
+    expect((button as HTMLButtonElement).disabled).toBe(false);
+
+    await user.click(button);
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(confirmSpy.mock.calls[0][0]).toContain('Baselines saved from it are kept');
+    expect(mockDeleteSession).not.toHaveBeenCalled();
+
+    confirmSpy.mockReturnValue(true);
+    mockListSessions.mockResolvedValue([]);
+    await user.click(button);
+    await waitFor(() => expect(mockDeleteSession).toHaveBeenCalledWith('proj-1', 'arch-1', 'ps-1'));
+    // Reloaded after the delete: the list call fires again and the row is gone.
+    await waitFor(() => expect(mockListSessions.mock.calls.length).toBeGreaterThanOrEqual(2));
+    await screen.findByTestId('proc-capture-sessions-empty');
+    confirmSpy.mockRestore();
+  });
+
+  it('a RUNNING session cannot be deleted from the row (cancel it first)', async () => {
+    mockListSessions.mockResolvedValue([mapSession({ ...SESSION_WIRE, status: 'running' })]);
+    renderTab();
+    const button = await screen.findByTestId('proc-capture-session-delete-ps-1');
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    expect(button.getAttribute('title')).toContain('Cancel the running capture');
   });
 
   it('opens the start-capture wizard from the header button', async () => {
