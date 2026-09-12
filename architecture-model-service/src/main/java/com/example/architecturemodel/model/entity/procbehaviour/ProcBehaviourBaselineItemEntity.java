@@ -79,7 +79,7 @@ public class ProcBehaviourBaselineItemEntity {
 
     @Type(JsonType.class)
     @Column(name = "sequence_json", columnDefinition = "jsonb")
-    private Map<String, Object> sequenceJson;
+    private List<Map<String, Object>> sequenceJson;
 
     @Type(JsonType.class)
     @Column(name = "expected_envelope_json", columnDefinition = "jsonb", nullable = false)
@@ -92,7 +92,7 @@ public class ProcBehaviourBaselineItemEntity {
 
     @Type(JsonType.class)
     @Column(name = "volatile_cells_json", columnDefinition = "jsonb")
-    private Map<String, Object> volatileCellsJson;
+    private List<Map<String, Object>> volatileCellsJson;
 
     @Column(name = "business_notes", columnDefinition = "TEXT")
     private String businessNotes;

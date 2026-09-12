@@ -79,7 +79,7 @@ public class ProcBehaviourScenarioEntity {
     /** {steps: [{routine_id, inputs_json}]} for sequence scenarios, else null. */
     @Type(JsonType.class)
     @Column(name = "sequence_json", columnDefinition = "jsonb")
-    private Map<String, Object> sequenceJson;
+    private List<Map<String, Object>> sequenceJson;
 
     /** proposed | fired | excluded. */
     @Column(name = "status", nullable = false, length = 16)

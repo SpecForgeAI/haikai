@@ -65,7 +65,7 @@ public final class ProcBehaviourRequests {
             @JsonProperty("scenario_type") String scenarioType,
             @JsonProperty("generation_source") String generationSource,
             @JsonProperty("inputs_json") List<Map<String, Object>> inputsJson,
-            @JsonProperty("sequence_json") Map<String, Object> sequenceJson,
+            @JsonProperty("sequence_json") List<Map<String, Object>> sequenceJson,
             @JsonProperty("status") String status,
             @JsonProperty("exclusion_reason") String exclusionReason,
             @JsonProperty("notes") String notes
@@ -84,7 +84,7 @@ public final class ProcBehaviourRequests {
             @JsonProperty("attempt_number") Integer attemptNumber,
             @JsonProperty("envelope_json") Map<String, Object> envelopeJson,
             @JsonProperty("state_delta_json") Map<String, Object> stateDeltaJson,
-            @JsonProperty("volatile_cells_json") Map<String, Object> volatileCellsJson,
+            @JsonProperty("volatile_cells_json") List<Map<String, Object>> volatileCellsJson,
             @JsonProperty("bracket_outcome") String bracketOutcome,
             @JsonProperty("duration_ms") Long durationMs,
             @JsonProperty("error_type") String errorType,
@@ -125,10 +125,10 @@ public final class ProcBehaviourRequests {
             @JsonProperty("scenario_type") String scenarioType,
             @JsonProperty("exit_outcome") String exitOutcome,
             @JsonProperty("inputs_json") List<Map<String, Object>> inputsJson,
-            @JsonProperty("sequence_json") Map<String, Object> sequenceJson,
+            @JsonProperty("sequence_json") List<Map<String, Object>> sequenceJson,
             @JsonProperty("expected_envelope_json") Map<String, Object> expectedEnvelopeJson,
             @JsonProperty("state_delta_json") Map<String, Object> stateDeltaJson,
-            @JsonProperty("volatile_cells_json") Map<String, Object> volatileCellsJson,
+            @JsonProperty("volatile_cells_json") List<Map<String, Object>> volatileCellsJson,
             @JsonProperty("business_notes") String businessNotes
         ) {}
     }
