@@ -56,6 +56,100 @@ function bareLower(raw: string): string {
   return (cleaned.split('.').pop() ?? cleaned).toLowerCase();
 }
 
+/**
+ * The routine's own name with its CASE PRESERVED (2026-09-12). The catalog
+ * used to store `bareLower(...)`, and the capture built its EXEC target from
+ * the catalog row -- on a case-sensitive ASE that is a different object, so
+ * every invocation of a mixed-case routine came back 2812 "not found" and 23
+ * of 25 attemptable routines were unreachable by name. Join keys stay
+ * lowercase everywhere (the catalog, AMS's natural key, the callee ordering,
+ * the workbench maps all lowercase both sides); only the identifier the
+ * server is asked to run keeps its case.
+ */
+function bareName(raw: string): string {
+  const cleaned = raw.replace(/[[\]"]/g, '').trim();
+  return cleaned.split('.').pop() ?? cleaned;
+}
+
+/**
+ * Blank out single-quoted string literals (doubled quotes escape) so table /
+ * routine mining never reads inside message text (2026-09-12): a PRINT
+ * '... delete from GRD ...' used to mine a phantom write table that is not
+ * in the model, and the bracket then refused the routine with missing_pk on
+ * a table that does not exist. Length is preserved so no offsets move.
+ */
+export function blankSqlStringLiterals(text: string): string {
+  return text.replace(/N?'(?:[^']|'')*'/g, (m) => ' '.repeat(m.length));
+}
+
+/**
+ * One-pass scanner that blanks string literals AND comments together
+ * (2026-09-12). Doing them in two passes is wrong in both orders: a `--`
+ * inside a literal would swallow the literal's closing quote (and with it
+ * the next statement), and a `'` inside a comment would open a phantom
+ * literal. Length and newlines are preserved so no offsets move.
+ */
+export function blankSqlLiteralsAndComments(text: string): string {
+  return scanSql(text, true);
+}
+
+/**
+ * Comments blanked, string literals KEPT (2026-09-12). The profiler used to
+ * pre-strip comments with a scanner that did not know about literals, so a
+ * `--` inside a PRINT / RAISERROR message swallowed the literal's closing
+ * quote and everything after it read as one long string -- the header
+ * parsed, but the body's updates, calls and reads all vanished from the
+ * catalog. Literal text must survive here: RAISERROR / PRINT previews and
+ * exit-outcome mining read it.
+ */
+export function blankSqlCommentsKeepLiterals(text: string): string {
+  return scanSql(text, false);
+}
+
+function scanSql(text: string, blankLiterals: boolean): string {
+  const out: string[] = [];
+  let i = 0;
+  const n = text.length;
+  while (i < n) {
+    const ch = text[i];
+    const next = text[i + 1];
+    if (ch === "'" ) {
+      // string literal (doubled quote escapes)
+      const keep = (s: string): string => (blankLiterals ? s.replace(/[^\n]/g, ' ') : s);
+      out.push(keep("'"));
+      i += 1;
+      while (i < n) {
+        if (text[i] === "'") {
+          if (text[i + 1] === "'") { out.push(keep("''")); i += 2; continue; }
+          out.push(keep("'"));
+          i += 1;
+          break;
+        }
+        out.push(keep(text[i]));
+        i += 1;
+      }
+      continue;
+    }
+    if (ch === '-' && next === '-') {
+      while (i < n && text[i] !== '\n') { out.push(' '); i += 1; }
+      continue;
+    }
+    if (ch === '/' && next === '*') {
+      out.push('  ');
+      i += 2;
+      while (i < n && !(text[i] === '*' && text[i + 1] === '/')) {
+        out.push(text[i] === '\n' ? '\n' : ' ');
+        i += 1;
+      }
+      if (i < n) { out.push('  '); i += 2; }
+      continue;
+    }
+    out.push(ch);
+    i += 1;
+  }
+  return out.join('');
+}
+
 function schemaOf(raw: string): string {
   const cleaned = raw.replace(/[[\]"]/g, '').trim();
   const parts = cleaned.split('.');
@@ -223,7 +317,7 @@ function parseHeader(kind: RoutineKind, text: string): HeaderParse {
     if (!m) return fail('trigger header not recognised');
     const asAt = findBodyAs(text, m.index + m[0].length);
     return {
-      name: bareLower(m[1]),
+      name: bareName(m[1]),
       schema: schemaOf(m[1]),
       params: [],
       returnsType: null,
@@ -244,7 +338,7 @@ function parseHeader(kind: RoutineKind, text: string): HeaderParse {
     const parsed = parseParams(m[2]);
     const asAt = findBodyAs(text, m.index + m[0].length);
     return {
-      name: bareLower(m[1]),
+      name: bareName(m[1]),
       schema: schemaOf(m[1]),
       params: parsed.params,
       returnsType: m[3].replace(/\s+/g, ' ').trim(),
@@ -258,10 +352,10 @@ function parseHeader(kind: RoutineKind, text: string): HeaderParse {
   if (!m) return fail('procedure header not recognised');
   const afterName = m.index + m[0].length;
   const asAt = findBodyAs(text, afterName);
-  if (asAt < 0) return fail('procedure body AS not found', bareLower(m[1]), schemaOf(m[1]));
+  if (asAt < 0) return fail('procedure body AS not found', bareName(m[1]), schemaOf(m[1]));
   const parsed = parseParams(text.slice(afterName, asAt));
   return {
-    name: bareLower(m[1]),
+    name: bareName(m[1]),
     schema: schemaOf(m[1]),
     params: parsed.params,
     returnsType: null,
@@ -533,7 +627,8 @@ function findSetOptions(body: string): string[] {
 /** Profile one Sybase T-SQL routine source into an engine-neutral record. */
 export function profileTsqlRoutine(source: RoutineSource): RoutineRecord {
   const rawText = source.text ?? '';
-  const text = stripSqlComments(rawText);
+  // Literal-aware comment blanking (2026-09-12): see blankSqlCommentsKeepLiterals.
+  const text = blankSqlCommentsKeepLiterals(rawText);
   const kind = kindFromObjType(source.objType, text);
   const fallbackName = bareLower(source.name || '');
   const empty: RoutineProfile = {
@@ -589,6 +684,7 @@ export function profileTsqlRoutine(source: RoutineSource): RoutineRecord {
   );
   const returnSites = findReturnSites(body);
   const resultSelects = findResultSelects(body);
+  const miningBody = blankSqlLiteralsAndComments(body);
   const profile: RoutineProfile = {
     return_sites: returnSites,
     return_status_trivial: returnSites.every((r) => r.expr === null && (r.value === null || r.value === 0)),
@@ -611,11 +707,13 @@ export function profileTsqlRoutine(source: RoutineSource): RoutineRecord {
     trigger_on_table: header.triggerOnTable,
     trigger_events: header.triggerEvents,
     profile,
-    reads: parseReadTablesFromSql(body).map((t) => t.toLowerCase()),
-    writes: parseWriteTablesFromSql(body).map((t) => t.toLowerCase()),
-    proc_calls: parseProcCallsFromSql(body)
+    // Mining runs over the body with comments AND string literals blanked:
+    // message text is never a table or a call (2026-09-12).
+    reads: parseReadTablesFromSql(miningBody).map((t) => t.toLowerCase()),
+    writes: parseWriteTablesFromSql(miningBody).map((t) => t.toLowerCase()),
+    proc_calls: parseProcCallsFromSql(miningBody)
       .map((p) => p.toLowerCase())
-      .filter((p) => p !== selfName),
+      .filter((p) => p !== selfName.toLowerCase()),
     signature_parsed: header.error === null,
     signature_error: header.error,
   };

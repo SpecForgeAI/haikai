@@ -49,7 +49,9 @@ describe('profileTsqlRoutine -- SQL Server signatures', () => {
     expect(r.signature_parsed).toBe(true);
     expect(r.routine_kind).toBe('procedure');
     expect(r.schema_name).toBe('application');
-    expect(r.routine_name).toBe('addrolememberifnonexistent');
+    // Identifier case is preserved since 2026-09-12 (the EXEC target on a
+    // case-sensitive server); join keys lowercase on both sides.
+    expect(r.routine_name).toBe('AddRoleMemberIfNonexistent');
     expect(r.params.map((p) => p.name)).toEqual(['RoleName', 'UserName']);
     expect(r.params[0].source_type).toBe('sysname');
   });
