@@ -15,6 +15,7 @@ import org.hibernate.annotations.Type;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -71,7 +72,7 @@ public class ProcBehaviourCaptureEntity {
     /** Cells that differed between the two fires of the same scenario. */
     @Type(JsonType.class)
     @Column(name = "volatile_cells_json", columnDefinition = "jsonb")
-    private Map<String, Object> volatileCellsJson;
+    private List<Map<String, Object>> volatileCellsJson;
 
     /** clean | compensated | healed | residue (derived compensation bracket). */
     @Column(name = "bracket_outcome", length = 32)
