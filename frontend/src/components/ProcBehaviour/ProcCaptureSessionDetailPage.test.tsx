@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
@@ -22,6 +22,7 @@ const mockListDbRoutines = vi.fn();
 const mockNotPossible = vi.fn();
 const mockExclude = vi.fn();
 const mockRetry = vi.fn();
+const mockCancel = vi.fn();
 
 vi.mock('../../api/procBehaviourApi', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../api/procBehaviourApi')>();
@@ -36,6 +37,7 @@ vi.mock('../../api/procBehaviourApi', async (importOriginal) => {
     markProcRoutineNotPossible: (...a: unknown[]) => mockNotPossible(...a),
     excludeProcRoutine: (...a: unknown[]) => mockExclude(...a),
     retryUncoveredRoutines: (...a: unknown[]) => mockRetry(...a),
+    cancelProcCapture: (...a: unknown[]) => mockCancel(...a),
   };
 });
 
@@ -193,6 +195,29 @@ function renderPage() {
 }
 
 describe('ProcCaptureSessionDetailPage — coverage panel', () => {
+  it('a STRANDED session (status running, no run in flight) explains itself and offers Stop, which cancels it (2026-09-12)', async () => {
+    const user = userEvent.setup();
+    const runningWire = { ...SESSION_WIRE, status: 'running' };
+    mockGetSession.mockResolvedValue(mapSession(runningWire));
+    mockGetStatus.mockResolvedValue(mapStatus({ session: runningWire, run: { in_flight: false } }));
+    mockCancel.mockResolvedValue(undefined);
+    renderPage();
+
+    const note = await screen.findByTestId('proc-session-stranded');
+    expect(note.textContent).toContain('no capture run is in flight');
+    const stop = screen.getByTestId('proc-session-cancel');
+    expect(stop.textContent).toBe('Stop stranded run');
+
+    const cancelledWire = { ...SESSION_WIRE, status: 'cancelled' };
+    mockGetStatus.mockResolvedValue(mapStatus({ session: cancelledWire, run: { in_flight: false } }));
+    mockGetSession.mockResolvedValue(mapSession(cancelledWire));
+    await user.click(stop);
+    await waitFor(() => expect(mockCancel).toHaveBeenCalledWith('proj-1', 'arch-1', 'ps-1'));
+    await waitFor(() => expect(screen.getByTestId('proc-session-status').textContent).toBe('cancelled'));
+    expect(screen.queryByTestId('proc-session-stranded')).toBeNull();
+    expect(screen.queryByTestId('proc-session-cancel')).toBeNull();
+  });
+
   it('renders the coverage roll-up collapsed by default and expands per-routine rows on demand', async () => {
     const user = userEvent.setup();
     renderPage();

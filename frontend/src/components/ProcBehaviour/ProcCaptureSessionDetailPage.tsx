@@ -239,14 +239,15 @@ export const ProcCaptureSessionDetailPage: React.FC = () => {
     setBusy(true);
     try {
       await cancelProcCapture(projectId, architectureId, sessionId);
-      setActionNote('Cancellation requested.');
+      setActionNote(run.inFlight ? 'Cancellation requested.' : 'Stranded run marked cancelled.');
       await pollStatus();
+      if (!run.inFlight) await loadAll();
     } catch (err) {
       setError(describeProcError(err));
     } finally {
       setBusy(false);
     }
-  }, [projectId, architectureId, sessionId, pollStatus]);
+  }, [projectId, architectureId, sessionId, pollStatus, loadAll, run.inFlight]);
 
   const handleRetry = useCallback(
     async (routineIds: string[]) => {
@@ -371,7 +372,7 @@ export const ProcCaptureSessionDetailPage: React.FC = () => {
         >
           {session?.status ?? 'draft'}
         </span>
-        {run.inFlight && (
+        {(run.inFlight || session?.status === 'running') && (
           <button
             type="button"
             className={styles.secondaryButton}
@@ -379,10 +380,19 @@ export const ProcCaptureSessionDetailPage: React.FC = () => {
             disabled={busy}
             data-testid="proc-session-cancel"
           >
-            Cancel run
+            {run.inFlight ? 'Cancel run' : 'Stop stranded run'}
           </button>
         )}
       </div>
+
+      {!run.inFlight && session?.status === 'running' && (
+        <div className={styles.detailSection} data-testid="proc-session-stranded">
+          This session says <strong>running</strong>, but no capture run is in flight on the
+          validation service — it was restarted while the run was starting, so nothing will
+          finish this row on its own. Stop it to mark it cancelled; you can then delete it
+          from the list or start a new capture.
+        </div>
+      )}
 
       {run.inFlight && (
         <div className={styles.detailSection} data-testid="proc-session-phase">
