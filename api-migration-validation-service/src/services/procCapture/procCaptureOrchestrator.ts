@@ -157,6 +157,25 @@ export function resolveSessionSet(
 }
 
 /** Callee-first order over the routines in scope (cycle-safe DFS). */
+/**
+ * Engine errors that mean the routine was NEVER ENTERED (2026-09-12): the
+ * name did not resolve, the caller lacks permission, the argument list did
+ * not bind. Such an envelope is a defect of the environment or the catalog
+ * (case, permissions, a missing object), never routine behaviour -- it used
+ * to pass the acceptance gate because it leaves the database untouched
+ * (clean bracket), and a baseline was pinned with 11 "procedure not found"
+ * items in it. ASE message numbers + the Postgres SQLSTATEs.
+ */
+const NOT_INVOKED_ASE_NUMBERS = new Set<number>([2812, 208, 229, 201, 2809, 17]);
+const NOT_INVOKED_SQLSTATES = new Set<string>(['42883', '42P01', '42501', '42601']);
+
+export function isNotInvokedError(error: { number: number | null; sqlstate: string | null } | null | undefined): boolean {
+  if (!error) return false;
+  if (error.number !== null && NOT_INVOKED_ASE_NUMBERS.has(error.number)) return true;
+  if (error.sqlstate && NOT_INVOKED_SQLSTATES.has(error.sqlstate)) return true;
+  return false;
+}
+
 export function orderCalleesFirst(routines: RoutineCatalogRow[]): RoutineCatalogRow[] {
   const byName = new Map(routines.map((r) => [r.routine_name.toLowerCase(), r]));
   const state = new Map<string, 'visiting' | 'done'>();
@@ -289,6 +308,17 @@ export async function orchestrateProcCaptureSession(
   procRunRegistry.set(sessionId, run);
 
   const adapters: DbAdapter[] = [];
+  // Per-routine reason roll-ups for the coverage row (2026-09-12): key ->
+  // count, rendered "text xN". Written beside the diagnostics, never instead.
+  const routineNotes = new Map<string, Map<string, number>>();
+  const note = (routineId: string, text: string): void => {
+    const m = routineNotes.get(routineId) ?? new Map<string, number>();
+    m.set(text, (m.get(text) ?? 0) + 1);
+    routineNotes.set(routineId, m);
+  };
+  const notesFor = (routineId: string): string[] =>
+    [...(routineNotes.get(routineId) ?? new Map<string, number>()).entries()].map(([text, n]) => (n > 1 ? `${text} \u00d7${n}` : text));
+  const notedOnce = new Set<string>();
   const diag = async (d: Omit<ProcDiagnosticDto, 'session_id'>): Promise<void> => {
     if (FINDING_CLASS.has(d.diagnostic_type)) run.findings += 1;
     try {
@@ -511,10 +541,10 @@ export async function orchestrateProcCaptureSession(
           const post = pre ? await snapshotTables(readAdapter, writes) : null;
           return { envelopes, delta: pre && post ? (computeStateDelta(pre, post) as unknown as Record<string, unknown>) : null };
         };
-        const fireOnce = async (): Promise<{ envelopes: RoutineInvocationEnvelope[]; delta: Record<string, unknown> | null; bracket: string; fired: boolean; error: unknown }> => {
+        const fireOnce = async (): Promise<{ envelopes: RoutineInvocationEnvelope[]; delta: Record<string, unknown> | null; bracket: string; refusals: Array<{ table: string; reason: string; detail: string }>; fired: boolean; error: unknown }> => {
           if (!compensation || (writes.length === 0 && reads.length === 0)) {
             const r = await doFire();
-            return { ...r, bracket: 'unbracketed', fired: true, error: null };
+            return { ...r, bracket: 'unbracketed', refusals: [], fired: true, error: null };
           }
           const b = await runBracket({
             readAdapter,
@@ -530,6 +560,7 @@ export async function orchestrateProcCaptureSession(
             envelopes: b.fireResult?.envelopes ?? [],
             delta: b.fireResult?.delta ?? null,
             bracket: (b.outcome as { kind?: string }).kind ?? 'unknown',
+            refusals: ((b.outcome as { refusals?: Array<{ table: string; reason: string; detail: string }> }).refusals ?? []),
             fired: b.fired,
             error: b.fireError,
           };
@@ -538,11 +569,51 @@ export async function orchestrateProcCaptureSession(
         const first = await fireOnce();
         if (first.error) throw first.error instanceof Error ? first.error : new Error(String(first.error));
         let refusedReason: string | null = null;
-        if (!first.fired || first.bracket === 'refused') refusedReason = `bracket refused (${first.bracket})`;
+        if (!first.fired || first.bracket === 'refused') {
+          // The refusal REASON used to be computed, handed to the LLM and
+          // never persisted (2026-09-12): the capture row read
+          // bracket_outcome=refused and the UI could not say why. Persist it.
+          refusedReason = first.refusals.length > 0
+            ? first.refusals.map((r) => `${r.table}: ${r.reason} — ${r.detail}`).join('; ')
+            : `bracket refused (${first.bracket})`;
+          const key = `${routine.id}|refused|${first.refusals.map((r) => `${r.table}:${r.reason}`).join(',')}`;
+          if (!notedOnce.has(key)) {
+            notedOnce.add(key);
+            await diag({
+              routine_id: routine.id,
+              diagnostic_type: 'bracket_refused',
+              message: `${routine.routine_name}: the compensation bracket refused to fire — ${refusedReason}`,
+              detail_json: { scenario: scenario.scenario_name, refusals: first.refusals },
+            });
+          }
+          for (const r of first.refusals) note(routine.id, `bracket refused: ${r.table} ${r.reason}`);
+          if (first.refusals.length === 0) note(routine.id, `bracket refused (${first.bracket})`);
+        }
         if (first.bracket === 'residue') {
           await diag({ routine_id: routine.id, diagnostic_type: 'bracket_residue', message: `Compensation left residue after '${scenario.scenario_name}' on ${routine.routine_name}; the capture is NOT accepted. Remedy: S0 restore.`, detail_json: { scenario: scenario.scenario_name } });
+          note(routine.id, 'bracket residue (capture rejected)');
         }
-        const accepted = first.fired && ['clean', 'compensated', 'healed', 'unbracketed'].includes(first.bracket);
+        // NOT INVOKED (2026-09-12): the engine never entered the routine.
+        const notInvoked = first.envelopes.find((e) => e.outcome === 'error' && isNotInvokedError(e.error)) ?? null;
+        if (notInvoked) {
+          const err = notInvoked.error as { number: number | null; sqlstate: string | null; message: string };
+          const label = err.number !== null ? `ASE ${err.number}` : `SQLSTATE ${err.sqlstate ?? '?'}`;
+          const key = `${routine.id}|not_invoked|${err.number ?? err.sqlstate ?? ''}`;
+          if (!notedOnce.has(key)) {
+            notedOnce.add(key);
+            await diag({
+              routine_id: routine.id,
+              diagnostic_type: 'not_invoked',
+              message:
+                `${routine.routine_name} was NOT invoked: ${label} — ${err.message}. The capture is rejected: this is an ` +
+                'environment or catalog defect (name/case, permissions, missing object, argument binding), not routine behaviour. ' +
+                'Fix the cause (re-scan the catalog, grant, correct the object) and retry the uncovered routines.',
+              detail_json: { scenario: scenario.scenario_name, error: err },
+            });
+          }
+          note(routine.id, `not invoked: ${label} ${err.message.slice(0, 80)}`);
+        }
+        const accepted = first.fired && !notInvoked && ['clean', 'compensated', 'healed', 'unbracketed'].includes(first.bracket);
         let volatile: VolatileCell[] | null = null;
         if (accepted && (profile.volatile_functions ?? []).length > 0) {
           const second = await fireOnce();
@@ -564,8 +635,14 @@ export async function orchestrateProcCaptureSession(
             volatile_cells_json: volatile,
             bracket_outcome: first.bracket as ProcCaptureDto['bracket_outcome'],
             duration_ms: Date.now() - started,
-            error_type: first.envelopes.some((e) => e.outcome === 'error') ? 'routine_error' : null,
-            error_message: first.envelopes.find((e) => e.outcome === 'error')?.error?.message ?? null,
+            error_type: notInvoked
+              ? 'not_invoked'
+              : refusedReason
+                ? 'bracket_refused'
+                : first.envelopes.some((e) => e.outcome === 'error')
+                  ? 'routine_error'
+                  : null,
+            error_message: refusedReason ?? first.envelopes.find((e) => e.outcome === 'error')?.error?.message ?? null,
             accepted: accepted && !truncated,
           },
         ]);
@@ -627,7 +704,7 @@ export async function orchestrateProcCaptureSession(
       }
       const scenarios = (await client.listScenarios(projectId, architectureId, sessionId)).filter((s) => s.routine_id === routine.id);
       const captures = (await client.listCaptures(projectId, architectureId, sessionId)).filter((c) => c.routine_id === routine.id);
-      const cov = scoreRoutineCoverage(routine, scenarios, captures);
+      const cov = scoreRoutineCoverage(routine, scenarios, captures, { notes: notesFor(routine.id) });
       if (!cov.floor_met) {
         await diag({
           routine_id: routine.id,

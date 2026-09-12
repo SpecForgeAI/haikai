@@ -140,6 +140,15 @@ describe('coverage floor', () => {
     expect(full.floor_met).toBe(true);
     const unaccepted = scoreRoutineCoverage(routine(), scenarios, [capture('s1', envelope(), false)]);
     expect(unaccepted.captures_accepted).toBe(0);
+    // A family is credited by what the routine DID (2026-09-12): an accepted
+    // capture whose exit is not one the routine can produce earns nothing for
+    // the scenario's declared family.
+    const unknownExit = scoreRoutineCoverage(routine(), scenarios, [
+      capture('s3', envelope({ outcome: 'error', error: { number: 2812, sqlstate: null, severity: 16, state: 1, message: 'not found' } })),
+    ]);
+    expect(unknownExit.achieved).not.toContain('family:zero_rows');
+    const withNotes = scoreRoutineCoverage(routine(), scenarios, [], { notes: ['not invoked: ASE 2812 not found \u00d75'] });
+    expect(withNotes.notes).toEqual(['not invoked: ASE 2812 not found \u00d75']);
     const summary = assembleProcCoverageSummary([full, partial, scoreRoutineCoverage(routine({ id: 'x' }), [], [], { excluded: true })]);
     expect(summary).toMatchObject({ routines_in_scope: 3, verified: 1, not_exercised: 1, excluded: 1 });
   });
@@ -354,6 +363,56 @@ describe('orchestrator', () => {
     expect(final.status).toBe('completed_with_findings');
     expect(final.s0_fingerprint_json).toMatchObject({ status: 'verified', snapshot_id: 's0-1' });
     expect(procRunRegistry.has('sess')).toBe(false);
+  });
+
+  it('a "procedure not found" envelope is NOT behaviour (2026-09-12): rejected with a not_invoked diagnostic, no family credit, reason on the coverage row', async () => {
+    const client = new FakeClient();
+    const adapter = fakeAdapter(() => envelope({ outcome: 'error', return_status: null, result_sets: [], error: { number: 2812, sqlstate: null, severity: 16, state: 1, message: "Stored procedure 'dbo.upd_ledger_roll' not found." } }));
+    const runBracket = async (args: { fire: () => Promise<unknown> }) => {
+      const fireResult = await args.fire();
+      return { outcome: { kind: 'clean' }, fired: true, fireResult, fireError: null };
+    };
+    const outcome = await orchestrateProcCaptureSession(
+      { projectId: 'p', architectureId: 'a', sessionId: 'sess' },
+      {
+        client, secrets, createAdapter: () => adapter, buildCompensation: compensation() as never, runBracket: runBracket as never,
+        snapshotTables: async () => ({ tables: [] }), quietWindow: null, endOfJobFingerprint: null, gatewayClient: scriptedGateway(), sessionSetResolver: () => [],
+      },
+    );
+    expect(client.captures.length).toBeGreaterThan(0);
+    expect(client.captures.every((c) => c.accepted === false && c.error_type === 'not_invoked')).toBe(true);
+    const notInvoked = client.diagnostics.filter((d) => d.diagnostic_type === 'not_invoked');
+    expect(notInvoked).toHaveLength(1); // once per routine + error, not per scenario
+    expect(notInvoked[0].message).toContain('ASE 2812');
+    const cov = outcome.coverage?.per_routine[0];
+    expect(cov?.bucket).toBe('not_exercised');
+    expect(cov?.captures_accepted).toBe(0);
+    expect(cov?.achieved).toEqual([]);
+    expect(cov?.notes?.some((n) => n.startsWith('not invoked: ASE 2812'))).toBe(true);
+  });
+
+  it('a bracket refusal is persisted with its reason (2026-09-12): bracket_refused diagnostic + capture error_type + coverage note', async () => {
+    const client = new FakeClient();
+    const adapter = fakeAdapter([envelope()]);
+    const runBracket = async () => ({
+      outcome: { kind: 'refused', refusals: [{ table: 'big_tbl', reason: 'table_too_large', detail: '954411 rows exceeds the cap and the table has no single numeric PK' }] },
+      fired: false,
+      fireResult: null,
+      fireError: null,
+    });
+    const outcome = await orchestrateProcCaptureSession(
+      { projectId: 'p', architectureId: 'a', sessionId: 'sess' },
+      {
+        client, secrets, createAdapter: () => adapter, buildCompensation: compensation() as never, runBracket: runBracket as never,
+        snapshotTables: async () => ({ tables: [] }), quietWindow: null, endOfJobFingerprint: null, gatewayClient: scriptedGateway(), sessionSetResolver: () => [],
+      },
+    );
+    expect(adapter.calls).toBe(0);
+    expect(client.captures.every((c) => c.accepted === false && c.error_type === 'bracket_refused' && /big_tbl: table_too_large/.test(c.error_message ?? ''))).toBe(true);
+    const refused = client.diagnostics.filter((d) => d.diagnostic_type === 'bracket_refused');
+    expect(refused).toHaveLength(1);
+    expect(refused[0].message).toContain('big_tbl: table_too_large');
+    expect(outcome.coverage?.per_routine[0].notes?.some((n) => n.startsWith('bracket refused: big_tbl table_too_large'))).toBe(true);
   });
 
   it('refuses non-compensatable routines before firing and marks them unverifiable', async () => {

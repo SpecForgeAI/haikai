@@ -299,6 +299,8 @@ export interface ProcRoutineCoverage {
   scenariosFired: number;
   capturesAccepted: number;
   unverifiableReason: string | null;
+  /** Why the routine is where it is (2026-09-12): diagnostic roll-ups. */
+  notes: string[];
 }
 
 export interface ProcCoverageSummary {
@@ -368,6 +370,7 @@ function mapRoutineCoverage(v: unknown): ProcRoutineCoverage {
     scenariosFired: num(pick(w, 'scenarios_fired', 'scenariosFired')) ?? 0,
     capturesAccepted: num(pick(w, 'captures_accepted', 'capturesAccepted')) ?? 0,
     unverifiableReason: str(pick(w, 'unverifiable_reason', 'unverifiableReason')),
+    notes: strList(w.notes),
   };
 }
 

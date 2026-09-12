@@ -181,7 +181,9 @@ export type ProcDiagnosticType =
   | 'result_set_truncated'
   | 'login_dependent'
   | 's0_not_pinned'
-  | 's0_repinned';
+  | 's0_repinned'
+  | 'not_invoked'
+  | 'bracket_refused';
 
 export interface ProcDiagnosticDto {
   id?: string;
@@ -239,6 +241,14 @@ export interface RoutineCoverage {
   scenarios_fired: number;
   captures_accepted: number;
   unverifiable_reason?: string | null;
+  /**
+   * Why the routine is where it is (2026-09-12): compact roll-ups of the
+   * diagnostics written while it ran ("not invoked: ASE 2812 ... x5",
+   * "bracket refused: big_tbl table_too_large"). The coverage row used to
+   * show a dash for every not-exercised routine while the reasons sat in
+   * the diagnostics list.
+   */
+  notes?: string[];
 }
 
 export interface ProcCoverageSummary {
