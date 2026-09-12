@@ -113,7 +113,9 @@ export const ProcRoutineCoveragePanel: React.FC<ProcRoutineCoveragePanelProps> =
                   <td>{r.missing.length > 0 ? r.missing.join(', ') : '—'}</td>
                   <td className={proc.numeric}>{r.scenariosFired}</td>
                   <td className={proc.numeric}>{r.capturesAccepted}</td>
-                  <td>{r.unverifiableReason ?? '—'}</td>
+                  <td data-testid={`${testId}-reason-${r.routineId}`}>
+                    {r.unverifiableReason ?? (r.notes.length > 0 ? r.notes.join('; ') : '—')}
+                  </td>
                 </tr>
               ))}
               {summary.perRoutine.length === 0 && (

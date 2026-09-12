@@ -30,17 +30,18 @@ export function scoreRoutineCoverage(
   routine: RoutineCatalogRow,
   scenarios: ProcScenarioDto[],
   captures: ProcCaptureDto[],
-  opts: { excluded?: boolean; unverifiableReason?: string | null } = {},
+  opts: { excluded?: boolean; unverifiableReason?: string | null; notes?: string[] } = {},
 ): RoutineCoverage {
+  const notes = opts.notes ?? [];
   const base = {
     routine_id: routine.id,
     routine_name: `${routine.schema_name}.${routine.routine_name}`,
   };
   if (opts.excluded) {
-    return { ...base, bucket: 'excluded', required: [], achieved: [], missing: [], reported_only_achieved: [], floor_met: false, scenarios_fired: 0, captures_accepted: 0, unverifiable_reason: null };
+    return { ...base, bucket: 'excluded', required: [], achieved: [], missing: [], reported_only_achieved: [], floor_met: false, scenarios_fired: 0, captures_accepted: 0, unverifiable_reason: null, notes };
   }
   if (opts.unverifiableReason) {
-    return { ...base, bucket: 'unverifiable', required: [], achieved: [], missing: [], reported_only_achieved: [], floor_met: false, scenarios_fired: 0, captures_accepted: 0, unverifiable_reason: opts.unverifiableReason };
+    return { ...base, bucket: 'unverifiable', required: [], achieved: [], missing: [], reported_only_achieved: [], floor_met: false, scenarios_fired: 0, captures_accepted: 0, unverifiable_reason: opts.unverifiableReason, notes };
   }
   const required = new Set<string>(enumerateExitOutcomes(routine));
   const families = seededFamilies(routine);
@@ -52,12 +53,17 @@ export function scoreRoutineCoverage(
   const reportedOnly = new Set<string>();
   for (const c of accepted) {
     const key = exitOutcomeOf(c.envelope_json);
+    const knownExit = required.has(key) || (key.startsWith('error:') && required.has('error:?'));
     if (required.has(key)) achieved.add(key);
     else if (key.startsWith('error:') && required.has('error:?')) achieved.add('error:?');
     const scenario = scenarioById.get(c.scenario_id);
     if (scenario) {
       const famKey = FAMILY_KEY[scenario.scenario_type];
-      if (famKey && required.has(famKey)) achieved.add(famKey);
+      // A family is credited by what the routine DID, never by what the
+      // scenario was declared as (2026-09-12): a capture whose exit is not
+      // one the routine can produce (an unknown error number) proves
+      // nothing about the family.
+      if (famKey && required.has(famKey) && knownExit) achieved.add(famKey);
       if (['null_param', 'default_param', 'boundary', 'business_edge', 'sequence'].includes(scenario.scenario_type)) {
         reportedOnly.add(scenario.scenario_type);
       }
@@ -77,6 +83,7 @@ export function scoreRoutineCoverage(
     scenarios_fired: fired,
     captures_accepted: accepted.length,
     unverifiable_reason: null,
+    notes,
   };
 }
 
