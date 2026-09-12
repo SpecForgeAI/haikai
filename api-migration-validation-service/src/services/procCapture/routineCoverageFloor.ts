@@ -45,7 +45,18 @@ export function scoreRoutineCoverage(
   }
   const required = new Set<string>(enumerateExitOutcomes(routine));
   const families = seededFamilies(routine);
-  for (const f of families) required.add(FAMILY_KEY[f.type] ?? `family:${f.type}`);
+  // A family is floor-bearing only when the planner can TARGET it
+  // (2026-09-12). `family:error_path` was required for every routine with
+  // transaction control (essentially every ASE proc) while the planner only
+  // emits error scenarios for RAISERROR / THROW sites, so the requirement
+  // was near-universal and near-unreachable: 13 routines were missing
+  // nothing else. Without a statically reachable error exit the family is
+  // reported-only.
+  const staticErrorExit = [...required].some((k) => k.startsWith('error:'));
+  for (const f of families) {
+    if (f.type === 'error_path' && !staticErrorExit) continue;
+    required.add(FAMILY_KEY[f.type] ?? `family:${f.type}`);
+  }
   // An unknown-number RAISERROR site is satisfied by ANY error outcome.
   const scenarioById = new Map(scenarios.filter((s) => s.id).map((s) => [s.id as string, s]));
   const accepted = captures.filter((c) => c.routine_id === routine.id && c.accepted);
@@ -53,9 +64,11 @@ export function scoreRoutineCoverage(
   const reportedOnly = new Set<string>();
   for (const c of accepted) {
     const key = exitOutcomeOf(c.envelope_json);
-    const knownExit = required.has(key) || (key.startsWith('error:') && required.has('error:?'));
+    const anyReturn = (key.startsWith('return:') || key === 'success') && required.has('return:?');
+    const knownExit = required.has(key) || (key.startsWith('error:') && required.has('error:?')) || anyReturn;
     if (required.has(key)) achieved.add(key);
     else if (key.startsWith('error:') && required.has('error:?')) achieved.add('error:?');
+    if (anyReturn) achieved.add('return:?');
     const scenario = scenarioById.get(c.scenario_id);
     if (scenario) {
       const famKey = FAMILY_KEY[scenario.scenario_type];
@@ -64,6 +77,7 @@ export function scoreRoutineCoverage(
       // one the routine can produce (an unknown error number) proves
       // nothing about the family.
       if (famKey && required.has(famKey) && knownExit) achieved.add(famKey);
+      if (famKey && !required.has(famKey)) reportedOnly.add(scenario.scenario_type);
       if (['null_param', 'default_param', 'boundary', 'business_edge', 'sequence'].includes(scenario.scenario_type)) {
         reportedOnly.add(scenario.scenario_type);
       }

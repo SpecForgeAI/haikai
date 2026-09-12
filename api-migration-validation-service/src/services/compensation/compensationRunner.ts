@@ -68,6 +68,13 @@ export interface CompensationBracketArgs<T> {
    *  here — the write plan wins. */
   readTables?: string[];
   metadata: CompensationMetadataIndex;
+  /**
+   * The call's bound parameters when they are known BEFORE the fire
+   * (2026-09-12; the proc capture knows them, the HTTP capture learns them
+   * in the hook). With them the planner can refuse an over-cap keyed table
+   * that no parameter can bound instead of running unbounded.
+   */
+  preboundParams?: Record<string, unknown> | null;
   /** The capture/replay work to bracket — fired exactly once, pre-checks
    *  permitting. Receives the per-call hooks for scoped imaging; callers
    *  that fire without threading them simply get no Tier-1 coverage. */
@@ -131,7 +138,11 @@ export async function runCompensationBracket<T>(
       });
       continue;
     }
-    if (meta.pkColumns.length === 0 && meta.keyPolicy === 'keyless_multiset') {
+    if ((meta.pkColumns.length === 0 && meta.keyPolicy === 'keyless_multiset') || meta.scope === 'volatile') {
+      // Keyless-policy tables AND volatile-scope tables (2026-09-12: scratch /
+      // temp tables with no key and no unique constraint) take the DETECT-ONLY
+      // observation bracket: the S0 fingerprint already tolerates their
+      // drift, so hard-refusing them only cost routines.
       keylessMetas.push(meta);
       continue;
     }
@@ -149,6 +160,29 @@ export async function runCompensationBracket<T>(
       // an id) used to refuse `table_too_large` and every routine touching
       // the hierarchy core was uncapturable.
       if (sweepPk || meta.pkColumns.length > 0) {
+        if (!sweepPk && args.preboundParams) {
+          // Gate (2026-09-12): without a sweep the only bound on the write is
+          // a key slice; if no known parameter names a key column the tier
+          // cannot bound anything -- refuse (recoverable) instead of running
+          // and leaving residue (an S0 restore).
+          const folded = new Set(
+            Object.entries(args.preboundParams)
+              .filter(([, v]) => v !== undefined && v !== null)
+              .map(([k]) => foldParamName(k)),
+          );
+          const bound = meta.pkColumns.filter((c) => folded.has(foldParamName(c)));
+          if (bound.length === 0) {
+            refusals.push({
+              table: meta.table,
+              reason: 'unscoped_write',
+              detail:
+                `${count} rows exceeds COMPENSATION_FULL_IMAGE_MAX_ROWS=${COMPENSATION_FULL_IMAGE_MAX_ROWS}; the scoped tier ` +
+                `needs a call parameter naming one of the key columns (${meta.pkColumns.join(', ')}) and none of ` +
+                `(${Object.keys(args.preboundParams).join(', ') || 'no parameters'}) does — refused rather than run unbounded`,
+            });
+            continue;
+          }
+        }
         partialPlans.push({
           meta,
           role: 'write',

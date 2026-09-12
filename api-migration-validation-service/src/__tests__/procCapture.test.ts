@@ -152,6 +152,34 @@ describe('coverage floor', () => {
     const summary = assembleProcCoverageSummary([full, partial, scoreRoutineCoverage(routine({ id: 'x' }), [], [], { excluded: true })]);
     expect(summary).toMatchObject({ routines_in_scope: 3, verified: 1, not_exercised: 1, excluded: 1 });
   });
+
+  it('family:error_path is floor-bearing ONLY with a statically reachable error exit; RETURN-as-data routines require return:? (2026-09-12)', () => {
+    // Transaction control but no RAISERROR / THROW: the planner cannot target
+    // an error path, so the family must not sit in the denominator.
+    const txOnly = routine({
+      profile_json: { ...routine().profile_json, raiserror_sites: [], return_sites: [{ value: 0, expr: null }], constructs: ['transaction_control'] },
+    });
+    const cov = scoreRoutineCoverage(txOnly, scenarios, [capture('s1', envelope())]);
+    expect(cov.required).toEqual(['family:zero_rows', 'success']);
+    expect(cov.missing).toEqual(['family:zero_rows']);
+    // An error-path capture on such a routine is reported, not required.
+    const reported = scoreRoutineCoverage(txOnly, scenarios, [capture('s1', envelope()), capture('s2', envelope({ outcome: 'error', error: { number: 50000, sqlstate: null, severity: 16, state: 1, message: 'x' } }))]);
+    expect(reported.required).not.toContain('family:error_path');
+    expect(reported.reported_only_achieved).toContain('error_path');
+
+    // RETURN as a data channel: every RETURN site is an expression, so
+    // `success` (return 0) is unreachable; `return:?` is required and a
+    // return:4600 capture satisfies it.
+    const returnsData = routine({
+      profile_json: { ...routine().profile_json, raiserror_sites: [], return_sites: [{ value: null, expr: '@next' }], constructs: [] },
+      full_body: 'create proc dbo.get_next as begin declare @next int select @next = 4600 return @next end',
+    });
+    const data = scoreRoutineCoverage(returnsData, scenarios, [capture('s1', envelope({ return_status: 4600 }))]);
+    expect(data.required).toContain('return:?');
+    expect(data.required).not.toContain('success');
+    expect(data.achieved).toContain('return:?');
+    expect(data.bucket).toBe('verified');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -365,6 +393,54 @@ describe('orchestrator', () => {
     expect(procRunRegistry.has('sess')).toBe(false);
   });
 
+  it('a child routine that only ever fails on a caller-provided #temp table is unverifiable (caller_provided_temp_table), not a coverage gap (2026-09-12)', async () => {
+    const client = new FakeClient();
+    const adapter = fakeAdapter(() => envelope({ outcome: 'error', return_status: null, result_sets: [], error: { number: 208, sqlstate: null, severity: 16, state: 1, message: '#new_orgs not found. Specify owner.objectname or use sp_help to check whether the object exists' } }));
+    const runBracket = async (args: { fire: () => Promise<unknown> }) => {
+      const fireResult = await args.fire();
+      return { outcome: { kind: 'clean' }, fired: true, fireResult, fireError: null };
+    };
+    const outcome = await orchestrateProcCaptureSession(
+      { projectId: 'p', architectureId: 'a', sessionId: 'sess' },
+      {
+        client, secrets, createAdapter: () => adapter, buildCompensation: compensation() as never, runBracket: runBracket as never,
+        snapshotTables: async () => ({ tables: [] }), quietWindow: null, endOfJobFingerprint: null, gatewayClient: scriptedGateway(), sessionSetResolver: () => [],
+      },
+    );
+    const cov = outcome.coverage?.per_routine[0];
+    expect(cov?.bucket).toBe('unverifiable');
+    expect(cov?.unverifiable_reason).toBe('caller_provided_temp_table:#new_orgs');
+    expect(client.diagnostics.some((d) => d.diagnostic_type === 'routine_skipped' && /#new_orgs/.test(d.message) && /caller/.test(d.message))).toBe(true);
+  });
+
+  it('residue detail is persisted (2026-09-12): the bracket_residue diagnostic carries the residue rows and names the tables', async () => {
+    const client = new FakeClient();
+    const adapter = fakeAdapter([envelope()]);
+    const runBracket = async (args: { fire: () => Promise<unknown> }) => {
+      const fireResult = await args.fire();
+      return {
+        outcome: { kind: 'residue', residue: [{ table: 'big_book', kind: 'row_changed', pkKey: null, detail: 'scoped-tier write table count 954411 -> 953377 after undo — writes outside the scoped keys/sweep' }] },
+        fired: true,
+        fireResult,
+        fireError: null,
+      };
+    };
+    const outcome = await orchestrateProcCaptureSession(
+      { projectId: 'p', architectureId: 'a', sessionId: 'sess' },
+      {
+        client, secrets, createAdapter: () => adapter, buildCompensation: compensation() as never, runBracket: runBracket as never,
+        snapshotTables: async () => ({ tables: [] }), quietWindow: null, endOfJobFingerprint: null, gatewayClient: scriptedGateway(), sessionSetResolver: () => [],
+      },
+    );
+    const residue = client.diagnostics.filter((d) => d.diagnostic_type === 'bracket_residue');
+    expect(residue.length).toBeGreaterThan(0);
+    expect(residue[0].message).toContain('big_book');
+    expect(residue[0].message).toContain('954411 -> 953377');
+    expect((residue[0].detail_json as { residue: unknown[] }).residue).toHaveLength(1);
+    expect(client.captures.every((c) => c.accepted === false)).toBe(true);
+    expect(outcome.coverage?.per_routine[0].notes?.some((n) => n.startsWith('bracket residue: big_book row_changed'))).toBe(true);
+  });
+
   it('the proc fire hands its bound parameters to the bracket hook before each call (2026-09-12: scoped-tier predicates)', async () => {
     const client = new FakeClient();
     const adapter = fakeAdapter([envelope()]);
@@ -382,6 +458,25 @@ describe('orchestrator', () => {
     );
     expect(seen.length).toBeGreaterThan(0);
     expect(typeof seen[0].ledger_id).toBe('number');
+  });
+
+  it('the bracket receives the routine\u2019s bound parameters BEFORE the fire (preboundParams) so it can refuse an unscoped over-cap write', async () => {
+    const client = new FakeClient();
+    const adapter = fakeAdapter([envelope()]);
+    let prebound: Record<string, unknown> | null | undefined;
+    const runBracket = async (args: { preboundParams?: Record<string, unknown> | null; fire: () => Promise<unknown> }) => {
+      prebound = args.preboundParams;
+      const fireResult = await args.fire();
+      return { outcome: { kind: 'clean' }, fired: true, fireResult, fireError: null };
+    };
+    await orchestrateProcCaptureSession(
+      { projectId: 'p', architectureId: 'a', sessionId: 'sess' },
+      {
+        client, secrets, createAdapter: () => adapter, buildCompensation: compensation() as never, runBracket: runBracket as never,
+        snapshotTables: async () => ({ tables: [] }), quietWindow: null, endOfJobFingerprint: null, gatewayClient: scriptedGateway(), sessionSetResolver: () => [],
+      },
+    );
+    expect(prebound && typeof prebound.ledger_id).toBe('number');
   });
 
   it('a "procedure not found" envelope is NOT behaviour (2026-09-12): rejected with a not_invoked diagnostic, no family credit, reason on the coverage row', async () => {
