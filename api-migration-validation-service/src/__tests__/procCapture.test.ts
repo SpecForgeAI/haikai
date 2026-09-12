@@ -365,6 +365,25 @@ describe('orchestrator', () => {
     expect(procRunRegistry.has('sess')).toBe(false);
   });
 
+  it('the proc fire hands its bound parameters to the bracket hook before each call (2026-09-12: scoped-tier predicates)', async () => {
+    const client = new FakeClient();
+    const adapter = fakeAdapter([envelope()]);
+    const seen: Array<Record<string, unknown>> = [];
+    const runBracket = async (args: { fire: (hooks: { beforeMutatingCall: (a: { params: Record<string, unknown> }) => Promise<void> }) => Promise<unknown> }) => {
+      const fireResult = await args.fire({ beforeMutatingCall: async ({ params }) => { seen.push(params); } });
+      return { outcome: { kind: 'clean' }, fired: true, fireResult, fireError: null };
+    };
+    await orchestrateProcCaptureSession(
+      { projectId: 'p', architectureId: 'a', sessionId: 'sess' },
+      {
+        client, secrets, createAdapter: () => adapter, buildCompensation: compensation() as never, runBracket: runBracket as never,
+        snapshotTables: async () => ({ tables: [] }), quietWindow: null, endOfJobFingerprint: null, gatewayClient: scriptedGateway(), sessionSetResolver: () => [],
+      },
+    );
+    expect(seen.length).toBeGreaterThan(0);
+    expect(typeof seen[0].ledger_id).toBe('number');
+  });
+
   it('a "procedure not found" envelope is NOT behaviour (2026-09-12): rejected with a not_invoked diagnostic, no family credit, reason on the coverage row', async () => {
     const client = new FakeClient();
     const adapter = fakeAdapter(() => envelope({ outcome: 'error', return_status: null, result_sets: [], error: { number: 2812, sqlstate: null, severity: 16, state: 1, message: "Stored procedure 'dbo.upd_ledger_roll' not found." } }));

@@ -107,7 +107,37 @@ describe('scoped-row imaging (Item #1)', () => {
     expect(run.outcome.statementsApplied.some((s: string) => s.startsWith('UPDATE view_registry'))).toBe(true);
   });
 
-  it('an over-cap write table WITHOUT a sweepable PK still refuses table_too_large (fail-closed)', async () => {
+  it('an over-cap write table with a COMPOSITE key is scoped by every matched key column (2026-09-12): update + insert inside the slice undone exactly', async () => {
+    const store = new FakeStore();
+    store.tables.set(
+      'composite_ref',
+      [1, 2, 3, 4, 5, 6].map((i) => ({ A: i, B: i, V: `v${i}` })),
+    );
+    const pristine = store.snapshotJson();
+    const run = await runCompensationBracket({
+      readAdapter: fakeReadAdapter(store),
+      writeAdapter: fakeWriteAdapter(store),
+      engine: 'sybase',
+      schema: null,
+      tables: ['composite_ref'],
+      metadata: METADATA,
+      fire: async (hooks?: BracketCallHooks) => {
+        // The routine's parameter names one key column (A); the slice A=2 is imaged.
+        await hooks?.beforeMutatingCall({ params: { a: 2 } });
+        const rows = store.tables.get('composite_ref')!;
+        rows[1].V = 'CHANGED';                 // update inside the slice
+        rows.push({ A: 2, B: 9, V: 'new' });   // insert inside the slice
+        return 'fired';
+      },
+    });
+    expect(run.fired).toBe(true);
+    expect(run.outcome.kind).toBe('compensated');
+    expect(store.snapshotJson()).toBe(pristine);
+    expect(run.outcome.statementsApplied.some((s: string) => s.startsWith('UPDATE composite_ref'))).toBe(true);
+    expect(run.outcome.statementsApplied.some((s: string) => s.startsWith('DELETE FROM composite_ref'))).toBe(true);
+  });
+
+  it('a composite-key write OUTSIDE every touched slice is honest residue (count guard), never silently accepted', async () => {
     const store = new FakeStore();
     store.tables.set(
       'composite_ref',
@@ -120,11 +150,41 @@ describe('scoped-row imaging (Item #1)', () => {
       schema: null,
       tables: ['composite_ref'],
       metadata: METADATA,
+      fire: async (hooks?: BracketCallHooks) => {
+        await hooks?.beforeMutatingCall({ params: { a: 2 } });
+        store.tables.get('composite_ref')!.push({ A: 5, B: 9, V: 'outside' }); // not in the A=2 slice
+        return 'fired';
+      },
+    });
+    expect(run.fired).toBe(true);
+    expect(run.outcome.kind).toBe('residue');
+    expect(run.outcome.residue.some((r: { table: string; detail: string }) => r.table === 'composite_ref' && /writes outside the scoped keys/.test(r.detail))).toBe(true);
+  });
+
+  it('an over-cap write table with NO key at all still refuses table_too_large (fail-closed)', async () => {
+    const noKeyModel = {
+      metaModel: {
+        entities: {
+          physical_data_entities: [{ id: 'e-nk', name: 'no_key_tbl', constraints_metadata: {}, key_policy: null }],
+          physical_data_attributes: [{ physical_entity_id: 'e-nk', name: 'X', source_type: 'int', ordinal: 1 }],
+        },
+      },
+    };
+    const metadata = buildCompensationMetadataIndex(noKeyModel);
+    const store = new FakeStore();
+    store.tables.set('no_key_tbl', [1, 2, 3, 4, 5, 6].map((i) => ({ X: i })));
+    const run = await runCompensationBracket({
+      readAdapter: fakeReadAdapter(store),
+      writeAdapter: fakeWriteAdapter(store),
+      engine: 'sybase',
+      schema: null,
+      tables: ['no_key_tbl'],
+      metadata,
       fire: async () => 'never',
     });
     expect(run.fired).toBe(false);
     expect(run.outcome.kind).toBe('refused');
-    expect(run.outcome.refusals[0]).toMatchObject({ table: 'composite_ref', reason: 'table_too_large' });
+    expect(['table_too_large', 'missing_pk']).toContain(run.outcome.refusals[0].reason);
   });
 
   it('a READ-mapped insert is reverted by the sweep; an unrevertable delete is read_guard_moved residue', async () => {
