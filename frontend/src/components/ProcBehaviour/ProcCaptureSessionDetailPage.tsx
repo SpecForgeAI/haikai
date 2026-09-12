@@ -47,6 +47,7 @@ import { ProcEnvelopeViewer } from './ProcEnvelopeViewer';
 import { ProcRoutineCoveragePanel } from './ProcRoutineCoveragePanel';
 import { ProcRetryUncoveredModal } from './ProcRetryUncoveredModal';
 import { ProcSaveAsBaselineModal } from './ProcSaveAsBaselineModal';
+import { S0RestorePanel } from '../DashboardView/S0RestorePanel';
 import styles from '../DashboardView/ApiBaselinesListPage.module.css';
 import proc from './ProcBehaviour.module.css';
 
@@ -418,6 +419,17 @@ export const ProcCaptureSessionDetailPage: React.FC = () => {
       )}
 
       <ProcRoutineCoveragePanel summary={session?.coverageSummary ?? null} />
+
+      {/* S0 restore (2026-09-12): a proc capture that left residue dirties the
+          source exactly as an API capture would, and this page had no way to
+          put it back. Same panel as the API session page; no receipt session. */}
+      {session && !run.inFlight && projectId && architectureId && (
+        <S0RestorePanel
+          projectId={projectId}
+          architectureId={architectureId}
+          session={{ id: null, db_config_redacted_json: session.dbConfigRedacted }}
+        />
+      )}
 
       <div className={styles.actionRow}>
         <button

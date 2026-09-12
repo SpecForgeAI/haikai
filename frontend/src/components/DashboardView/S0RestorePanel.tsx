@@ -18,7 +18,6 @@
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import type { ApiBehaviourCaptureSessionDto } from '../../api/apiBehaviourClient';
 import {
   S0Manifest,
   S0RestoreResponse,
@@ -29,10 +28,22 @@ import styles from './ApiBaselinesListPage.module.css';
 import type { DbEngineKey } from '../../api/dbEngines';
 import { DB_ENGINE_OPTIONS, isDbEngineKey } from '../../api/dbEngines';
 
+/**
+ * What the panel needs from its host session (2026-09-12): the redacted DB
+ * config for the prefill and, for API capture sessions only, the session id
+ * the restore receipt is recorded on. The stored-proc session page mounts the
+ * same panel with no id -- a proc capture can dirty the source just as an API
+ * capture can, and this was the only screen that could restore S0.
+ */
+export interface S0RestoreSessionLike {
+  id?: string | null;
+  db_config_redacted_json?: Record<string, unknown> | null;
+}
+
 export interface S0RestorePanelProps {
   projectId: string;
   architectureId: string;
-  session: ApiBehaviourCaptureSessionDto;
+  session: S0RestoreSessionLike;
 }
 
 interface RestoreFormState {
@@ -48,7 +59,7 @@ interface RestoreFormState {
 
 /** Best-effort prefill from the session's redacted db config (non-secret
  *  connection fields only; tolerates camelCase and snake_case keys). */
-function prefillFrom(session: ApiBehaviourCaptureSessionDto): RestoreFormState {
+function prefillFrom(session: S0RestoreSessionLike): RestoreFormState {
   const raw = (session.db_config_redacted_json ?? {}) as Record<string, unknown>;
   const pick = (...keys: string[]): string => {
     for (const k of keys) {
@@ -140,7 +151,7 @@ export const S0RestorePanel: React.FC<S0RestorePanelProps> = ({
         confirm: true,
         // Item #6 (2026-08-27): record the restore receipt on THIS capture
         // session — the migrate/reconcile gate reads it.
-        session_id: session.id,
+        ...(session.id ? { session_id: session.id } : {}),
       });
       setResult(response);
     } catch (err) {
