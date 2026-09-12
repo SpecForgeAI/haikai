@@ -41,6 +41,11 @@ vi.mock('../../api/procBehaviourApi', async (importOriginal) => {
   };
 });
 
+vi.mock('../../api/s0SnapshotApi', () => ({
+  getLatestS0Snapshot: vi.fn().mockResolvedValue(null),
+  restoreS0Snapshot: vi.fn(),
+}));
+
 vi.mock('../../contexts/ProjectContext', () => ({
   useProject: () => ({ id: 'proj-1', name: 'Project 1' }),
 }));
@@ -216,6 +221,12 @@ describe('ProcCaptureSessionDetailPage — coverage panel', () => {
     await waitFor(() => expect(screen.getByTestId('proc-session-status').textContent).toBe('cancelled'));
     expect(screen.queryByTestId('proc-session-stranded')).toBeNull();
     expect(screen.queryByTestId('proc-session-cancel')).toBeNull();
+  });
+
+  it('offers the S0 restore panel on a finished proc session (2026-09-12: the only restore path used to be the API session page)', async () => {
+    renderPage();
+    const panel = await screen.findByTestId('s0-restore-panel');
+    expect(panel.textContent).toContain('Canonical state (S0)');
   });
 
   it('renders the coverage roll-up collapsed by default and expands per-routine rows on demand', async () => {
